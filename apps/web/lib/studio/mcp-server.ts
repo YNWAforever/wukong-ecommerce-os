@@ -15,7 +15,12 @@ import {
   isStudioMcpServerEnabled,
   type StudioFlagSettings,
 } from "../studio-flags";
-import { hashMcpTokenSecret, MCP_TOKEN_PLAINTEXT_PREFIX } from "./mcp-tokens";
+import {
+  hashMcpTokenSecret,
+  MCP_TOKEN_PLAINTEXT_PREFIX,
+  rollingMinuteStart,
+  utcMonthStart,
+} from "./mcp-tokens";
 import { buildStudioReadDeps } from "./read-deps";
 import { runStudioTool, type ToolRun } from "./tools";
 
@@ -53,6 +58,10 @@ const RPC_INVALID_PARAMS = -32602;
 const RPC_INTERNAL_ERROR = -32603;
 const RPC_UNAUTHORIZED = -32001;
 const RPC_DEADLINE_EXCEEDED = -32002;
+/** Token is over its rolling-minute call limit (B4). */
+export const RPC_RATE_LIMITED = -32029;
+/** Token has exhausted its UTC-month call quota (B4). */
+export const RPC_QUOTA_EXHAUSTED = -32030;
 
 const BEARER_TOKEN =
   /^Bearer\s+(wuk_([A-Za-z0-9_-]{1,32})\.([A-Za-z0-9_-]{1,128}))$/i;
@@ -101,6 +110,11 @@ type RequestContext = {
   createdBy: string;
   scopes: string[];
   role: StudioRole;
+  /** Snapshot of the token's quotas and ledger counts for this request. */
+  rateLimitPerMinute: number | null;
+  monthlyCallQuota: number | null;
+  minuteCallCount: number;
+  monthCallCount: number;
 };
 
 type McpCallRecording = {
@@ -288,6 +302,7 @@ export function createMcpServer(deps: McpServerDeps) {
       await repos.studio.mcpCalls.append({
         runId: null,
         connectionId: null,
+        tokenId,
         toolName: recording.toolName,
         requestDigest: recording.requestDigest,
         responseDigest: recording.responseDigest,
@@ -399,6 +414,33 @@ export function createMcpServer(deps: McpServerDeps) {
     context: RequestContext,
     envelope: Extract<Envelope, { kind: "request" }>,
   ): Promise<Response> {
+    // Quota checks run before the tool name is even looked up: a denied call
+    // must not execute anything and must not add a success ledger row. Ledger
+    // counts are a snapshot taken when the request resolved the token, so two
+    // concurrent calls can both pass at the boundary; the limit is honest but
+    // deliberately approximate under concurrency (documented in the runbook).
+    if (
+      context.rateLimitPerMinute !== null &&
+      context.minuteCallCount >= context.rateLimitPerMinute
+    ) {
+      return jsonResponse(
+        200,
+        rpcError(envelope.id, RPC_RATE_LIMITED, "Rate limit exceeded."),
+      );
+    }
+    if (
+      context.monthlyCallQuota !== null &&
+      context.monthCallCount >= context.monthlyCallQuota
+    ) {
+      return jsonResponse(
+        200,
+        rpcError(
+          envelope.id,
+          RPC_QUOTA_EXHAUSTED,
+          "Monthly call quota exhausted.",
+        ),
+      );
+    }
     const params = paramsObject(envelope.params);
     if (!params)
       return jsonResponse(
@@ -487,6 +529,7 @@ export function createMcpServer(deps: McpServerDeps) {
           await repos.studio.mcpCalls.append({
             runId: null,
             connectionId: null,
+            tokenId: context.tokenId,
             toolName: definition.id,
             requestDigest: digestToolArguments(parsed.data),
             responseDigest:
@@ -655,6 +698,7 @@ export function createMcpServer(deps: McpServerDeps) {
         );
       }
 
+      const now = clock();
       const gate = await db.forWorkspace(
         resolved.workspaceId,
         async (repos) => ({
@@ -662,6 +706,17 @@ export function createMcpServer(deps: McpServerDeps) {
           membership: await repos.memberships.findActiveByUserId(
             resolved.createdBy,
             resolved.workspaceId,
+          ),
+          // Quota counts and limits are resolved before the workspace gate so
+          // even a disabled workspace never runs a tool. Counters are a
+          // snapshot; see `callTool` for the concurrency note.
+          minuteCalls: await repos.studio.mcpCalls.countForTokenSince(
+            resolved.tokenId,
+            rollingMinuteStart(new Date(now)),
+          ),
+          monthCalls: await repos.studio.mcpCalls.countForTokenSince(
+            resolved.tokenId,
+            utcMonthStart(new Date(now)),
           ),
         }),
       );
@@ -687,6 +742,10 @@ export function createMcpServer(deps: McpServerDeps) {
         createdBy: resolved.createdBy,
         scopes: resolved.scopes,
         role: gate.membership.role as StudioRole,
+        rateLimitPerMinute: resolved.rateLimitPerMinute,
+        monthlyCallQuota: resolved.monthlyCallQuota,
+        minuteCallCount: gate.minuteCalls,
+        monthCallCount: gate.monthCalls,
       };
 
       if (envelope.kind === "notification") {

@@ -110,6 +110,54 @@ export const STUDIO_SETTINGS_COPY = {
     "需要管理員權限。",
     "Administrator access is required.",
   ],
+  "studio.settings.tokens.quotas": ["配額", "Quotas"],
+  "studio.settings.tokens.quotaRate": [
+    "每分鐘呼叫上限（1–600）",
+    "Calls per minute (1–600)",
+  ],
+  "studio.settings.tokens.quotaMonthly": [
+    "每月呼叫上限（1–1,000,000）",
+    "Monthly calls (1–1,000,000)",
+  ],
+  "studio.settings.tokens.quotaUnlimited": ["無限制", "Unlimited"],
+  "studio.settings.tokens.quotaHint": [
+    "留空表示無限制。每分鐘上限以 60 秒滾動窗口計算；每月上限以 UTC 月份計算。",
+    "Leave blank for unlimited. The per-minute limit uses a rolling 60-second window; the monthly quota uses the UTC calendar month.",
+  ],
+  "studio.settings.tokens.quotaInvalid": [
+    "配額必須是範圍內的整數，或留空表示無限制。",
+    "A quota must be an integer within range, or blank for unlimited.",
+  ],
+  "studio.settings.tokens.usage": ["用量", "Usage"],
+  "studio.settings.tokens.usageMinute": ["每分鐘", "per minute"],
+  "studio.settings.tokens.usageMonth": ["每月", "per month"],
+  "studio.settings.tokens.editLimits": ["編輯配額", "Edit limits"],
+  "studio.settings.tokens.saveLimits": ["儲存配額", "Save limits"],
+  "studio.settings.tokens.savingLimits": ["正在儲存…", "Saving…"],
+  "studio.settings.tokens.cancel": ["取消", "Cancel"],
+  "studio.settings.tokens.limitsSaved": [
+    "配額已更新（以伺服器回讀為準）。",
+    "Limits updated from the server readback.",
+  ],
+  "studio.settings.tokens.limitsError": [
+    "未能更新配額，請重試。",
+    "The limits could not be updated. Try again.",
+  ],
+  "studio.settings.tokens.rotate": ["輪替", "Rotate"],
+  "studio.settings.tokens.rotating": ["正在輪替…", "Rotating…"],
+  "studio.settings.tokens.rotateConfirm": [
+    "輪替會立即撤銷舊權杖，並只顯示新權杖一次。要繼續嗎？",
+    "Rotation revokes the old token immediately and shows the new one once. Continue?",
+  ],
+  "studio.settings.tokens.rotateConfirmAction": ["確認輪替", "Confirm rotate"],
+  "studio.settings.tokens.rotateError": [
+    "未能輪替權杖，請重試。",
+    "The token could not be rotated. Try again.",
+  ],
+  "studio.settings.tokens.revokeError": [
+    "未能撤銷權杖，請重試。",
+    "The token could not be revoked. Try again.",
+  ],
 
   // -- external MCP connections --------------------------------------------
   "studio.settings.external.title": [

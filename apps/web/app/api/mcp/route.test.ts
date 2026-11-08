@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { StudioMcpCall } from "@wukong/db";
+
 import { isStudioMcpServerEnabled } from "../../../lib/studio-flags";
 import {
   createFakeStudio,
@@ -107,5 +109,57 @@ describe("POST /api/mcp", () => {
     );
     expect(malformed.status).toBe(400);
     expect(await malformed.json()).toMatchObject({ error: { code: -32600 } });
+  });
+
+  it("returns the JSON-RPC quota envelope with HTTP 200 from the route", async () => {
+    const token = fakeApiToken({
+      workspaceId: WORKSPACE,
+      prefix: PREFIX,
+      rateLimitPerMinute: 1,
+    });
+    const priorCall: StudioMcpCall = {
+      id: "00000000-0000-4000-8000-000000000901",
+      workspaceId: WORKSPACE,
+      runId: null,
+      connectionId: null,
+      tokenId: token.id,
+      toolName: "catalog.search",
+      requestDigest: "a".repeat(64),
+      responseDigest: null,
+      status: "ok",
+      errorCode: null,
+      latencyMs: 3,
+      caller: "external_mcp",
+      createdAt: new Date(),
+    };
+    const fake = createFakeStudio({
+      settings: { workspaceId: WORKSPACE, enabled: true },
+      apiTokens: [token],
+      mcpCalls: [priorCall],
+    });
+    const handlers = createMcpHandlers({
+      getDatabase: fakeGetDatabase(
+        fake.repos,
+        [],
+        [{ hash: TOKEN_HASH, token }],
+      ),
+      isMcpServerEnabled: isStudioMcpServerEnabled,
+      env: ON_ENV,
+    });
+    const response = await handlers.POST(
+      rpcRequest({
+        jsonrpc: "2.0",
+        id: 9,
+        method: "tools/call",
+        params: { name: "catalog.search", arguments: { query: "margaux" } },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      jsonrpc: "2.0",
+      id: 9,
+      error: { code: -32029 },
+    });
+    expect(fake.state.mcpCalls).toHaveLength(1);
   });
 });

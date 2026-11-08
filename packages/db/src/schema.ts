@@ -3191,6 +3191,10 @@ export const studioMcpCalls = pgTable(
       .notNull(),
     runId: uuid("run_id"),
     connectionId: uuid("connection_id"),
+    /** The hosted-MCP token whose `tools/call` produced this ledger row. */
+    tokenId: uuid("token_id").references(() => studioApiTokens.id, {
+      onDelete: "set null",
+    }),
     toolName: text("tool_name").notNull(),
     requestDigest: text("request_digest").notNull(),
     responseDigest: text("response_digest"),
@@ -3211,6 +3215,9 @@ export const studioMcpCalls = pgTable(
       table.connectionId,
       table.createdAt,
     ),
+    index("studio_mcp_calls_token_recent_idx")
+      .on(table.workspaceId, table.tokenId, table.createdAt)
+      .where(sql`${table.tokenId} IS NOT NULL`),
     check(
       "studio_mcp_calls_status_check",
       sql`${table.status} IN ('ok','unavailable','schema_drift','denied','error')`,
@@ -3243,6 +3250,10 @@ export const studioApiTokens = pgTable(
     createdBy: text("created_by").notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** Rolling-minute tool-call limit; NULL means unlimited. */
+    rateLimitPerMinute: integer("rate_limit_per_minute"),
+    /** UTC-month tool-call quota; NULL means unlimited. */
+    monthlyCallQuota: integer("monthly_call_quota"),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -3260,6 +3271,14 @@ export const studioApiTokens = pgTable(
     check(
       "studio_api_tokens_hash_check",
       sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "studio_api_tokens_rate_limit_check",
+      sql`${table.rateLimitPerMinute} IS NULL OR (${table.rateLimitPerMinute} BETWEEN 1 AND 600)`,
+    ),
+    check(
+      "studio_api_tokens_monthly_quota_check",
+      sql`${table.monthlyCallQuota} IS NULL OR (${table.monthlyCallQuota} BETWEEN 1 AND 1000000)`,
     ),
   ],
 );

@@ -62,6 +62,7 @@ vi.mock("../../../../lib/intake-runtime", () => ({
         studio: {
           settings: { get: async () => state.settings },
           apiTokens: { list: async () => state.tokens },
+          mcpCalls: { countForTokenSince: async () => 0 },
           mcpConnections: { list: async () => state.connections },
         },
       };
@@ -161,6 +162,9 @@ describe("/studio/settings content", () => {
         createdBy: "actor",
         revokedAt: null,
         lastUsedAt: null,
+        rateLimitPerMinute: 60,
+        monthlyCallQuota: 1000,
+        usage: { minuteCalls: 1, monthCalls: 9 },
         createdAt: new Date("2026-11-08T10:00:00.000Z"),
         updatedAt: new Date("2026-11-08T10:00:00.000Z"),
       },

@@ -1,4 +1,4 @@
-﻿import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
 
 import { createDatabase, type Database } from "../client.js";
@@ -391,6 +391,8 @@ describe.skipIf(!enabled)("studio repositories", () => {
         prefix: "wuk_example",
         scopes: ["read", "propose"],
         createdBy: "admin-b",
+        rateLimitPerMinute: 60,
+        monthlyCallQuota: 1000,
       }),
     );
     const found = await db!.forWorkspace(WORKSPACE_B, (repos) =>
@@ -398,8 +400,39 @@ describe.skipIf(!enabled)("studio repositories", () => {
     );
     expect(found?.id).toBe(token.id);
     expect(found?.scopes).toEqual(["read", "propose"]);
+    expect(found).toMatchObject({
+      rateLimitPerMinute: 60,
+      monthlyCallQuota: 1000,
+    });
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.apiTokens.get(token.id),
+      ),
+    ).toMatchObject({ id: token.id, monthlyCallQuota: 1000 });
+
     await db!.forWorkspace(WORKSPACE_B, async (repos) => {
       await repos.studio.apiTokens.touch(token.id);
+      const updated = await repos.studio.apiTokens.updateLimits(token.id, {
+        rateLimitPerMinute: null,
+        monthlyCallQuota: 500,
+      });
+      expect(updated).toBe(true);
+    });
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.apiTokens.get(token.id),
+      ),
+    ).toMatchObject({ rateLimitPerMinute: null, monthlyCallQuota: 500 });
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.apiTokens.updateLimits(
+          "00000000-0000-4000-8000-000000000000",
+          { rateLimitPerMinute: 1, monthlyCallQuota: 1 },
+        ),
+      ),
+    ).toBe(false);
+
+    await db!.forWorkspace(WORKSPACE_B, async (repos) => {
       await repos.studio.apiTokens.revoke(token.id);
     });
     const revoked = await db!.forWorkspace(WORKSPACE_B, (repos) =>
@@ -407,5 +440,62 @@ describe.skipIf(!enabled)("studio repositories", () => {
     );
     expect(revoked?.revokedAt).not.toBeNull();
     expect(revoked?.lastUsedAt).not.toBeNull();
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.apiTokens.updateLimits(token.id, {
+          rateLimitPerMinute: 5,
+          monthlyCallQuota: 5,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("counts MCP ledger rows only for the attributed token and supports updateLimits", async () => {
+    const [first, second] = await db!.forWorkspace(
+      WORKSPACE_B,
+      async (repos) => {
+        const makeToken = (label: string, hash: string) =>
+          repos.studio.apiTokens.create({
+            label,
+            tokenHash: hash,
+            prefix: `wuk_${label}`,
+            scopes: ["read"],
+            createdBy: "admin-b",
+            rateLimitPerMinute: 10,
+            monthlyCallQuota: 100,
+          });
+        const first = await makeToken("count-a", "1".repeat(64));
+        const second = await makeToken("count-b", "2".repeat(64));
+        return [first, second] as const;
+      },
+    );
+    await db!.forWorkspace(WORKSPACE_B, (repos) =>
+      repos.studio.mcpCalls.append({
+        tokenId: first.id,
+        toolName: "catalog.search",
+        requestDigest: "3".repeat(64),
+        responseDigest: null,
+        status: "ok",
+        latencyMs: 1,
+        caller: "external_mcp",
+      }),
+    );
+    const before = new Date(Date.now() - 60_000);
+    const after = new Date(Date.now() + 60_000);
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.mcpCalls.countForTokenSince(first.id, before),
+      ),
+    ).toBe(1);
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.mcpCalls.countForTokenSince(second.id, before),
+      ),
+    ).toBe(0);
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.mcpCalls.countForTokenSince(first.id, after),
+      ),
+    ).toBe(0);
   });
 });
