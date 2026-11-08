@@ -238,3 +238,23 @@ A local pnpm 11.7.0 was bootstrapped from the registry tarball and used against 
 
 The earlier per-round acceptance matrix still stands; this round only sharpened the merge evidence
 and fixed the production-build defect. Nothing was pushed, merged into `main`, deployed or activated.
+
+## Round 7 (Node 24 CI-equivalent verification)
+
+A portable **Node 24.22.2** was downloaded from nodejs.org and used with the locally bootstrapped
+pnpm 11.7.0 and the repository's offline store. Results on the project's pinned runtime:
+
+- `pnpm install --frozen-lockfile --offline --ignore-scripts`: PASS.
+- `pnpm typecheck` / `pnpm lint`: PASS 14/14 each.
+- `pnpm --filter @wukong/web build` (Turbopack): PASS (all `/studio` routes and APIs compile).
+- Root `node --test` suites (the exact root-script list): **145 tests PASS**.
+- Direct per-package vitest (threads pool, 0 failed): web **2763 passed / 11 skipped**; core 326;
+  ai 444; db 196; assets 82 (+1 skip); shopline 287; jobs 53; worker 419.
+- Studio integration on disposable Postgres: **20/20 PASS**.
+
+The exact `pnpm test` root command still cannot run in this sandbox: its `turbo run test` step
+spawns Vitest's default forked workers and fails with `EPERM ... mkdir ...\ssr`. This is a sandbox
+worker-spawn limitation, not a test failure — every package suite passes under Node 24 with
+`--pool=threads --no-file-parallelism`. A normal Node 24 CI runner is the remaining confirmation.
+
+Merge readiness is otherwise green; nothing was pushed, merged into `main`, deployed or activated.
