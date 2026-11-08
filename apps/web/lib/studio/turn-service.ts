@@ -61,6 +61,12 @@ import { buildStudioReadDeps } from "./read-deps.js";
 import { merchantAuditPayloadSchema } from "./report-payload.js";
 import type { ListingCopySnapshot } from "./tools.js";
 import {
+  createStudioTurnLimits,
+  StudioTurnDeadlineError,
+  StudioTurnStepBudgetError,
+  type StudioTurnLimits,
+} from "./turn-limits.js";
+import {
   requireStudioSession,
   studioNotFound,
   type StudioDatabase,
@@ -106,6 +112,8 @@ export type StudioServiceDeps = StudioSessionDeps & {
     settings: StudioFlagSettings,
   ) => boolean;
   now?: () => Date;
+  /** Monotonic clock for the hard turn deadlines (defaults to Date.now). */
+  monotonicNow?: () => number;
   /**
    * Injected model factory. Returning `null` means "no live model configured"
    * (the turn stays deterministic). The default binding refuses to construct
@@ -469,6 +477,7 @@ export function createStudioService(deps: StudioServiceDeps) {
     skill: SkillDefinition;
     pack: EvidencePack;
     body: SendMessageBody;
+    limits: StudioTurnLimits;
   }): Promise<{
     analysis: ModelAnalysis | null;
     usage: AIUsage | null;
@@ -539,6 +548,7 @@ export function createStudioService(deps: StudioServiceDeps) {
     }
 
     try {
+      input.limits.beginModel();
       const { analysis: raw, usage } = await model.compose(
         modelComposeInput({
           skill: input.skill,
@@ -682,6 +692,7 @@ async function proposeCopyTurn(input: {
   pack: EvidencePack;
   body: SendMessageBody;
   now: Date;
+  limits: StudioTurnLimits;
 }): Promise<CopyProposalOutcome> {
   const none: CopyProposalOutcome = {
     output: null,
@@ -769,6 +780,7 @@ async function proposeCopyTurn(input: {
       allowedFields: context.allowedFields as StudioProposeInput["allowedFields"],
       evidenceRefs,
     };
+    input.limits.beginModel();
     const { proposal, usage } = await model.propose(proposeInput);
     const resolved = new Set(evidenceRefs);
     const allowed = new Set(context.allowedFields);
@@ -886,6 +898,7 @@ async function proposeCopyTurn(input: {
     skill: SkillDefinition;
     body: SendMessageBody;
     now: Date;
+    limits: StudioTurnLimits;
   }): Promise<StudioSendResult> {
     const packResult = await database().forWorkspace(
       input.workspaceId,
@@ -895,6 +908,7 @@ async function proposeCopyTurn(input: {
           deps: buildStudioReadDeps(repos),
           role: input.session.role,
           now: input.now,
+          limits: input.limits,
           query: input.skill.inputs.some((field) => field.name === "query")
             ? input.body.text
             : null,
@@ -942,6 +956,7 @@ async function proposeCopyTurn(input: {
           run: input.run,
           skill: input.skill,
           pack: packResult.pack,
+          limits: input.limits,
           body: input.body,
           now: input.now,
         });
@@ -1007,6 +1022,7 @@ async function proposeCopyTurn(input: {
           run: input.run,
           skill: input.skill,
           pack: packResult.pack,
+          limits: input.limits,
           body: input.body,
         });
         analysis = modelOutcome.analysis;
@@ -1148,6 +1164,12 @@ async function proposeCopyTurn(input: {
       if (!UUID.safeParse(threadId).success) throw studioNotFound();
       const workspaceId = session.workspaceId;
       const now = clock();
+      // Hard per-turn budgets (plan Task 14): 45 s wall clock, six first-class
+      // tool steps, a bounded per-listing detail fan-out and at most two model
+      // calls. Exceeding one is persisted as a failed run with a distinct code.
+      const limits = createStudioTurnLimits({
+        now: deps.monotonicNow ?? (() => Date.now()),
+      });
 
       const prepared: PreparedTurn = await database().forWorkspace(
         workspaceId,
@@ -1263,12 +1285,22 @@ async function proposeCopyTurn(input: {
           skill: prepared.skill,
           body,
           now,
+          limits,
         });
       } catch (error) {
         // A turn that already started running must never disappear silently:
         // mark it failed with a safe code and rethrow so the route reports it.
+        const limitError =
+          error instanceof StudioTurnDeadlineError ||
+          error instanceof StudioTurnStepBudgetError
+            ? error
+            : null;
         const errorCode = (
-          error instanceof ApiError ? error.code : "studio_turn_failed"
+          limitError
+            ? limitError.code
+            : error instanceof ApiError
+              ? error.code
+              : "studio_turn_failed"
         ).slice(0, 120);
         try {
           await database().forWorkspace(workspaceId, async (repos) => {
@@ -1297,6 +1329,14 @@ async function proposeCopyTurn(input: {
             }),
           );
         }
+        if (limitError)
+          throw new ApiError(
+            limitError instanceof StudioTurnDeadlineError ? 503 : 422,
+            limitError.code,
+            limitError instanceof StudioTurnDeadlineError
+              ? "The turn exceeded its time budget; it was not completed."
+              : "The turn exceeded its step budget; it was not completed.",
+          );
         throw error;
       }
     },

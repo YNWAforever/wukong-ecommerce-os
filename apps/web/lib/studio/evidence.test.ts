@@ -7,6 +7,11 @@ import {
   composeNeedsInputReply,
 } from "./compose-deterministic.js";
 import { buildEvidencePack } from "./evidence.js";
+import {
+  createStudioTurnLimits,
+  StudioTurnDeadlineError,
+  StudioTurnStepBudgetError,
+} from "./turn-limits.js";
 import { runStudioTool, type StudioReadDeps } from "./tools.js";
 import type { EvidencePack } from "./types.js";
 
@@ -738,5 +743,41 @@ describe("studio merchant-audit evidence (plan Task 11)", () => {
       return result.pack.context.merchantAudit;
     };
     expect(await build()).toEqual(await build());
+  });
+});
+describe("turn budgets in the evidence engine", () => {
+  it("aborts evidence assembly when the wall-clock deadline passes", async () => {
+    let now = 0;
+    const limits = createStudioTurnLimits({
+      now: () => {
+        now += 5_000;
+        return now;
+      },
+      deadlineMs: 2_000,
+    });
+    await expect(
+      buildEvidencePack({
+        skill: catalogFind,
+        deps: baseDeps(),
+        role: "operator",
+        now,
+        query: "margaux",
+        limits,
+      }),
+    ).rejects.toBeInstanceOf(StudioTurnDeadlineError);
+  });
+
+  it("aborts when first-class tool steps exceed the budget", async () => {
+    const limits = createStudioTurnLimits({ maxToolSteps: 1 });
+    await expect(
+      buildEvidencePack({
+        skill: catalogFind,
+        deps: baseDeps(),
+        role: "operator",
+        now,
+        query: "margaux",
+        limits,
+      }),
+    ).rejects.toBeInstanceOf(StudioTurnStepBudgetError);
   });
 });

@@ -128,6 +128,7 @@ function harness(
     settings?: Partial<StudioSettings>;
     env?: NodeJS.ProcessEnv;
     createModel?: (settings: StudioSettings) => StudioModel | null;
+    monotonicNow?: () => number;
   } = {},
 ): Harness {
   const options = input.options ?? {};
@@ -150,6 +151,7 @@ function harness(
     isStudioAiEnabled,
     env: input.env ?? STUDIO_ENV,
     now: () => NOW,
+    ...(input.monotonicNow ? { monotonicNow: input.monotonicNow } : {}),
     ...(input.createModel ? { createModel: input.createModel } : {}),
   };
   return { service: createStudioService(deps), fake, deps };
@@ -1043,5 +1045,30 @@ describe("studio copy-proposal turns", () => {
     expect(result.reply.followUps[0]?.key).toBe(
       "studio.needs_input.copy_listing",
     );
+  });
+});
+
+describe("studio turn budgets", () => {
+  it("fails the run with a timeout code when the turn deadline is exceeded", async () => {
+    let ticks = 0;
+    const { service, fake } = harness({
+      options: populatedOptions(),
+      monotonicNow: () => {
+        ticks += 1;
+        return ticks * 60_000;
+      },
+    });
+    const threadId = await openThread(service);
+    await expect(
+      service.sendMessage(
+        threadId,
+        body({ clientMessageId: "deadline-1", text: "margaux" }),
+      ),
+    ).rejects.toMatchObject({ status: 503, code: "studio_turn_timeout" });
+    expect(fake.state.runs[0]?.status).toBe("failed");
+    expect(fake.state.runs[0]?.errorCode).toBe("studio_turn_timeout");
+    expect(
+      fake.state.audits.map((event) => event.action),
+    ).toContain("studio.run.failed");
   });
 });

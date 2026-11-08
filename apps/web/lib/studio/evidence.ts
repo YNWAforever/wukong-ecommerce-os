@@ -1,5 +1,6 @@
 import type { SkillDefinition, StudioRole, SourceKind } from "@wukong/core";
 
+import type { StudioTurnLimits } from "./turn-limits.js";
 import {
   runStudioTool,
   type ListingCopySnapshot,
@@ -40,6 +41,8 @@ export type BuildEvidenceInput = {
   listingId?: string | null;
   /** Source asset ids the operator attached to the turn (plan Task 10). */
   attachmentAssetIds?: readonly string[];
+  /** Optional hard budgets for this turn (plan Task 14). */
+  limits?: StudioTurnLimits;
   limit?: number;
 };
 
@@ -94,14 +97,17 @@ async function callTool(
     rawInput: unknown;
     deps: StudioReadDeps;
     role: StudioRole;
+    limits?: StudioTurnLimits;
   },
 ): Promise<ToolRun> {
+  input.limits?.beginTool(input.toolId);
   const run = await runStudioTool({
     toolId: input.toolId,
     rawInput: input.rawInput,
     role: input.role,
     deps: input.deps,
   });
+  input.limits?.assertActive();
   const step: StudioTraceStep = {
     kind: "tool",
     toolId: input.toolId,
@@ -138,6 +144,7 @@ async function buildCatalogFind(
     rawInput: { query, limit },
     deps: input.deps,
     role: input.role,
+    limits: input.limits,
   });
   if (search.state !== "done") {
     pushLimitation(pack, "studio.limit.catalog_unavailable");
@@ -169,6 +176,7 @@ async function buildCatalogFind(
       rawInput: { listingId: hit.listingId },
       deps: input.deps,
       role: input.role,
+    limits: input.limits,
     });
     if (detail.state !== "done") {
       pushLimitation(pack, "studio.limit.listing_unavailable", {
@@ -218,6 +226,7 @@ async function buildCatalogFind(
       rawInput: { listingIds: focus.map((hit) => hit.listingId) },
       deps: input.deps,
       role: input.role,
+    limits: input.limits,
     });
     if (gaps.state !== "done")
       pushLimitation(pack, "studio.limit.quality_unavailable");
@@ -267,6 +276,7 @@ async function buildCatalogFind(
     rawInput: { limit: 5 },
     deps: input.deps,
     role: input.role,
+    limits: input.limits,
   });
   if (jobs.state === "done") {
     const listed = jobs.output as { items: Array<{ jobId: string }> };
@@ -296,6 +306,7 @@ async function buildGapReview(
       rawInput: { query: "", limit: MAX_LISTINGS },
       deps: input.deps,
       role: input.role,
+    limits: input.limits,
     });
     if (search.state !== "done") {
       pushLimitation(pack, "studio.limit.catalog_unavailable");
@@ -318,6 +329,7 @@ async function buildGapReview(
       rawInput: { listingId },
       deps: input.deps,
       role: input.role,
+    limits: input.limits,
     });
     if (detail.state !== "done") {
       pushLimitation(pack, "studio.limit.listing_unavailable", { listingId });
@@ -367,6 +379,7 @@ async function buildGapReview(
       rawInput: { listingIds: targets.slice(0, 50) },
       deps: input.deps,
       role: input.role,
+    limits: input.limits,
     });
     if (gaps.state !== "done") {
       pushLimitation(pack, "studio.limit.quality_unavailable");
@@ -425,6 +438,7 @@ async function buildGapReview(
     rawInput: { limit: 10 },
     deps: input.deps,
     role: input.role,
+    limits: input.limits,
   });
   if (jobs.state === "done") {
     const listed = jobs.output as { items: Array<{ jobId: string }> };
@@ -616,6 +630,7 @@ async function buildCopyProposal(
     rawInput: { listingId },
     deps: input.deps,
     role: input.role,
+    limits: input.limits,
   });
   if (detail.state !== "done") {
     pushLimitation(pack, "studio.limit.listing_unavailable", { listingId });
@@ -693,6 +708,7 @@ async function buildCopyProposal(
     rawInput: { listingIds: [listingId] },
     deps: input.deps,
     role: input.role,
+    limits: input.limits,
   });
   if (gaps.state === "done") {
     markCoverage(pack, "quality", "present");
