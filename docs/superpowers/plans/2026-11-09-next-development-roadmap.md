@@ -1,0 +1,176 @@
+# Next development roadmap — from deployed Studio to a commerce orchestration OS
+
+Status: proposed plan, 2026-11-09. Baseline: Conversation Studio merged into `main` (`e53d2026`)
+and deployed to production with every flag off; hosted MCP server and external-MCP registry built
+but dormant; five pilot skills and one live browser acceptance recorded. This document sequences the
+next development so the product can move from "deployed but not activated" to the intended
+operator surface: **conversation → grounded evidence → proposed artifact → human-approved action
+across commerce connectors**, with every action auditable.
+
+## Product north star
+
+> An operator asks a question in Conversation Studio. The Studio answers from canonical workspace
+> records with evidence and an execution trace, proposes a reviewable artifact (copy, draft, audit,
+> report), and — only after explicit confirmation — dispatches an action through a reviewed
+> connector or MCP server. Nothing is fabricated, nothing writes silently, and every step is
+> replayable and auditable.
+
+Reference shape the user asked for: a Wukong "commerce orchestration" workspace (like the Lovable
+reference) where Studio, versioned skills and MCP tools replace ad-hoc screens; and an
+Ads-Copilot-style assistant that can inspect, recommend and act on paid/marketing operations once a
+connector exists.
+
+## Current baseline (shipped and verified)
+
+- **Studio surfaces**: `/studio`, `/studio/t/[id]`, `/studio/threads`, `/studio/outputs`,
+  `/studio/connections`, admin `/studio/settings`.
+- **Pilot skills**: `catalog.find`, `catalog.gap_review`, `listing.copy_proposal`,
+  `listing.draft_from_sources`, `merchant.audit`; planned: `product_shot.prepare`,
+  `category.map_proposal`, `supplier.intel_proposal`; blocked pending a source/write decision:
+  `customer.reply_draft`, `logistics.followup`.
+- **Versioned outputs** with digest/readback/sign-off and canonical JSON export; confirmed
+  listing-draft dispatch through the existing intake service.
+- **Hosted MCP server** (`2026-07-28`, hashed workspace tokens, read/propose only, ledger + audit)
+  and an **admin-approved external MCP registry** (credentials encrypted, disabled by default, no
+  call site).
+- **Hard limits**: 45 s turn deadline, six first-class tool steps, bounded detail fan-out, two model
+  calls; reviewed budget admission with reserve/settle/uncertain holds (fake-model verified only).
+- **Operational gates**: CI green on Node 24 (including root `pnpm test`, production build, real
+  stack Playwright and the synthetic-draft `audit:verify`); production deployment live with flags
+  off; readiness log scan best-effort clean.
+- **Known gaps that shape this roadmap**: no admin API/UI for workspace Studio settings (manual SQL);
+  no live provider/model run ever; attachment upload UI absent; no production migration applied;
+  no authenticated flags-on acceptance in CI; no retained-output enforcement/quotas; no external MCP
+  live connection; no orchestration/scheduling layer.
+
+## Workstreams
+
+### P0 — Activation readiness (weeks 1–2; blocking the pilot)
+
+Goal: turn the deployed-but-off build into a safely operable pilot, without crossing the gates that
+need a human decision.
+
+| #   | Deliverable                                                                                                                                                                                                                   | Notes                                                                     | Exit criterion                                                                                    |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| A1  | Admin **workspace settings API + UI** (enable, allowed skills, budgets, retention, default home, all-or-none AI block validated against the reviewed cost registry) with audit and readback                                   | Replaces the manual SQL runbook; needed before any activation             | Admin can configure a workspace in the UI; viewer/operator denied; invalid pricing/model rejected |
+| A2  | **Production activation runbook automation**: controlled migration set (0054–0056) applied via the hash-pinned migration CLI, seeded pilot workspace, staged flags (preview → pilot workspace → default home), rollback steps | Needs production DB admin access + a maintenance window (user decision)   | Preview/test workspace activated and rolled back cleanly; exact commands recorded                 |
+| A3  | **Live model onboarding**: provider credential in the deployment secret store, live smoke turn (records + one labelled analysis), cost guard rails, kill switch; capability moves to pilot only after the recorded run        | Needs provider credential + reviewed budget (user decision)               | One live provider turn recorded end-to-end with spend/limit evidence, or explicitly deferred      |
+| A4  | **Authenticated flags-on acceptance in CI**: seeded fixture workspace + Playwright flags-on flow (deterministic and one fake-model analysis), 390 px, reload persistence                                                      | Closes the last local-only acceptance gap and protects activation changes | Flags-on spec runs in CI and gates the PR                                                         |
+| A5  | **Observability**: per-turn deadline/step/latency counters, run/ledger dashboards, budget-hold alerts, error taxonomy; log-scan automation for the readiness gate                                                             | Content-free metrics only                                                 | Dashboard/alerts exist for the pilot; readiness scan automatable                                  |
+
+**Gate for P0:** user approves production migration window + provider credential/budget + pilot
+workspace/users. No activation before A1–A4 are green.
+
+### P1 — Studio completion (weeks 2–5)
+
+Goal: remove the rough edges operators will hit on day one.
+
+| #   | Deliverable                                                                                                                                                                        | Notes                                                   |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| B1  | **Attachment/source upload** in the composer (presign/finalize → evidence binding → dispatch assets; progress + failure states)                                                    | Uses existing asset APIs; replaces "pin a UUID in text" |
+| B2  | **Copy-proposal apply handoff**: deep-link into the existing review screen with the proposal preloaded, diff/export (canonical JSON + printable PDF), explicit "not applied" state | No Studio canonical writes                              |
+| B3  | **Merchant audit v2**: date range/period, scheduled run, signed export receipt (HMAC/verifiable), saved report history                                                             | Deterministic first, optionally model summary           |
+| B4  | **Hosted MCP production hardening**: token quotas/rate limits + usage ledger, rotation UI, scope enforcement tests, client setup docs; production hosted MCP remains flag-gated    | No external MCP live connection yet                     |
+| B5  | **UX polish**: streaming/progress presentation for long turns, thread search/share, outputs centre, mobile/a11y pass, bilingual copy completeness                                  | Keeps the honest, traceable feel                        |
+
+**Gate for P1:** full web suite + integration + CI; browser acceptance for new flows; no regression in
+existing routes; staged flag rollout.
+
+### P2 — Skills and MCP expansion (weeks 5–9)
+
+Goal: make the Studio actually useful beyond listing QA.
+
+| #   | Deliverable                                                                                                                                                                                   | Notes                                                           |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| C1  | Finish **planned skills**: `product_shot.prepare`, `category.map_proposal`, `supplier.intel_proposal` (deterministic evidence first, optional model, review gates, versioned artifacts)       | Each skill ships with evidence sources, fixtures/evals, copy */ |
+| C2  | **Blocked-skill decisions**: `customer.reply_draft`, `logistics.followup` — resolve source data ownership, privacy, write gates; either build or keep blocked with documented reasons         | User decision on data sources                                   |
+| C3  | **External MCP first connection**: allowlisted provider, schema pinning, egress/timeout/quota policy, credential ownership, live acceptance; admin approval workflow exercised                | Requires explicit approval + provider decision                  |
+| C4  | **Skill authoring harness**: manifest/versioning, fixture-driven evals, dry-run, per-workspace enablement (ties to A1), rollback                                                              | Makes skill sprawl governable                                   |
+| C5  | **Connector expansion**: ads/marketing connector design (Ads-Copilot direction), analytics read path, and the SHOPLINE write gate plan (first real write still a separate human confirmation) | Scope depends on user priorities                                |
+
+**Gate for P2:** each skill/MCP addition has: capability-registry state change only with recorded
+verification, tests including negative/grounding cases, and a documented cost/risk note.
+
+### P3 — Commerce orchestration OS (weeks 9–14)
+
+Goal: the "workbench" ambition — orchestrated tasks, not just chat.
+
+| #   | Deliverable                                                                                                                                       | Notes                           |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| D1  | **Orchestration inbox**: tasks/approvals queue, runbooks/templates, scheduled/triggered Studio runs (Queue/worker), retry/idempotency, SLA states | Reuses queue + audit primitives |
+| D2  | **Cross-tool workflows**: e.g. audit → gap review → copy proposals → dispatch drafts → reviewer handoff; visible DAG/trace and approvals          | Deterministic steps first       |
+| D3  | **Unified home**: workspace overview → inbox → Studio; alerts for budget, stale runs, quality regressions                                         | Replace placeholder overview    |
+| D4  | **Multi-workspace administration**: roles/permissions, audit analytics, retention/export, quotas, cost allocation                                 | Admin/owner surfaces + tests    |
+
+**Gate for P3:** end-to-end orchestration acceptance with fake provider + preview connector; security
+review of cross-tenant flows; load/soak test.
+
+### P4 — Production maturity (ongoing from P1)
+
+- Feature-flag service and staged rollout policy; backup/restore drills; incident runbooks; secrets
+  rotation; dependency/security reviews; model eval harness with live-provider golden sets; cost
+  dashboards; SOC-style security review/pen test before any paid pilot expansion.
+
+## Short-term sequence (next 10 tasks)
+
+1. **A1** admin Studio settings API + UI (in progress in a separate worktree).
+2. A4 authenticated flags-on acceptance in CI (fixture workspace).
+3. A2 production activation runbook automation + preview dry run (needs DB access decision).
+4. A5 observability minimum (turn metrics + budget alert).
+5. B1 attachment upload end-to-end.
+6. B2 copy-proposal apply handoff + export.
+7. A3 live model onboarding (credential/budget decision).
+8. B4 hosted MCP quotas/rotation.
+9. C1 first planned skill (`product_shot.prepare` or `category.map_proposal`, whichever has cleanest evidence sources).
+10. C3 external MCP first provider (decision + approval flow).
+
+Each task ships as its own branch/PR with the repository gates (format, forbidden-runtime,
+typecheck, `pnpm test`, integration, production build, Playwright) and a capability-registry update
+only when its verification is recorded.
+
+## Decisions required from the user (blocking P0)
+
+1. **Pilot scope**: which workspace(s) and operator/reviewer accounts get Studio first (Opak pilot?).
+2. **Provider + budget**: reviewed provider/model and the monthly/run ceilings; provision the
+   provider credential in the deployment secret store.
+3. **Production database window**: approval to apply additive migrations `0054`–`0056` to the
+   production Neon database (required before any flag-on activation) and the rollback plan.
+4. **First external MCP / connector**: provider, credential ownership, and whether ads/marketing
+   data is the next business priority.
+5. **Retention/export policy**: how long Studio threads/outputs are kept, who can export, and
+   whether a signed export receipt is required.
+6. **Write gates**: confirm the sequence for the first SHOPLINE production write (still separate
+   explicit confirmation; Studio only deep-links to review/approval screens).
+
+## Success metrics (pilot)
+
+- **Activation**: pilot workspace enabled; ≥3 operators/reviewers with recorded turns/week.
+- **Quality**: ≥95% of model claims resolve to evidence; dropped-field rate visible; <1% turns
+  cancelled by deadline/step budgets.
+- **Trust**: zero canonical writes without explicit confirmation; `audit:verify` 0 missing/0 foreign
+  on every release; every output sign-off/export reproducible from digest.
+- **Cost/reliability**: spend per turn within reviewed ceiling; no stuck budget holds; run success
+  rate ≥99% for deterministic flows; p95 turn latency within 45 s bound.
+- **Operator value**: copy-proposal accept/edit rate, dispatch completion rate, audit export usage.
+
+## Risks and mitigations
+
+- **Model hallucination/ungrounded claims** → deterministic-first, evidence refs, drop/report policy,
+  evals with golden fixtures, visible trace.
+- **Cost/latency** → reviewed pricing registry, budget holds, 45 s bound, optional streaming with
+  honest progress.
+- **Tenant/RLS regressions** → `forWorkspace` rule, forced RLS, foreign-id tests, `audit:verify`.
+- **Skill sprawl / prompt drift** → versioned skills, prompt-version pins, authoring harness,
+  registry states tied to recorded verification.
+- **MCP/external security** → disabled by default, allowlists, schema pinning, hashed tokens,
+  content-free logs, approval audit.
+- **Ops burden** → runbooks, observability, automated acceptance, staged flags, rollback drills.
+
+## Working agreement
+
+- Branch `claude/<topic>`/`codex/<topic>`, PR into `main`, CI on Node 24 green before merge; no
+  direct pushes to `main`.
+- Production migrations, activation, live provider/MCP calls and SHOPLINE writes stay behind explicit
+  user approval and are recorded in `docs/runbooks/`.
+- The runbook (`docs/runbooks/conversation-studio.md`) remains the operating source of truth; every
+  activation-affecting change updates it in the same PR.
