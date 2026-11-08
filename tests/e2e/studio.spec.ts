@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import {
+  prepareBulkImportFixture,
+  signInBulkImportOperator,
+} from "./real-stack-fixture.js";
+
 /**
  * Conversation Studio end-to-end expectations (plan Task 7).
  *
@@ -22,10 +27,11 @@ import { expect, test, type Page } from "@playwright/test";
  * flags-off tests need a real authenticated session. The skipped tests are
  * therefore recorded, not faked.
  *
- * The stack fixture is imported lazily, inside the tests that need a database.
- * A checkout without the root `postgres` link cannot even load the fixture
- * module, which would turn "tests are skipped here" into a collection error for
- * every spec that imports it eagerly; skipping must stay a clean skip.
+ * The real-stack fixture is imported statically, like every other real-stack
+ * spec. A lazy `await import("./real-stack-fixture.js")` is resolved by Node's
+ * strip-only TypeScript loader rather than Playwright's transform in CI, where
+ * it fails on the fixture's parameter properties; the lazy import was the only
+ * thing keeping the flags-off test from running against the real stack.
  */
 
 test.describe.configure({ mode: "serial" });
@@ -34,8 +40,6 @@ const realStack = process.env.PLAYWRIGHT_E2E === "1";
 const studioStack = process.env.STUDIO_E2E === "1";
 
 async function signIn(page: Page) {
-  const { prepareBulkImportFixture, signInBulkImportOperator } =
-    await import("./real-stack-fixture.js");
   const fixture = await prepareBulkImportFixture();
   await signInBulkImportOperator(page, fixture, false);
   return fixture;
