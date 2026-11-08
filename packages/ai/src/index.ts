@@ -181,3 +181,33 @@ export {
   validateWineGenerationRequest,
   wineCandidateIssues,
 } from "./wine-enrichment-content-validation.js";
+export {
+  createStudioModel,
+  FakeStudioModel,
+  fakeStudioUsage,
+  studioAnalysisSchema,
+  studioPlanSchema,
+  studioToolRequestSchema,
+} from "./studio-model.js";
+export type {
+  StudioAnalysis,
+  StudioComposeInput,
+  StudioModel,
+  StudioModelConfig,
+  StudioPlan,
+  StudioPlanInput,
+  StudioToolRequest,
+} from "./studio-model.js";
+export {
+  STUDIO_HONESTY_RULE,
+  STUDIO_NO_WRITE_RULE,
+  STUDIO_UNTRUSTED_RULE,
+  studioComposerMessages,
+  studioPlannerMessages,
+} from "./studio-prompts.js";
+export type {
+  StudioComposerPromptInput,
+  StudioPlannerPromptInput,
+  StudioPromptTool,
+  StudioSkillPromptSummary,
+} from "./studio-prompts.js";
