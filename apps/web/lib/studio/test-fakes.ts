@@ -4,6 +4,8 @@ import type {
   ReviewableListing,
 } from "@wukong/core";
 import type {
+  StudioApiToken,
+  StudioMcpCall,
   StudioMessage,
   StudioRun,
   StudioRunEvent,
@@ -41,6 +43,18 @@ export type FakeBudgetReservation = {
   reservedUsd: string;
   settledUsd: string | null;
   state: "reserved" | "settled" | "released" | "uncertain";
+};
+
+/** One seeded workspace membership, as the hosted MCP server resolves it. */
+export type FakeMembership = {
+  userId: string;
+  role: "viewer" | "operator" | "reviewer" | "admin" | "owner";
+};
+
+/** A token row plus the sha256 bearer secret that resolves to it. */
+export type FakeTokenLookup = {
+  hash: string;
+  token: StudioApiToken;
 };
 
 const FIXED_NOW = new Date("2026-11-08T10:00:00.000Z");
@@ -230,6 +244,10 @@ export type FakeStudioOptions = {
   quality?: Partial<QualitySummary>;
   pipelineRuns?: PipelineRun[];
   counts?: Record<string, number>;
+  /** Current workspace memberships; defaults to one admin (`actor_ops`). */
+  memberships?: FakeMembership[];
+  apiTokens?: StudioApiToken[];
+  mcpCalls?: StudioMcpCall[];
   /** Make the assistant message append fail, to exercise the failure path. */
   failOnAssistantAppend?: boolean;
 };
@@ -243,6 +261,9 @@ export type FakeStudio = {
     runs: StudioRun[];
     runEvents: StudioRunEvent[];
     budgets: FakeBudgetReservation[];
+    memberships: FakeMembership[];
+    apiTokens: StudioApiToken[];
+    mcpCalls: StudioMcpCall[];
     audits: DomainAuditEvent[];
     writes: string[];
     workspaceCalls: string[];
@@ -346,6 +367,31 @@ export function fakeMessage(input: {
   };
 }
 
+export function fakeApiToken(
+  input: {
+    workspaceId?: string;
+    label?: string;
+    prefix?: string;
+    scopes?: string[];
+    createdBy?: string;
+    revokedAt?: Date | null;
+  } = {},
+): StudioApiToken {
+  const createdAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+  return {
+    id: uuid("token"),
+    workspaceId: input.workspaceId ?? "ws_test",
+    label: input.label ?? "MCP token",
+    prefix: input.prefix ?? "abcdefghijkl",
+    scopes: [...(input.scopes ?? ["read", "propose"])],
+    createdBy: input.createdBy ?? "actor_ops",
+    revokedAt: input.revokedAt ?? null,
+    lastUsedAt: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
 /**
  * Build the fake repository bundle. Only the methods the Studio service uses
  * are implemented; everything else stays absent because the service may not
@@ -365,6 +411,9 @@ export function createFakeStudio(
     runs: [...(options.runs ?? [])],
     runEvents: [...(options.runEvents ?? [])],
     budgets: [],
+    memberships: [...(options.memberships ?? [{ userId: "actor_ops", role: "admin" }])],
+    apiTokens: [...(options.apiTokens ?? [])],
+    mcpCalls: [...(options.mcpCalls ?? [])],
     audits: [],
     writes: [],
     workspaceCalls: [],
@@ -702,6 +751,108 @@ export function createFakeStudio(
               ),
           ),
       },
+      apiTokens: {
+        create: async (input: {
+          label: string;
+          tokenHash: string;
+          prefix: string;
+          scopes: readonly string[];
+          createdBy: string;
+        }) => {
+          state.writes.push("apiTokens.create");
+          const createdAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+          const token: StudioApiToken = {
+            id: uuid("token"),
+            workspaceId: settings.workspaceId,
+            label: input.label,
+            prefix: input.prefix,
+            scopes: [...input.scopes],
+            createdBy: input.createdBy,
+            revokedAt: null,
+            lastUsedAt: null,
+            createdAt,
+            updatedAt: createdAt,
+          };
+          state.apiTokens.push(token);
+          return token;
+        },
+        findByHash: async () => null,
+        revoke: async (id: string) => {
+          state.writes.push("apiTokens.revoke");
+          const token = state.apiTokens.find(
+            (entry) => entry.id === id && entry.revokedAt === null,
+          );
+          if (!token) return false;
+          token.revokedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+          token.updatedAt = token.revokedAt;
+          return true;
+        },
+        touch: async (id: string) => {
+          state.writes.push("apiTokens.touch");
+          const token = state.apiTokens.find((entry) => entry.id === id);
+          if (token) token.lastUsedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+        },
+        list: async (input: { limit?: number } = {}) => {
+          state.writes.push("apiTokens.list");
+          const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+          return state.apiTokens.slice(0, limit);
+        },
+      },
+      mcpCalls: {
+        append: async (input: {
+          runId?: string | null;
+          connectionId?: string | null;
+          toolName: string;
+          requestDigest: string;
+          responseDigest?: string | null;
+          status: StudioMcpCall["status"];
+          errorCode?: string | null;
+          latencyMs?: number | null;
+          caller: StudioMcpCall["caller"];
+        }) => {
+          state.writes.push("mcpCalls.append");
+          const call: StudioMcpCall = {
+            id: uuid("mcpcall"),
+            workspaceId: settings.workspaceId,
+            runId: input.runId ?? null,
+            connectionId: input.connectionId ?? null,
+            toolName: input.toolName,
+            requestDigest: input.requestDigest,
+            responseDigest: input.responseDigest ?? null,
+            status: input.status,
+            errorCode: input.errorCode ?? null,
+            latencyMs: input.latencyMs ?? null,
+            caller: input.caller,
+            createdAt: new Date(FIXED_NOW.getTime() + sequenceCounter),
+          };
+          state.mcpCalls.push(call);
+          return call;
+        },
+        list: async (input: { limit?: number } = {}) => {
+          state.writes.push("mcpCalls.list");
+          const limit = Math.min(Math.max(input.limit ?? 100, 1), 200);
+          return state.mcpCalls.slice(0, limit);
+        },
+      },
+    },
+    memberships: {
+      findActiveByUserId: async (
+        userId: string,
+        requestedWorkspaceId?: string,
+      ) => {
+        state.writes.push("memberships.findActiveByUserId");
+        if (
+          requestedWorkspaceId !== undefined &&
+          requestedWorkspaceId !== settings.workspaceId
+        )
+          return null;
+        const membership = state.memberships.find(
+          (entry) => entry.userId === userId,
+        );
+        return membership
+          ? { userId: membership.userId, role: membership.role }
+          : null;
+      },
     },
     audit: {
       write: async (event: DomainAuditEvent) => {
@@ -781,10 +932,11 @@ export function createFakeStudio(
   };
 }
 
-/** A `getDatabase` fake that records workspace-scoped calls. */
+/** A `getDatabase` fake that records workspace-scoped calls and resolves tokens. */
 export function fakeGetDatabase(
   repos: WorkspaceRepositories,
   workspaceCalls: string[] = [],
+  tokens: readonly FakeTokenLookup[] = [],
 ) {
   return () =>
     ({
@@ -794,6 +946,19 @@ export function fakeGetDatabase(
       ) => {
         workspaceCalls.push(workspaceId);
         return work(repos);
+      },
+      lookupStudioApiToken: async (tokenHash: string) => {
+        const found = tokens.find((entry) => entry.hash === tokenHash);
+        if (!found) return null;
+        const { token } = found;
+        return {
+          workspaceId: token.workspaceId,
+          tokenId: token.id,
+          createdBy: token.createdBy,
+          scopes: [...token.scopes],
+          revokedAt: token.revokedAt,
+          prefix: token.prefix,
+        };
       },
     }) as never;
 }

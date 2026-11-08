@@ -110,10 +110,10 @@ const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
     label: "Wukong-hosted MCP server",
     labelZh: "Wukong 託管 MCP 伺服器",
     description:
-      "Hosted MCP tokens and tool exposure are not implemented. No external caller can reach workspace records yet.",
+      "Verified locally: a stateless JSON-RPC MCP endpoint serves reviewed read/propose tools to a scoped workspace token, gated by the feature flags and the creator's current role. Dispatch and every write path are never exposed, and external MCP connections stay blocked.",
     descriptionZh:
-      "託管 MCP 權杖及工具曝光尚未實作；外部呼叫者目前無法存取工作區記錄。",
-    state: "planned",
+      "已於本機驗證：無狀態 JSON-RPC MCP 端點以工作區範圍權杖提供已審核的讀取／建議工具，受功能旗標及建立者現行角色限制。不提供派送或任何寫入路徑，外部 MCP 連線仍維持封鎖。",
+    state: "pilot",
   },
   {
     id: "external-mcp-connections",

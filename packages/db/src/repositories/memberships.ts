@@ -42,6 +42,20 @@ export class MembershipGuardViolation extends Error {
 }
 
 export type MembershipRepository = {
+  /**
+   * Current role for one user in this workspace. Used by the hosted MCP server
+   * on every call: a token's acting role must follow the creator's *current*
+   * membership, so a removed or demoted creator fails closed. `workspaceId`,
+   * when supplied, must match the repository's scoped workspace (a caller can
+   * never widen it); anything else resolves to null.
+   */
+  findActiveByUserId(
+    userId: string,
+    workspaceId?: string,
+  ): Promise<{
+    userId: string;
+    role: AssignableWorkspaceRole | "owner";
+  } | null>;
   listForWorkspace(): Promise<WorkspaceMember[]>;
   listInvites(): Promise<WorkspaceInvite[]>;
   createInvite(
@@ -124,6 +138,28 @@ export function createMembershipRepository(
   scope: WorkspaceScope,
 ): MembershipRepository {
   return {
+    async findActiveByUserId(userId, requestedWorkspaceId) {
+      scope.assertOpen();
+      if (requestedWorkspaceId !== undefined && requestedWorkspaceId !== workspaceId)
+        return null;
+      const [row] = await transaction
+        .select({ userId: memberships.userId, role: memberships.role })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.workspaceId, workspaceId),
+            eq(memberships.userId, userId),
+          ),
+        )
+        .limit(1);
+      return row
+        ? {
+            userId: row.userId,
+            role: row.role as AssignableWorkspaceRole | "owner",
+          }
+        : null;
+    },
+
     async listForWorkspace() {
       scope.assertOpen();
       const rows = await transaction
