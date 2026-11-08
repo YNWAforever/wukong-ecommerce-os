@@ -209,6 +209,16 @@ $env:STUDIO_BROWSER_ACCEPTANCE="1"
 pnpm exec playwright test tests/e2e/studio-browser-acceptance.spec.ts
 ```
 
+The same authenticated flow now runs in CI as the `Studio flags-on browser acceptance`
+step (after "Install Chromium", before the Opak browser steps, on its own port
+49300; 49217/49218/49219 stay with the existing modes). The step seeds the job's
+already-migrated `wukong` database with
+`node tests/e2e/studio-browser-acceptance-seed.mjs` (which now falls back to
+`DATABASE_ADMIN_URL`), starts the production build on `127.0.0.1:49300` with
+`CONVERSATION_STUDIO_ENABLED=true`, waits for `/signin`, and runs the gated spec
+with `STUDIO_BROWSER_ACCEPTANCE=1`. The AI flag and every MCP flag stay unset,
+so no model provider or MCP server is called; the server is killed on exit.
+
 Notes learned from the run:
 
 - Sign-in eligibility is not just a user + credential: `auth_get_eligible_user` also requires a
