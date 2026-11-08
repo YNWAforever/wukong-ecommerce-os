@@ -463,7 +463,35 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
       settings: {
         get: async () => {
           state.writes.push("settings.get");
-          return settings;
+          return state.settings;
+        },
+      },
+      workspaceSettings: {
+        get: async () => {
+          state.writes.push("workspaceSettings.get");
+          return state.settings;
+        },
+        update: async (
+          input: {
+            enabled: boolean;
+            allowedSkills: readonly string[];
+            monthlyBudgetUsd: string | null;
+            runCeilingUsd: string | null;
+            retentionDays: number | null;
+            defaultHome: boolean;
+            ai: StudioSettings["ai"];
+          },
+          actorId: string,
+        ) => {
+          state.writes.push("workspaceSettings.update");
+          state.settings = {
+            ...state.settings,
+            ...input,
+            allowedSkills: [...input.allowedSkills],
+            updatedBy: actorId,
+            updatedAt: new Date(FIXED_NOW.getTime() + sequenceCounter),
+          };
+          return state.settings;
         },
       },
       threads: {

@@ -1,4 +1,4 @@
-﻿import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -130,10 +130,11 @@ describe("/studio/settings gate", () => {
 });
 
 describe("/studio/settings content", () => {
-  it("renders the admin registry surface with honest disabled states", async () => {
+  it("renders the admin settings surface with honest states", async () => {
     const html = await render();
     expect(html).toContain("Studio settings");
-    expect(html).toContain("Workspace Studio state");
+    expect(html).toContain("Workspace settings");
+    expect(html).toContain("Save settings");
     expect(html).toContain("API tokens");
     expect(html).toContain("No tokens yet.");
     expect(html).toContain("External MCP connections");
