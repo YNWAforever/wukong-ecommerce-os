@@ -747,11 +747,11 @@ describe("studio merchant-audit evidence (plan Task 11)", () => {
 });
 describe("turn budgets in the evidence engine", () => {
   it("aborts evidence assembly when the wall-clock deadline passes", async () => {
-    let now = 0;
+    let tick = 0;
     const limits = createStudioTurnLimits({
       now: () => {
-        now += 5_000;
-        return now;
+        tick += 5_000;
+        return tick;
       },
       deadlineMs: 2_000,
     });
