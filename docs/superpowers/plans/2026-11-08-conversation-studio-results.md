@@ -127,3 +127,24 @@ Additional deviations from round 3:
 - No live model/provider call or external MCP transport call was made in any verification; the proposer and external client are exercised only through injected fakes.
 - The admin settings page reads workspace settings up to three times per render (gate + panel data); acceptable for an admin page, noted for the P6 performance pass.
 - Sign-off is a Studio artifact status only, not a SHOPLINE/listing approval and not a publish action.
+
+## Round 4 additions (Tasks 10 and 11, runbook)
+
+| Plan task | Commit | Delivered | Verification |
+| --- | --- | --- | --- |
+| P4 Task 10 — confirmed listing-draft dispatch | `45a792e3` | `listing.draft_from_sources` pilot v1.1.0; listing intake extracted into `apps/web/lib/listing-intake-service.ts` with `/api/listings` delegating unchanged; `POST /api/studio/dispatch/listing-draft` (operator+, Studio gates, visible thread/run, `confirmed:true`, owned assets only, audit + dispatch trace, honest `queueState`); deterministic draft turns that prepare a card (`reply.dispatch`) with asset validation and `needs_input`/partial states; two-step confirmation dispatch card with run-status polling that stops on terminal state/unmount | Scoped suite green; existing intake routes (4) + replay tests (11) + sharp-bundling guard pass; full web suite 2730 tests |
+| P4 Task 11 — merchant/SEO audit report | `423fbbb6` | `merchant.audit` pilot v1.1.0; deterministic report from listing counts, quality projection and export attempts (unread = null/missing, never zero); `createReportOutput()` versioned artifact with canonical digest/readback/audit; `GET /api/studio/outputs/[id]/export?digest=…` canonical `sorted-json-v1` packet with `payloadSha256`, saved/signed-off only, 409 on changed preview/content, foreign 404; report card with tables, evidence, limitations and export link | Scoped suite green; full web suite green; typechecks green |
+| Operations | `b8e1e453` | `docs/runbooks/conversation-studio.md`: enablement flags + workspace SQL, model configuration and reviewed-budget admission, hosted MCP token lifecycle, external MCP disabled-by-default procedure, operating/replay rules, deploy/rollback order, verification commands, known limits and escalation | — |
+
+Verification snapshot after round 4: `apps/web` **278 files / 2730 tests**; `packages/core` 326; `packages/ai` 444; `packages/db` 196; Studio integration **20/20** (Docker Postgres restarted for the run; the engine stops between sessions and must be started with `docker compose up -d postgres` before integration suites); `apps/web` and `packages/core` typecheck clean; sharp-bundling guard 0 failures (3 skipped without a `.next` build).
+
+Round 4 deviations / open decisions:
+- Attachment upload UI is still absent: the Studio accepts asset ids from the send contract or UUIDs pinned in the message text. A real upload flow remains a separate task.
+- Dispatch confirmation is an inline two-step panel (not a modal dialog); the dispatch body adds optional `runId` and the response adds `replayed` (additive).
+- `listing.create_draft` is deliberately not exposed as a tool executor: canonical writes only happen through the confirmed dispatch route.
+- The extracted intake service duplicates a small dispatch-outbox loop rather than editing the existing helper (out of that task's file scope); behaviour matches the original and can be unified later.
+- Merchant audit v1 has a null period with an honest limitation; export is canonical JSON only (no PDF).
+- `merchant.audit` required sources were narrowed to catalog/quality/export_attempt because no canonical SHOPLINE-projection read exists; the report does not claim one.
+- Two commits by `studio-ui-builder` were reported as "pushed" in its closing note but no `git push` was performed by any session; the branch is local-only.
+
+Remaining plan work: P6 Task 14 only (explicit deadline/step bounds, flags-on browser acceptance or recorded BLOCKED, capability-registry state updates, final results record, pre-merge checks: frozen-lockfile validation, `CREATEROLE`/role review for migration 0055, Postgres-backed integration rerun, and user-visible review).
