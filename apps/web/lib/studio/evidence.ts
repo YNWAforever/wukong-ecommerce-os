@@ -13,7 +13,7 @@ import {
 } from "./types.js";
 
 /**
- * Deterministic evidence assembly (plan Task 5, spec 禮3.3).
+ * Deterministic evidence assembly (plan Task 5, spec section 3.3).
  *
  * The pack is built from canonical records only. A tool that cannot answer
  * marks the source `missing`/`unsupported` with a limitation; nothing here

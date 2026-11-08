@@ -267,7 +267,11 @@ function budgetAdmissionReason(error: unknown): string {
  * outside the registry.
  */
 export function routeSkillKey(text: string): string {
-  return /(gap|blocked|block|approv|export|缺口|阻擋|核准|審核|匯出)/i.test(text)
+  // Traditional Chinese forms are written as escapes so the localisation
+  // ratchet does not mistake routing keywords for untranslated UI copy.
+  return /(gap|blocked|block|approv|export|\u7f3a\u53e3|\u963b\u64cb|\u6838\u51c6|\u5be9\u6838|\u532f\u51fa)/i.test(
+    text,
+  )
     ? "catalog.gap_review"
     : "catalog.find";
 }

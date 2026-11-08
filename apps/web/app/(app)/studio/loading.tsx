@@ -1,23 +1,12 @@
-import styles from "../../../components/studio.module.css";
+import { RouteLoading } from "../../../components/route-loading";
 
 /**
  * `/studio` route loading state.
  *
- * Kept intentionally bilateral rather than locale-resolved: a loading
- * boundary may render before any cookie/session read settles, so it must not
- * depend on request-scoped APIs. Text only, no spinner animation, so
- * `prefers-reduced-motion` users see nothing moving.
+ * Delegates to the shared locale-aware loading component: a loading boundary
+ * may render before the Studio shell's copy bundle is available, so it must
+ * not duplicate strings that ignore the reader's language choice.
  */
 export default function StudioLoading() {
-  return (
-    <div
-      className={styles["studio-state-page"]}
-      role="status"
-      aria-live="polite"
-    >
-      <p className={styles["studio-state-body"]}>
-        正在載入工作室… Loading Studio…
-      </p>
-    </div>
-  );
+  return <RouteLoading />;
 }

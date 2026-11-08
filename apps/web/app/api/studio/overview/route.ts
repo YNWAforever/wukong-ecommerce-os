@@ -12,7 +12,7 @@ import { createStudioService } from "../../../../lib/studio/turn-service";
  *
  * Reads canonical repositories only: listing counts, the quality projection
  * and recent pipeline runs. It never reserves budget and never calls a model
- * (spec 禮3.11), so the counts are as free as any other read.
+ * (spec section 3.11), so the counts are as free as any other read.
  */
 export function createStudioOverviewHandler(deps: StudioRouteDeps) {
   return async (_request: Request) =>

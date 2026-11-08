@@ -1,29 +1,33 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 
 import styles from "../../../components/studio.module.css";
+import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
+import { studioCopy } from "../../../lib/studio-copy";
 
 /**
  * Not-found boundary for `/studio`.
  *
- * Reached when the layout flags the workspace out (`notFound()`) and, later,
- * when a thread or output id is foreign or missing -- ids reveal nothing, so
- * the answer is always 404, never 403. The copy states the two honest causes
- * (page missing, Studio not enabled) and points back to the Workbench, because
- * the Studio nav item is hidden in either case.
+ * Reached when the layout flags the workspace out (`notFound()`) and when a
+ * thread or output id is foreign or missing - ids reveal nothing, so the
+ * answer is always 404, never 403. The copy states the honest causes and
+ * points back to the Workbench, because the Studio nav item is hidden when
+ * Studio is not enabled for the workspace.
  */
-export default function StudioNotFound() {
+export default async function StudioNotFound() {
+  const cookieStore = await cookies();
+  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE_NAME)?.value);
   return (
     <div className={styles["studio-state-page"]}>
       <p className={styles["studio-eyebrow"]}>STUDIO · 404</p>
       <h1 className={styles["studio-state-title"]}>
-        找不到工作室頁面 Studio page not found
+        {studioCopy(locale, "studio.notFound.title")}
       </h1>
       <p className={styles["studio-state-body"]}>
-        此頁面不存在，或工作室未為此工作區啟用。 This page does not exist, or
-        Studio is not enabled for this workspace.
+        {studioCopy(locale, "studio.notFound.body")}
       </p>
       <Link className={styles["studio-state-link"]} href="/dashboard">
-        返回工作台 Return to Workbench
+        {studioCopy(locale, "studio.notFound.back")}
       </Link>
     </div>
   );
