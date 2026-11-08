@@ -53,6 +53,12 @@ import {
 } from "./compose-deterministic";
 import { buildEvidencePack } from "./evidence";
 import {
+  budgetAlertEvent,
+  budgetAlertLevel,
+  emitStudioEvent,
+  turnMetricEvent,
+} from "./observability";
+import {
   createCopyProposalOutput,
   createReportOutput,
   type CopyProposalPayload,
@@ -401,6 +407,32 @@ export function createStudioService(deps: StudioServiceDeps) {
   const database = (): StudioDatabase => deps.getDatabase();
   const environment = (): NodeJS.ProcessEnv => deps.env ?? process.env;
   const clock = (): Date => deps.now?.() ?? new Date();
+  const monotonicNow = (): number =>
+    (deps.monotonicNow ?? (() => Date.now()))();
+
+  /**
+   * Emit workspace-budget utilisation after a turn. The cap
+   * (`monthlyBudgetUsd`) is the committed-USD admission cap, so this is an
+   * alert on how close the workspace is to that cap, not a calendar reset.
+   * Observability must never change a turn's outcome.
+   */
+  async function emitBudgetAlert(
+    workspaceId: string,
+    settings: StudioSettings,
+  ): Promise<void> {
+    const budgetUsd = settings.monthlyBudgetUsd;
+    if (!budgetUsd) return;
+    try {
+      const committedUsd = await database().forWorkspace(workspaceId, (repos) =>
+        repos.studio.budget.committedUsd(),
+      );
+      const level = budgetAlertLevel(committedUsd, budgetUsd);
+      if (level)
+        emitStudioEvent(budgetAlertEvent({ committedUsd, budgetUsd, level }));
+    } catch {
+      // Observability is best effort; the turn result already stands.
+    }
+  }
 
   /** Replay a client message id that already produced a run: never re-run it. */
   async function replayTurn(
@@ -897,6 +929,7 @@ export function createStudioService(deps: StudioServiceDeps) {
     body: SendMessageBody;
     now: Date;
     limits: StudioTurnLimits;
+    startedAt: number;
   }): Promise<StudioSendResult> {
     const packResult = await database().forWorkspace(
       input.workspaceId,
@@ -1078,6 +1111,21 @@ export function createStudioService(deps: StudioServiceDeps) {
       },
     );
 
+    emitStudioEvent(
+      turnMetricEvent({
+        status: reply.status,
+        durationMs: monotonicNow() - input.startedAt,
+        toolSteps: input.limits.toolSteps,
+        detailReads: input.limits.detailReads,
+        modelCalls: input.limits.modelCalls,
+        traceSteps: trace.length,
+        outputCount: reply.outputs.length,
+        limitationCount: reply.limitations.length,
+        settledUsd,
+      }),
+    );
+    await emitBudgetAlert(input.workspaceId, input.settings);
+
     return {
       threadId: input.threadId,
       messageId: assistant.id,
@@ -1165,6 +1213,7 @@ export function createStudioService(deps: StudioServiceDeps) {
       if (!UUID.safeParse(threadId).success) throw studioNotFound();
       const workspaceId = session.workspaceId;
       const now = clock();
+      const startedAt = monotonicNow();
       // Hard per-turn budgets (plan Task 14): 45 s wall clock, six first-class
       // tool steps, a bounded per-listing detail fan-out and at most two model
       // calls. Exceeding one is persisted as a failed run with a distinct code.
@@ -1280,6 +1329,7 @@ export function createStudioService(deps: StudioServiceDeps) {
           body,
           now,
           limits,
+          startedAt,
         });
       } catch (error) {
         // A turn that already started running must never disappear silently:
@@ -1323,6 +1373,21 @@ export function createStudioService(deps: StudioServiceDeps) {
             }),
           );
         }
+        emitStudioEvent(
+          turnMetricEvent({
+            status: "failed",
+            durationMs: monotonicNow() - startedAt,
+            toolSteps: limits.toolSteps,
+            detailReads: limits.detailReads,
+            modelCalls: limits.modelCalls,
+            traceSteps: 0,
+            outputCount: 0,
+            limitationCount: 0,
+            settledUsd: null,
+            errorCode,
+          }),
+        );
+        await emitBudgetAlert(workspaceId, settings);
         if (limitError)
           throw new ApiError(
             limitError instanceof StudioTurnDeadlineError ? 503 : 422,

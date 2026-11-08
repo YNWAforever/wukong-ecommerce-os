@@ -268,6 +268,8 @@ export type FakeStudioOptions = {
   mcpConnections?: StudioMcpConnection[];
   outputs?: StudioOutput[];
   outputVersions?: StudioOutputVersion[];
+  /** Pre-existing budget reservations (e.g. committed spend for alert tests). */
+  budgets?: FakeBudgetReservation[];
   /** Make the assistant message append fail, to exercise the failure path. */
   failOnAssistantAppend?: boolean;
 };
@@ -431,7 +433,7 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
     messages: [...(options.messages ?? [])],
     runs: [...(options.runs ?? [])],
     runEvents: [...(options.runEvents ?? [])],
-    budgets: [],
+    budgets: [...(options.budgets ?? [])],
     memberships: [
       ...(options.memberships ?? [{ userId: "actor_ops", role: "admin" }]),
     ],
