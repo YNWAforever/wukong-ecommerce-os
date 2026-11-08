@@ -509,8 +509,65 @@ describe("studio deterministic turns", () => {
     );
   });
 
-  it("answers from records, persists the turn and records ordered tool events", async () => {
-    const { service, fake } = harness({ options: populatedOptions() });
+  it("persists a deterministic merchant audit artifact and returns its output ref", async () => {
+    const modelFactory = vi.fn(() => {
+      throw new Error("the audit turn must not build a model");
+    });
+    const { service, fake } = harness({
+      options: {
+        ...populatedOptions(),
+        counts: { approved: 2, in_review: 1 },
+        exportAttempts: [
+          {
+            id: "attempt-1",
+            artifactStatus: "ready",
+            rowCount: 2,
+            createdAt: NOW,
+          },
+        ],
+      },
+      createModel: modelFactory as never,
+    });
+    const threadId = await openThread(service);
+
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-audit",
+        text: "Audit this workspace",
+        skillKey: "merchant.audit",
+      }),
+    );
+
+    expect(result.reply.skillKey).toBe("merchant.audit");
+    expect(result.reply.skillVersion).toBe("1.1.0");
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.outputs).toHaveLength(1);
+    expect(result.reply.dispatch).toBeNull();
+    expect(modelFactory).not.toHaveBeenCalled();
+
+    const output = fake.state.outputs[0];
+    expect(output).toMatchObject({
+      kind: "merchant_audit",
+      status: "draft",
+      currentVersion: 1,
+      threadId,
+    });
+    expect(fake.state.outputVersions[0]?.contentDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(fake.state.outputVersions[0]?.payload).toMatchObject({
+      schemaVersion: "wukong-merchant-audit/v1",
+      listings: expect.arrayContaining([
+        { status: "approved", count: 2 },
+        { status: "in_review", count: 1 },
+      ]),
+    });
+    expect(fake.state.audits.map((event) => event.action)).toContain(
+      "studio.output.proposed",
+    );
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+  });
+
+  it("answers from records, persists the turn and records ordered tool events", async () => {    const { service, fake } = harness({ options: populatedOptions() });
     const threadId = await openThread(service);
     const result = await service.sendMessage(threadId, body());
 

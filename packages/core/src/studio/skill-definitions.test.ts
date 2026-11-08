@@ -14,7 +14,7 @@ const EXPECTED_STATUS = {
   "catalog.gap_review": "pilot",
   "listing.copy_proposal": "pilot",
   "listing.draft_from_sources": "pilot",
-  "merchant.audit": "planned",
+  "merchant.audit": "pilot",
   "product_shot.prepare": "planned",
   "category.map_proposal": "planned",
   "supplier.intel_proposal": "planned",
@@ -27,6 +27,7 @@ const EXECUTABLE_KEYS = [
   "catalog.gap_review",
   "listing.copy_proposal",
   "listing.draft_from_sources",
+  "merchant.audit",
 ];
 
 function parseDefinition(value: unknown): boolean {

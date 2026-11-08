@@ -2191,3 +2191,117 @@ article.studio-output .studio-output-body {
     align-items: flex-start;
   }
 }
+
+/* -- P4: merchant audit report card (plan Task 11) ------------------------ */
+
+.studio-report {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+}
+
+.studio-report[data-state="invalid"] {
+  background: #fdf0ee;
+  border-style: dashed;
+}
+
+.studio-report-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.studio-report-title {
+  margin: 0;
+  color: var(--navy);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.studio-report-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--stone);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.studio-report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.studio-report-section {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.studio-report-line {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.studio-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.studio-report-table th {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: start;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.studio-report-table td {
+  padding: 8px 10px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.studio-report-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .studio-report {
+    padding: 10px;
+  }
+
+  .studio-report-table th,
+  .studio-report-table td {
+    padding: 6px;
+  }
+}

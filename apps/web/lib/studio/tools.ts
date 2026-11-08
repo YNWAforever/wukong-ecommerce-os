@@ -74,6 +74,14 @@ export type ListingRunStatus = {
     | "superseded";
 };
 
+/** One recent export attempt, reduced to audit-safe fields (plan Task 11). */
+export type ExportAttemptEvidence = {
+  attemptId: string;
+  state: "pending" | "ready" | "failed" | "recorded";
+  rowCount: number;
+  createdAt: string;
+};
+
 /** Current copy snapshot for the reviewed listing version (proposal context). */
 export type ListingCopySnapshot = {
   listingId: string;
@@ -123,6 +131,10 @@ export type StudioReadDeps = {
     listingId: string,
     runId: string,
   ): Promise<ListingRunStatus | null>;
+  /** Workspace listing counts by status, for the audit report (Task 11). */
+  getListingCounts(): Promise<Record<string, number>>;
+  /** Recent export attempts, for the audit report (Task 11). */
+  getExportAttempts(limit: number): Promise<ExportAttemptEvidence[]>;
 };
 
 export type ToolRun = {

@@ -4,6 +4,7 @@ import { bulkFormGaps } from "@wukong/shopline";
 import { canonicalListingToGapsInput } from "../canonical-listing-gaps";
 import type {
   CatalogSearchHit,
+  ExportAttemptEvidence,
   JobEvidence,
   ListingEvidence,
   ListingGap,
@@ -219,6 +220,29 @@ export function buildStudioReadDeps(
       const operation = await repos.pipelineRuns.getOperation(runId);
       if (!operation || operation.listingId !== listingId) return null;
       return { state: operation.executionState };
+    },
+
+    async getListingCounts(): Promise<Record<string, number>> {
+      return { ...(await repos.listings.countByStatus()) };
+    },
+
+    async getExportAttempts(limit): Promise<ExportAttemptEvidence[]> {
+      const attempts = await repos.exportAttempts.listForWorkspace(
+        Math.min(Math.max(limit, 1), 20),
+      );
+      return attempts.map((attempt) => ({
+        attemptId: attempt.id,
+        state:
+          attempt.artifactStatus === "ready"
+            ? "ready"
+            : attempt.artifactStatus === "failed"
+              ? "failed"
+              : attempt.artifactStatus === "pending"
+                ? "pending"
+                : "recorded",
+        rowCount: attempt.rowCount,
+        createdAt: attempt.createdAt.toISOString(),
+      }));
     },
   };
 }

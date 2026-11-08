@@ -8,6 +8,7 @@ import {
 } from "./tools.js";
 import {
   coverageMap,
+  coverageRecord,
   translatedLine,
   type EvidenceCheck,
   type EvidenceCoverage,
@@ -16,6 +17,10 @@ import {
   type NeedsInput,
   type StudioTraceStep,
 } from "./types.js";
+import {
+  merchantAuditPayloadSchema,
+  type MerchantAuditPayload,
+} from "./report-payload.js";
 
 /**
  * Deterministic evidence assembly (plan Task 5, spec section 3.3).
@@ -446,6 +451,9 @@ function pushFollowUps(pack: EvidencePack, skillKey: string): void {
   } else if (skillKey === "listing.draft_from_sources") {
     pack.followUps.push(translatedLine("studio.followup.confirm_dispatch"));
     pack.followUps.push(translatedLine("studio.followup.open_jobs"));
+  } else if (skillKey === "merchant.audit") {
+    pack.followUps.push(translatedLine("studio.followup.review_gaps"));
+    pack.followUps.push(translatedLine("studio.followup.open_jobs"));
   } else {
     pack.followUps.push(translatedLine("studio.followup.list_attention"));
     pack.followUps.push(translatedLine("studio.followup.open_listing"));
@@ -735,6 +743,159 @@ async function buildCopyProposal(
   };
 }
 
+/**
+ * Merchant/SEO audit report evidence (plan Task 11).
+ *
+ * Composes the deterministic report payload from canonical reads only: listing
+ * counts by status, the quality projection and recent export attempts. It never
+ * calls a model and never estimates. A source that cannot be read is `missing`
+ * in coverage and `null` in the payload — never an empty table or a zero count
+ * that reads as "there are none".
+ */
+async function buildMerchantAudit(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  let listings: MerchantAuditPayload["listings"] = null;
+  try {
+    const counts = await input.deps.getListingCounts();
+    listings = Object.entries(counts)
+      .map(([status, count]) => ({ status, count }))
+      .sort((left, right) => left.status.localeCompare(right.status));
+    markCoverage(pack, "catalog", "present");
+    pushSource(
+      pack,
+      {
+        ref: "catalog:counts",
+        kind: "catalog",
+        label: "workspace listing counts",
+        refId: "listing-counts",
+        version: null,
+        coverage: "present",
+        deepLink: "/dashboard",
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.audit_listing_counts",
+      values: {
+        total: listings.reduce((sum, row) => sum + row.count, 0),
+      },
+      state: "ok",
+    });
+  } catch {
+    pushLimitation(pack, "studio.limit.catalog_unavailable");
+  }
+
+  let quality: MerchantAuditPayload["quality"] = null;
+  try {
+    const summary = await input.deps.getQuality();
+    quality = {
+      assessmentVersion: summary.assessmentVersion,
+      totalListings: summary.totalListings,
+      totalAssessed: summary.totalAssessed,
+      cleanCount: summary.cleanCount,
+      hasGapsCount: summary.hasGapsCount,
+      projectionState: summary.projectionState,
+      asOf: summary.asOf,
+    };
+    markCoverage(pack, "quality", "present");
+    pushSource(
+      pack,
+      {
+        ref: `quality:${summary.assessmentVersion}`,
+        kind: "quality",
+        label: summary.assessmentVersion,
+        refId: summary.assessmentVersion,
+        version: summary.assessmentVersion,
+        coverage: "present",
+        deepLink: "/quality",
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.audit_quality",
+      values: {
+        totalListings: summary.totalListings,
+        cleanCount: summary.cleanCount,
+        hasGapsCount: summary.hasGapsCount,
+      },
+      state: summary.projectionState === "ready" ? "ok" : "gap",
+    });
+  } catch {
+    pushLimitation(pack, "studio.limit.quality_unavailable");
+  }
+
+  let exports: MerchantAuditPayload["exports"] = null;
+  try {
+    const attempts = await input.deps.getExportAttempts(5);
+    exports = attempts.map((attempt) => ({
+      attemptId: attempt.attemptId,
+      state: attempt.state,
+      rowCount: attempt.rowCount,
+      createdAt: attempt.createdAt,
+    }));
+    markCoverage(pack, "export_attempt", "present");
+    for (const attempt of exports)
+      pushSource(
+        pack,
+        {
+          ref: `export:${attempt.attemptId}`,
+          kind: "export_attempt",
+          label: attempt.state,
+          refId: attempt.attemptId,
+          version: null,
+          coverage: "present",
+          deepLink: "/jobs?kind=export",
+        },
+        input.now,
+      );
+    pushCheck(pack, {
+      key: "studio.check.audit_exports",
+      values: {
+        count: exports.length,
+        ready: exports.filter((row) => row.state === "ready").length,
+        failed: exports.filter((row) => row.state === "failed").length,
+      },
+      state: "ok",
+    });
+  } catch {
+    pushLimitation(pack, "studio.limit.audit_exports_unavailable");
+  }
+
+  // The report's own period is not specified by this v1 UI; state that rather
+  // than implying the counts cover a chosen window.
+  pushLimitation(pack, "studio.limit.audit_period_unset");
+
+  pack.trace.push({
+    kind: "evidence",
+    toolId: null,
+    state: "done",
+    durationMs: null,
+    detail: translatedLine("studio.trace.audit_read", {
+      datasets:
+        (listings === null ? 0 : 1) +
+        (quality === null ? 0 : 1) +
+        (exports === null ? 0 : 1),
+    }),
+  });
+
+  const payload = merchantAuditPayloadSchema.parse({
+    schemaVersion: "wukong-merchant-audit/v1",
+    generatedAt: input.now.toISOString(),
+    asOf: input.now.toISOString(),
+    period: { from: null, to: null },
+    scope: { workspaceScoped: true },
+    listings,
+    quality,
+    exports,
+    checks: pack.checks,
+    coverage: coverageRecord(pack.coverage),
+    limitations: pack.limitations,
+  });
+  pack.context.merchantAudit = payload;
+}
+
 export async function buildEvidencePack(
   input: BuildEvidenceInput,
 ): Promise<BuildEvidenceResult> {
@@ -787,6 +948,8 @@ export async function buildEvidencePack(
     await buildCopyProposal(input, pack);
   else if (input.skill.key === "listing.draft_from_sources")
     await buildDraftFromSources(input, pack, draftAssets);
+  else if (input.skill.key === "merchant.audit")
+    await buildMerchantAudit(input, pack);
   else throw new Error(`unsupported pilot skill ${input.skill.key}`);
 
   pushFollowUps(pack, input.skill.key);

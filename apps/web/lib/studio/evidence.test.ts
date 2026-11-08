@@ -121,6 +121,19 @@ function baseDeps(overrides: Partial<StudioReadDeps> = {}): StudioReadDeps {
     async getListingRunStatus() {
       return { state: "queued" as const };
     },
+    async getListingCounts() {
+      return { approved: 2, in_review: 1, received: 0 };
+    },
+    async getExportAttempts() {
+      return [
+        {
+          attemptId: "attempt-1",
+          state: "ready" as const,
+          rowCount: 2,
+          createdAt: now.toISOString(),
+        },
+      ];
+    },
     ...overrides,
   };
 }
@@ -598,5 +611,132 @@ describe("studio draft-from-sources evidence (plan Task 10)", () => {
     });
     expect(reply.dispatch).toBeNull();
     expect(reply.status).toBe("partial");
+  });
+});
+
+describe("studio merchant-audit evidence (plan Task 11)", () => {
+  const auditSkill = skill("merchant.audit");
+
+  it("composes a deterministic report payload from canonical reads", async () => {
+    const result = await buildEvidencePack({
+      skill: auditSkill,
+      deps: baseDeps({
+        async getListingCounts() {
+          return { approved: 2, in_review: 1 };
+        },
+        async getExportAttempts() {
+          return [
+            {
+              attemptId: "attempt-1",
+              state: "ready",
+              rowCount: 2,
+              createdAt: now.toISOString(),
+            },
+            {
+              attemptId: "attempt-2",
+              state: "failed",
+              rowCount: 0,
+              createdAt: now.toISOString(),
+            },
+          ];
+        },
+      }),
+      role: "operator",
+      now,
+      query: null,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const pack = result.pack;
+    expect(pack.coverage.get("catalog")).toBe("present");
+    expect(pack.coverage.get("quality")).toBe("present");
+    expect(pack.coverage.get("export_attempt")).toBe("present");
+    const payload = pack.context.merchantAudit as {
+      schemaVersion: string;
+      listings: Array<{ status: string; count: number }>;
+      quality: { totalListings: number; cleanCount: number } | null;
+      exports: Array<{ attemptId: string; state: string }> | null;
+      checks: Array<{ key: string }>;
+      limitations: Array<{ key: string }>;
+    };
+    expect(payload.schemaVersion).toBe("wukong-merchant-audit/v1");
+    expect(payload.listings).toEqual([
+      { status: "approved", count: 2 },
+      { status: "in_review", count: 1 },
+    ]);
+    expect(payload.quality?.totalListings).toBe(2);
+    expect(payload.exports?.map((row) => row.state)).toEqual([
+      "ready",
+      "failed",
+    ]);
+    expect(payload.checks.map((check) => check.key)).toEqual([
+      "studio.check.audit_listing_counts",
+      "studio.check.audit_quality",
+      "studio.check.audit_exports",
+    ]);
+    expect(payload.limitations.map((line) => line.key)).toContain(
+      "studio.limit.audit_period_unset",
+    );
+
+    const reply = composeDeterministicReply({ skill: auditSkill, pack });
+    expect(reply.status).toBe("answered");
+    expect(
+      reply.records.sections.some(
+        (section) => section.key === "studio.answer.audit_report",
+      ),
+    ).toBe(true);
+    expect(reply.dispatch).toBeNull();
+  });
+
+  it("keeps an unread source null and marks the reply partial", async () => {
+    const result = await buildEvidencePack({
+      skill: auditSkill,
+      deps: baseDeps({
+        async getListingCounts() {
+          throw new Error("catalog read failed");
+        },
+        async getExportAttempts() {
+          throw new Error("export read failed");
+        },
+      }),
+      role: "operator",
+      now,
+      query: null,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const payload = result.pack.context.merchantAudit as {
+      listings: unknown;
+      exports: unknown;
+    };
+    expect(payload.listings).toBeNull();
+    expect(payload.exports).toBeNull();
+    expect(
+      result.pack.limitations.map((line) => line.key),
+    ).toEqual(
+      expect.arrayContaining([
+        "studio.limit.catalog_unavailable",
+        "studio.limit.audit_exports_unavailable",
+        "studio.limit.audit_period_unset",
+      ]),
+    );
+    const reply = composeDeterministicReply({
+      skill: auditSkill,
+      pack: result.pack,
+    });
+    expect(reply.status).toBe("partial");
+  });
+
+  it("produces the same payload for the same inputs", async () => {
+    const build = async () => {
+      const result = await buildEvidencePack({
+        skill: auditSkill,
+        deps: baseDeps(),
+        role: "operator",
+        now,
+        query: null,
+      });
+      if (result.status !== "complete") throw new Error("expected complete");
+      return result.pack.context.merchantAudit;
+    };
+    expect(await build()).toEqual(await build());
   });
 });

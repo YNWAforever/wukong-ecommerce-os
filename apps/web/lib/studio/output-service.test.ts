@@ -1,9 +1,10 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   canonicalJson,
   copyProposalDigest,
   createCopyProposalOutput,
+  createReportOutput,
   type CopyProposalPayload,
   type StudioOutputDeps,
 } from "./output-service.js";
@@ -100,6 +101,42 @@ describe("createCopyProposalOutput", () => {
       contentDigest: created.contentDigest,
       listingId: payload.listingId,
       fieldCount: 1,
+    });
+  });
+});
+
+describe("createReportOutput", () => {
+  it("persists a digest-verified report version and audits the artifact", async () => {
+    const { fake, deps } = fixture();
+    const created = await createReportOutput(deps, {
+      workspaceId: WORKSPACE,
+      actorId: "actor_ops",
+      threadId: "33333333-3333-4333-8333-333333333333",
+      runId: "44444444-4444-4444-8444-444444444444",
+      kind: "merchant_audit",
+      title: "Merchant audit",
+      payload: { schemaVersion: "wukong-merchant-audit/v1", listings: [] },
+      asOf: NOW,
+    });
+    expect(created.revision).toBe(1);
+    expect(created.contentDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(fake.state.outputs[0]).toMatchObject({
+      kind: "merchant_audit",
+      status: "draft",
+      currentVersion: 1,
+    });
+    expect(fake.state.outputVersions[0]).toMatchObject({
+      revision: 1,
+      contentDigest: created.contentDigest,
+      scope: { workspaceScoped: true },
+    });
+    const audit = fake.state.audits.find(
+      (event) => event.action === "studio.output.proposed",
+    );
+    expect(audit?.metadata).toMatchObject({
+      kind: "merchant_audit",
+      revision: 1,
+      contentDigest: created.contentDigest,
     });
   });
 });

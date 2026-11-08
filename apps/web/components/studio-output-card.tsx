@@ -15,6 +15,7 @@ import { renderStudioLine } from "../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import { formatHkDate } from "../lib/ui-copy";
 import { StudioReviewCard } from "./studio-review-card";
+import { StudioReportCard } from "./studio-report-card";
 import styles from "./studio.module.css";
 
 /**
@@ -393,6 +394,17 @@ export function StudioOutputCard({
 
           {detail.output.kind === "copy_proposal" ? (
             <StudioReviewCard locale={locale} payload={version.payload} />
+          ) : detail.output.kind === "merchant_audit" ? (
+            <StudioReportCard
+              locale={locale}
+              payload={version.payload}
+              exportHref={
+                detail.output.status === "saved" ||
+                detail.output.status === "signed_off"
+                  ? `/api/studio/outputs/${encodeURIComponent(outputId)}/export?digest=${version.contentDigest}`
+                  : null
+              }
+            />
           ) : (
             <p className={styles["studio-evidence-note"]}>
               {studioCopy(locale, "studio.outputs.previewUnavailable")}

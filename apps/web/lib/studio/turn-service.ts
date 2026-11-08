@@ -54,9 +54,11 @@ import {
 import { buildEvidencePack } from "./evidence.js";
 import {
   createCopyProposalOutput,
+  createReportOutput,
   type CopyProposalPayload,
 } from "./output-service.js";
 import { buildStudioReadDeps } from "./read-deps.js";
+import { merchantAuditPayloadSchema } from "./report-payload.js";
 import type { ListingCopySnapshot } from "./tools.js";
 import {
   requireStudioSession,
@@ -967,6 +969,37 @@ async function proposeCopyTurn(input: {
         // would send. It never creates the listing; only the explicit dispatch
         // route does that (plan Task 10).
         reply = turnReplySchema.parse({ ...deterministic });
+      } else if (input.skill.key === "merchant.audit") {
+        // The audit report is composed deterministically and persisted as a
+        // versioned artifact with a readback before the reply claims it exists
+        // (plan Task 11). No model is involved.
+        const auditPayload = merchantAuditPayloadSchema.safeParse(
+          packResult.pack.context.merchantAudit,
+        );
+        if (!auditPayload.success) {
+          reply = turnReplySchema.parse({ ...deterministic, status: "partial" });
+        } else {
+          const created = await createReportOutput(
+            { getDatabase: () => deps.getDatabase() },
+            {
+              workspaceId: input.workspaceId,
+              actorId: input.session.actorId,
+              threadId: input.threadId,
+              runId: input.run.id,
+              kind: "merchant_audit",
+              title: `Merchant audit · ${input.now.toISOString()}`.slice(0, 200),
+              payload: auditPayload.data as unknown as Record<string, unknown>,
+              asOf: input.now,
+            },
+          );
+          reply = turnReplySchema.parse({
+            ...deterministic,
+            status: "answered",
+            outputs: [
+              { outputId: created.outputId, revision: created.revision },
+            ],
+          });
+        }
       } else {
         const modelOutcome = await analyseTurn({
           workspaceId: input.workspaceId,

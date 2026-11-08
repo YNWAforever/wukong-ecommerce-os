@@ -140,6 +140,18 @@ export function composeDeterministicReply(input: {
         missing: numberValue(assetCheck?.values ?? null, "missing"),
       }),
     );
+  } else if (skill.key === "merchant.audit") {
+    const listingCounts = checkValues(pack, "studio.check.audit_listing_counts");
+    const quality = checkValues(pack, "studio.check.audit_quality");
+    const exports = checkValues(pack, "studio.check.audit_exports");
+    sections.push(
+      translatedLine("studio.answer.audit_report", {
+        listings: numberValue(listingCounts, "total"),
+        clean: numberValue(quality, "cleanCount"),
+        gaps: numberValue(quality, "hasGapsCount"),
+        exports: numberValue(exports, "count"),
+      }),
+    );
   }
 
   const dispatch = draftDispatchSchema.safeParse(pack.context.draftDispatch);

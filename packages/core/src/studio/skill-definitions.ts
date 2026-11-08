@@ -204,8 +204,8 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
   },
   {
     key: "merchant.audit",
-    version: "1.0.0",
-    status: "planned",
+    version: "1.1.0",
+    status: "pilot",
     title: {
       "zh-Hant": "商戶與 SEO 稽核報告",
       en: "Merchant and SEO audit report",
@@ -243,12 +243,10 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
     ],
     outputKind: "merchant_audit",
     evidence: {
-      requiredSources: [
-        "catalog",
-        "quality",
-        "export_attempt",
-        "shopline_projection",
-      ],
+      // The v1.1 report reads catalog counts, the quality projection and recent
+      // export attempts. It does not read a shopline projection (no canonical
+      // read exists for it yet), so that source is not claimed.
+      requiredSources: ["catalog", "quality", "export_attempt"],
       unknownsPolicy: "null-with-reason",
     },
     budgetClass: "free",

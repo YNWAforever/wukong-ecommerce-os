@@ -257,6 +257,13 @@ export type FakeStudioOptions = {
     string,
     { listingId: string; executionState: string }
   >;
+  /** Recent export attempts for the merchant audit report (plan Task 11). */
+  exportAttempts?: Array<{
+    id: string;
+    artifactStatus: "pending" | "ready" | "failed" | null;
+    rowCount: number;
+    createdAt: Date;
+  }>;
   counts?: Record<string, number>;
   /** Current workspace memberships; defaults to one admin (`actor_ops`). */
   memberships?: FakeMembership[];
@@ -1026,6 +1033,15 @@ export function createFakeStudio(
       write: async (event: DomainAuditEvent) => {
         state.writes.push("audit.write");
         state.audits.push(event);
+      },
+    },
+    exportAttempts: {
+      listForWorkspace: async (limit = 100) => {
+        state.writes.push("exportAttempts.listForWorkspace");
+        return (options.exportAttempts ?? []).slice(
+          0,
+          Math.min(Math.max(limit, 1), 20),
+        );
       },
     },
     reads: {

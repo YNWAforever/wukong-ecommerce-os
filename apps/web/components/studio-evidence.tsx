@@ -134,7 +134,7 @@ export type StudioEvidenceProps = {
   readonly checks: readonly EvidenceCheck[];
   readonly coverage: Readonly<Record<string, "present" | "missing" | "unsupported">>;
   readonly sources?: readonly EvidenceSource[];
-  readonly headingLevel?: "h3" | "h4";
+  readonly headingLevel?: "h3" | "h4" | "h5";
 };
 
 export function StudioEvidence({

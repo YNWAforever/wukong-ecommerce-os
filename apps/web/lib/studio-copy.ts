@@ -395,7 +395,10 @@ export const STUDIO_COPY = {
     "已讀取 {count} 個來源素材。",
     "Read {count} source asset(s).",
   ],
-  "studio.trace.dispatch.done": [
+  "studio.trace.audit_read": [
+    "已讀取 {datasets} 個稽核資料集。",
+    "Read {datasets} audit dataset(s).",
+  ],  "studio.trace.dispatch.done": [
     "已建立商品草稿 {listingId}；佇列狀態：{queueState}。",
     "Created listing draft {listingId}; queue state: {queueState}.",
   ],
@@ -497,7 +500,10 @@ export const STUDIO_COPY = {
     "文案建議：{fields} 個欄位；已略過 {dropped} 個沒有依據的建議。",
     "Copy proposal: {fields} field(s); {dropped} ungrounded suggestion(s) dropped.",
   ],
-  "studio.answer.draft_ready": [
+  "studio.answer.audit_report": [
+    "稽核報告：商品 {listings} 個，無缺口 {clean} 個，有缺口 {gaps} 個，最近匯出 {exports} 筆。",
+    "Audit report: {listings} listings, {clean} clean, {gaps} with gaps, {exports} recent export attempt(s).",
+  ],  "studio.answer.draft_ready": [
     "已準備 {assets} 個來源素材；缺少 {missing} 個。確認後才會建立草稿。",
     "Prepared {assets} source asset(s); {missing} missing. The draft is only created after explicit confirmation.",
   ],
@@ -528,7 +534,18 @@ export const STUDIO_COPY = {
     "商品 {listingId}：缺口 {code}；阻塞核准：{blocking}。",
     "Listing {listingId}: gap {code}; blocking: {blocking}.",
   ],
-  "studio.check.draft_assets": [
+  "studio.check.audit_listing_counts": [
+    "工作區商品總數：{total}。",
+    "Workspace listings: {total}.",
+  ],
+  "studio.check.audit_quality": [
+    "品質：共 {totalListings} 個；無缺口 {cleanCount} 個；有缺口 {hasGapsCount} 個。",
+    "Quality: {totalListings} listings; {cleanCount} clean; {hasGapsCount} with gaps.",
+  ],
+  "studio.check.audit_exports": [
+    "最近匯出：{count} 筆；就緒 {ready} 筆；失敗 {failed} 筆。",
+    "Recent exports: {count}; ready {ready}; failed {failed}.",
+  ],  "studio.check.draft_assets": [
     "來源素材：{count} 個可用；缺少 {missing} 個；已附在其他商品 {attached} 個。",
     "Source assets: {count} usable; {missing} missing; {attached} already attached to another listing.",
   ],
@@ -566,7 +583,14 @@ export const STUDIO_COPY = {
     "未能讀取目前文案；未提出任何建議。",
     "The current copy could not be read, so no proposal was made.",
   ],
-  "studio.limit.draft_assets_missing": [
+  "studio.limit.audit_period_unset": [
+    "未指定稽核期間；數字是讀取時的目前總計。",
+    "No audit period was specified; the numbers are current totals at read time.",
+  ],
+  "studio.limit.audit_exports_unavailable": [
+    "未能讀取匯出紀錄；不以零代替。",
+    "Export records could not be read; no zero is substituted.",
+  ],  "studio.limit.draft_assets_missing": [
     "缺少 {count} 個來源素材；未準備任何派送動作。",
     "{count} source asset(s) are missing; no dispatch was prepared.",
   ],
@@ -994,6 +1018,45 @@ export const STUDIO_COPY = {
   ],
   "studio.dispatch.runState.unavailable": ["未能提供", "Unavailable"],
 
+  // -- merchant audit report card (plan Task 11) ---------------------------
+  "studio.report.title": ["商戶稽核報告", "Merchant audit report"],
+  "studio.report.period": ["期間：{period}", "Period: {period}"],
+  "studio.report.periodUnset": [
+    "未指定（目前總計）",
+    "Not specified (current totals)",
+  ],
+  "studio.report.asOf": ["資料截至 {asOf}", "As of {asOf}"],
+  "studio.report.scope": ["範圍：工作區", "Scope: workspace"],
+  "studio.report.listingsTitle": ["商品狀態", "Listing status"],
+  "studio.report.status": ["狀態", "Status"],
+  "studio.report.count": ["數量", "Count"],
+  "studio.report.qualityTitle": ["品質概況", "Quality summary"],
+  "studio.report.qualityLine": [
+    "共 {totalListings} 個商品；無缺口 {cleanCount} 個；有缺口 {hasGapsCount} 個；彙總狀態 {projectionState}。",
+    "{totalListings} listings; {cleanCount} clean; {hasGapsCount} with gaps; projection {projectionState}.",
+  ],
+  "studio.report.exportsTitle": ["最近匯出紀錄", "Recent export attempts"],
+  "studio.report.attempt": ["匯出紀錄", "Export attempt"],
+  "studio.report.rows": ["列數", "Rows"],
+  "studio.report.createdAt": ["建立時間", "Created"],
+  "studio.report.noExports": ["沒有匯出紀錄。", "No export attempts recorded."],
+  "studio.report.unavailable": [
+    "未能讀取此部分；未以零代替。",
+    "This section could not be read; it is not replaced with zero.",
+  ],
+  "studio.report.export": ["下載 JSON 匯出", "Download JSON export"],
+  "studio.report.exportNeedsSave": [
+    "儲存或簽核後才能匯出。",
+    "Save or sign off the artifact before exporting.",
+  ],
+  "studio.report.note": [
+    "報告只反映讀取時的記錄；不會寫入商品資料。",
+    "The report reflects records at read time only; it never writes listing data.",
+  ],
+  "studio.report.invalidPayload": [
+    "此報告的內容無法顯示；沒有捏造內容。",
+    "This report could not be displayed; nothing is invented.",
+  ],
   // -- renderer fallbacks ---------------------------------------------------
   "studio.render.fallback": [
     "此步驟的內容未能顯示。",

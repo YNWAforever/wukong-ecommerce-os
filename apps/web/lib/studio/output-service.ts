@@ -35,6 +35,9 @@ export type CreatedOutput = {
   contentDigest: string;
 };
 
+/** Artifact kinds the Studio persists as versioned, digest-verified outputs. */
+export type ReportOutputKind = "merchant_audit" | "gap_report" | "finding";
+
 /** Stable JSON with sorted object keys, so the digest is reproducible. */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -111,6 +114,81 @@ export async function createCopyProposalOutput(
         listingId: input.payload.listingId,
         activeVersionId: input.payload.activeVersionId,
         fieldCount: input.payload.fields.length,
+      },
+    });
+    return {
+      outputId: output.id,
+      revision: written.version.revision,
+      contentDigest,
+    };
+  });
+}
+
+/**
+ * Persist a generic report artifact (plan Task 11).
+ *
+ * Same invariants as `createCopyProposalOutput`: one immutable version, a
+ * canonical SHA-256 digest, and a readback check before the caller is told the
+ * artifact exists. It never writes canonical listing data — a report is an
+ * artifact, and applying anything still happens in the existing screens.
+ */
+export async function createReportOutput(
+  deps: StudioOutputDeps,
+  input: {
+    workspaceId: string;
+    actorId: string;
+    threadId?: string | null;
+    runId?: string | null;
+    kind: ReportOutputKind;
+    title: string;
+    payload: Record<string, unknown>;
+    asOf: Date;
+    scope?: Record<string, unknown>;
+  },
+): Promise<CreatedOutput> {
+  const contentDigest = createHash("sha256")
+    .update(canonicalJson(input.payload))
+    .digest("hex");
+  const scope = input.scope ?? { workspaceScoped: true };
+  return deps.getDatabase().forWorkspace(input.workspaceId, async (repos) => {
+    const output = await repos.studio.outputs.create({
+      threadId: input.threadId ?? null,
+      runId: input.runId ?? null,
+      kind: input.kind,
+      title: input.title.slice(0, 200),
+      createdBy: input.actorId,
+    });
+    const written = await repos.studio.outputs.addVersion({
+      outputId: output.id,
+      payload: input.payload,
+      contentDigest,
+      asOf: input.asOf,
+      scope,
+      createdBy: input.actorId,
+    });
+    const readback = await repos.studio.outputs.get(output.id);
+    const versions = await repos.studio.outputs.versions(output.id);
+    const latest = versions.find(
+      (version) => version.revision === written.version.revision,
+    );
+    if (
+      !readback ||
+      readback.currentVersion !== written.version.revision ||
+      !latest ||
+      latest.contentDigest !== contentDigest
+    )
+      throw new Error("studio_output_readback_mismatch");
+    await repos.audit.write({
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      entityId: output.id,
+      action: "studio.output.proposed",
+      metadata: {
+        outputId: output.id,
+        runId: input.runId ?? null,
+        kind: input.kind,
+        revision: written.version.revision,
+        contentDigest,
       },
     });
     return {
