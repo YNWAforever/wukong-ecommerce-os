@@ -236,3 +236,50 @@ Notes learned from the run:
   build/browser acceptance or the deployed app.
 - The seeded password is local-only fixture data; never reuse it or point this flow at a shared
   database.
+
+## Observability and budget alerts
+
+Every Studio turn writes exactly one content-free operational log line in addition to its durable
+run/trace/audit rows:
+
+```json
+{
+  "event": "studio.turn.metrics",
+  "status": "answered",
+  "durationMs": 842,
+  "toolSteps": 3,
+  "detailReads": 1,
+  "modelCalls": 1,
+  "traceSteps": 5,
+  "outputCount": 0,
+  "limitationCount": 0,
+  "settledUsd": "0.020000"
+}
+```
+
+`status` is the reply status (`answered`, `partial`, `needs_input`) or `failed`; failed turns carry a
+safe `errorCode` (for example `studio_turn_timeout`, `studio_step_budget_exceeded`) and
+`settledUsd: null`. The line never contains the question, model output, customer content, ids,
+tokens or URLs, so it is safe to route to a log drain and chart.
+
+When a workspace has a budget cap configured (`monthlyBudgetUsd` is the committed-USD admission cap;
+it is not an auto-resetting calendar budget), each turn also evaluates utilisation and emits an alert
+line below the rates:
+
+```json
+{
+  "event": "studio.budget.alert",
+  "level": "warning",
+  "scope": "workspace",
+  "committedUsd": "8.500000",
+  "budgetUsd": "10.000000",
+  "utilizationPercent": 85
+}
+```
+
+- `warning` at 80% of the cap, `exhausted` at 100% (a new model call is refused at the cap).
+- Raise the cap in `/studio/settings` (A1 admin settings) if the pilot needs more headroom; lowering
+  it below current committed spend is allowed and shows `exhausted` until the ledger drains.
+- Recommended alerting: forward `studio.turn.metrics` and `studio.budget.alert` to the log drain and
+  alert on `errorCode` rates and `level` events. The readiness-gate log scan remains a human sign-off
+  item; these lines are designed to pass it.
