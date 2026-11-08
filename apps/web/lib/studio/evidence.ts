@@ -1,6 +1,11 @@
-﻿import type { SkillDefinition, StudioRole, SourceKind } from "@wukong/core";
+import type { SkillDefinition, StudioRole, SourceKind } from "@wukong/core";
 
-import { runStudioTool, type StudioReadDeps, type ToolRun } from "./tools.js";
+import {
+  runStudioTool,
+  type ListingCopySnapshot,
+  type StudioReadDeps,
+  type ToolRun,
+} from "./tools.js";
 import {
   coverageMap,
   translatedLine,
@@ -27,6 +32,7 @@ export type BuildEvidenceInput = {
   now: Date;
   query: string | null;
   listingIds?: readonly string[];
+  listingId?: string | null;
   limit?: number;
 };
 
@@ -432,10 +438,186 @@ function pushFollowUps(pack: EvidencePack, skillKey: string): void {
   if (skillKey === "catalog.find") {
     pack.followUps.push(translatedLine("studio.followup.explain_status"));
     pack.followUps.push(translatedLine("studio.followup.review_gaps"));
+  } else if (skillKey === "listing.copy_proposal") {
+    pack.followUps.push(translatedLine("studio.followup.open_listing"));
+    pack.followUps.push(translatedLine("studio.followup.review_gaps"));
   } else {
     pack.followUps.push(translatedLine("studio.followup.list_attention"));
     pack.followUps.push(translatedLine("studio.followup.open_listing"));
   }
+}
+
+/** Editable copy fields and where each current value lives in the snapshot. */
+const COPY_FIELDS: ReadonlyArray<{
+  field: string;
+  value: (copy: ListingCopySnapshot) => string;
+}> = [
+  { field: "title.en", value: (copy) => copy.title.en },
+  { field: "title.zh-Hant", value: (copy) => copy.title["zh-Hant"] },
+  { field: "description.en", value: (copy) => copy.description.en },
+  {
+    field: "description.zh-Hant",
+    value: (copy) => copy.description["zh-Hant"],
+  },
+  { field: "seo.title.en", value: (copy) => copy.seo.title.en },
+  {
+    field: "seo.title.zh-Hant",
+    value: (copy) => copy.seo.title["zh-Hant"],
+  },
+  {
+    field: "seo.description.en",
+    value: (copy) => copy.seo.description.en,
+  },
+  {
+    field: "seo.description.zh-Hant",
+    value: (copy) => copy.seo.description["zh-Hant"],
+  },
+];
+
+/**
+ * Copy-proposal evidence (plan Task 9).
+ *
+ * The reviewed listing version and its current copy are read deterministically
+ * and recorded as the immutable proposal target. The model may only propose
+ * fields against this snapshot; the turn service persists the result as a
+ * versioned artifact and never writes canonical listing data.
+ */
+async function buildCopyProposal(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  const listingId = input.listingId;
+  if (!listingId) return;
+  const detail = await callTool(pack, {
+    toolId: "catalog.get",
+    rawInput: { listingId },
+    deps: input.deps,
+    role: input.role,
+  });
+  if (detail.state !== "done") {
+    pushLimitation(pack, "studio.limit.listing_unavailable", { listingId });
+  } else {
+    const listing = detail.output as {
+      listingId: string;
+      status: string;
+      title: string;
+      activeVersion: { versionId: string; sequence: number } | null;
+    };
+    markCoverage(pack, "listing", "present");
+    pushSource(
+      pack,
+      {
+        ref: `listing:${listing.listingId}:${
+          listing.activeVersion ? `v${listing.activeVersion.sequence}` : "none"
+        }`,
+        kind: "listing",
+        label: listing.title.slice(0, 300),
+        refId: listing.listingId,
+        version: listing.activeVersion
+          ? String(listing.activeVersion.sequence)
+          : null,
+        coverage: "present",
+        deepLink: `/listings/${listing.listingId}`,
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.listing_status",
+      values: {
+        listingId: listing.listingId,
+        status: listing.status,
+        activeVersion: listing.activeVersion ? "present" : "none",
+      },
+      state: listing.activeVersion ? "ok" : "gap",
+    });
+  }
+
+  let copy: ListingCopySnapshot | null = null;
+  try {
+    copy = await input.deps.getListingCopy(listingId);
+  } catch {
+    copy = null;
+  }
+  if (!copy) {
+    pushLimitation(pack, "studio.limit.copy_unavailable");
+    return;
+  }
+  markCoverage(pack, "listing", "present");
+  pushSource(
+    pack,
+    {
+      ref: `listing-copy:${copy.listingId}:v${copy.activeVersionSequence}`,
+      kind: "listing",
+      label: copy.title.en || copy.title["zh-Hant"],
+      refId: copy.listingId,
+      version: String(copy.activeVersionSequence),
+      coverage: "present",
+      deepLink: `/listings/${copy.listingId}`,
+    },
+    input.now,
+  );
+  for (const entry of COPY_FIELDS) {
+    const value = entry.value(copy).trim();
+    pushCheck(pack, {
+      key: "studio.check.copy_current",
+      values: { field: entry.field, present: value.length > 0 },
+      state: value.length > 0 ? "ok" : "gap",
+    });
+  }
+
+  const gaps = await callTool(pack, {
+    toolId: "quality.get_gaps",
+    rawInput: { listingIds: [listingId] },
+    deps: input.deps,
+    role: input.role,
+  });
+  if (gaps.state === "done") {
+    markCoverage(pack, "quality", "present");
+    const output = gaps.output as {
+      gaps: Array<{ listingId: string; code: string; blocking: boolean }>;
+    };
+    for (const gap of output.gaps)
+      pushCheck(pack, {
+        key: "studio.check.copy_gap",
+        values: {
+          listingId: gap.listingId,
+          code: gap.code,
+          blocking: gap.blocking,
+        },
+        state: gap.blocking ? "missing" : "gap",
+      });
+  } else pushLimitation(pack, "studio.limit.quality_unavailable");
+
+  try {
+    const quality = await input.deps.getQuality();
+    markCoverage(pack, "quality", "present");
+    pushSource(
+      pack,
+      {
+        ref: `quality:${quality.assessmentVersion}`,
+        kind: "quality",
+        label: quality.assessmentVersion,
+        refId: quality.assessmentVersion,
+        version: quality.assessmentVersion,
+        coverage: "present",
+        deepLink: "/quality",
+      },
+      input.now,
+    );
+  } catch {
+    pushLimitation(pack, "studio.limit.quality_unavailable");
+  }
+
+  // Immutable proposal target for the turn service; never model-authored.
+  pack.context = {
+    copyProposal: {
+      listingId: copy.listingId,
+      activeVersionId: copy.activeVersionId,
+      activeVersionSequence: copy.activeVersionSequence,
+      currentCopy: copy,
+      allowedFields: COPY_FIELDS.map((entry) => entry.field),
+    },
+  };
 }
 
 export async function buildEvidencePack(
@@ -449,6 +631,7 @@ export async function buildEvidencePack(
     limitations: [],
     followUps: [],
     trace: [],
+    context: {},
   };
   const requiredQuery = input.skill.inputs.some(
     (field) => field.name === "query",
@@ -459,11 +642,22 @@ export async function buildEvidencePack(
       skill: input.skill,
       question: translatedLine("studio.needs_input.catalog_query"),
     };
+  const requiresListing = input.skill.inputs.some(
+    (field) => field.name === "listingId",
+  );
+  if (requiresListing && !input.listingId)
+    return {
+      status: "needs_input",
+      skill: input.skill,
+      question: translatedLine("studio.needs_input.copy_listing"),
+    };
 
   if (input.skill.key === "catalog.find")
     await buildCatalogFind(input, pack);
   else if (input.skill.key === "catalog.gap_review")
     await buildGapReview(input, pack);
+  else if (input.skill.key === "listing.copy_proposal")
+    await buildCopyProposal(input, pack);
   else throw new Error(`unsupported pilot skill ${input.skill.key}`);
 
   pushFollowUps(pack, input.skill.key);

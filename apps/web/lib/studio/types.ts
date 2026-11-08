@@ -138,6 +138,12 @@ export type EvidencePack = {
   limitations: TranslatedLine[];
   followUps: TranslatedLine[];
   trace: StudioTraceStep[];
+  /**
+   * Skill-specific structured facts for the turn service (never rendered):
+   * e.g. the exact listing version and current copy a proposal may target.
+   * The model never authors this object; it comes from workspace records.
+   */
+  context: Record<string, unknown>;
 };
 
 /** What a skill turn needs, shaped for deterministic composition. */
@@ -145,6 +151,7 @@ export type StudioTurnInput = {
   skill: SkillDefinition;
   query: string | null;
   listingIds: readonly string[];
+  listingId: string | null;
   limit: number;
   locale: "zh-Hant" | "en";
   now: Date;

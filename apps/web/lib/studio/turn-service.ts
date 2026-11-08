@@ -4,6 +4,7 @@ import type {
   AIUsage,
   StudioComposeInput,
   StudioModel,
+  StudioProposeInput,
   StudioSkillPromptSummary,
 } from "@wukong/ai";
 import { createStudioModel } from "@wukong/ai";
@@ -30,11 +31,16 @@ import type { StudioFlagSettings } from "../studio-flags";
 import type {
   CreateThreadBody,
   CreateThreadResult,
+  GetOutputResult,
   GetThreadResult,
+  ListOutputsResult,
   ListThreadsResult,
+  OutputActionResult,
   SendMessageBody,
   StudioMessageResponse,
   StudioOverviewResult,
+  StudioOutputSummary,
+  StudioOutputVersionResponse,
   StudioRunEventResponse,
   StudioRunResponse,
   StudioSendResult,
@@ -46,7 +52,12 @@ import {
   composeNeedsInputReply,
 } from "./compose-deterministic.js";
 import { buildEvidencePack } from "./evidence.js";
+import {
+  createCopyProposalOutput,
+  type CopyProposalPayload,
+} from "./output-service.js";
 import { buildStudioReadDeps } from "./read-deps.js";
+import type { ListingCopySnapshot } from "./tools.js";
 import {
   requireStudioSession,
   studioNotFound,
@@ -611,7 +622,259 @@ export function createStudioService(deps: StudioServiceDeps) {
     }
   }
 
-  /** Persist and return one completed deterministic (+ optional model) turn. */
+const LISTING_ID_PATTERN =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/** The first listing UUID mentioned in the message, if any. */
+function parseListingId(text: string): string | null {
+  return LISTING_ID_PATTERN.exec(text)?.[0] ?? null;
+}
+
+const COPY_FIELD_VALUE: Record<
+  string,
+  (copy: ListingCopySnapshot) => string
+> = {
+  "title.en": (copy) => copy.title.en,
+  "title.zh-Hant": (copy) => copy.title["zh-Hant"],
+  "description.en": (copy) => copy.description.en,
+  "description.zh-Hant": (copy) => copy.description["zh-Hant"],
+  "seo.title.en": (copy) => copy.seo.title.en,
+  "seo.title.zh-Hant": (copy) => copy.seo.title["zh-Hant"],
+  "seo.description.en": (copy) => copy.seo.description.en,
+  "seo.description.zh-Hant": (copy) => copy.seo.description["zh-Hant"],
+};
+
+type CopyProposalContext = {
+  listingId: string;
+  activeVersionId: string;
+  activeVersionSequence: number;
+  currentCopy: ListingCopySnapshot;
+  allowedFields: string[];
+};
+
+type CopyProposalOutcome = {
+  output: { outputId: string; revision: number } | null;
+  fieldCount: number;
+  droppedCount: number;
+  usage: AIUsage | null;
+  settledUsd: string | null;
+  trace: StudioTraceStep | null;
+  limitations: TranslatedLine[];
+};
+
+/**
+ * Optional copy-proposal model call (plan Task 9).
+ *
+ * Admission mirrors the analysis path: fail-closed flags/settings/budget, one
+ * reviewed reservation, no retry. Only fields whose refs resolve to this
+ * turn's evidence and whose names are in the reviewed field list survive; the
+ * artifact is versioned and read back before the reply claims success.
+ */
+async function proposeCopyTurn(input: {
+  session: SessionContext;
+  settings: StudioSettings;
+  workspaceId: string;
+  threadId: string;
+  run: StudioRun;
+  skill: SkillDefinition;
+  pack: EvidencePack;
+  body: SendMessageBody;
+  now: Date;
+}): Promise<CopyProposalOutcome> {
+  const none: CopyProposalOutcome = {
+    output: null,
+    fieldCount: 0,
+    droppedCount: 0,
+    usage: null,
+    settledUsd: null,
+    trace: null,
+    limitations: [translatedLine("studio.limit.copy_model_required")],
+  };
+  const ai = input.settings.ai;
+  if (!ai) return none;
+  if (!deps.isStudioAiEnabled(environment(), input.settings)) return none;
+  const monthlyBudgetUsd = input.settings.monthlyBudgetUsd;
+  if (!monthlyBudgetUsd) return none;
+
+  let reservedUsd: string;
+  try {
+    const policy: StudioAiPolicy = {
+      provider: ai.provider,
+      model: ai.model,
+      pricingVersion: ai.pricingVersion,
+      runCeilingUsd: input.settings.runCeilingUsd ?? "",
+      budgetCapUsd: monthlyBudgetUsd,
+      maxInputTokens: ai.maxInputTokens,
+      inputUsdPerMillion: Number(ai.inputUsdPerMillion),
+      outputUsdPerMillion: Number(ai.outputUsdPerMillion),
+      maxOutputTokens: ai.maxOutputTokens,
+    };
+    reservedUsd = studioTurnReservation(policy);
+  } catch (error) {
+    return {
+      ...none,
+      trace: modelTrace("blocked", "studio.trace.model.not_admitted", {
+        reason: budgetAdmissionReason(error),
+      }),
+    };
+  }
+
+  let model: StudioModel | null;
+  try {
+    model = deps.createModel
+      ? deps.createModel(input.settings)
+      : createDefaultModel(input.settings, environment());
+  } catch {
+    model = null;
+  }
+  if (!model) return none;
+
+  const reservation = await database().forWorkspace(
+    input.workspaceId,
+    (repos) =>
+      repos.studio.budget.reserve({
+        runId: input.run.id,
+        pricingVersion: ai.pricingVersion,
+        reservedUsd,
+        workspaceCapUsd: monthlyBudgetUsd,
+      }),
+  );
+  if (!reservation.accepted) {
+    return {
+      ...none,
+      trace: modelTrace("blocked", "studio.trace.model.budget_blocked"),
+    };
+  }
+
+  try {
+    const context = input.pack.context.copyProposal as
+      | CopyProposalContext
+      | undefined;
+    if (!context) throw new Error("studio_proposal_context_missing");
+    const gaps = input.pack.checks
+      .filter((check) => check.key === "studio.check.copy_gap")
+      .map((check) => ({
+        code: String(check.values.code ?? ""),
+        blocking: check.values.blocking === true,
+      }));
+    const evidenceRefs = input.pack.sources.map((source) => source.ref);
+    const proposeInput: StudioProposeInput = {
+      locale: input.body.locale,
+      question: input.body.text,
+      skill: skillPromptSummary(input.skill),
+      listing: context.currentCopy,
+      gaps,
+      allowedFields: context.allowedFields as StudioProposeInput["allowedFields"],
+      evidenceRefs,
+    };
+    const { proposal, usage } = await model.propose(proposeInput);
+    const resolved = new Set(evidenceRefs);
+    const allowed = new Set(context.allowedFields);
+    const fields = proposal.fields
+      .filter(
+        (field) =>
+          allowed.has(field.field) &&
+          field.evidenceRefs.every((ref) => resolved.has(ref)),
+      )
+      .map((field) => ({
+        field: field.field,
+        current: COPY_FIELD_VALUE[field.field]
+          ? COPY_FIELD_VALUE[field.field]!(context.currentCopy)
+          : null,
+        proposed: field.proposed,
+        evidenceRefs: field.evidenceRefs,
+      }));
+    const droppedCount = proposal.fields.length - fields.length;
+    const settledUsd = formatUsd(usage.estimatedCostUsd);
+    if (settledUsd) {
+      const settled = await database().forWorkspace(
+        input.workspaceId,
+        (repos) => repos.studio.budget.settle(input.run.id, settledUsd),
+      );
+      if (!settled)
+        await database().forWorkspace(input.workspaceId, (repos) =>
+          repos.studio.budget.markUncertain(input.run.id),
+        );
+    } else {
+      await database().forWorkspace(input.workspaceId, (repos) =>
+        repos.studio.budget.markUncertain(input.run.id),
+      );
+    }
+    const trace = modelTrace("done", "studio.trace.model.done", {
+      model: usage.model,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      droppedClaims: droppedCount,
+    });
+    if (fields.length === 0)
+      return {
+        output: null,
+        fieldCount: 0,
+        droppedCount,
+        usage,
+        settledUsd,
+        trace,
+        limitations: [
+          translatedLine("studio.limit.copy_fields_dropped", {
+            count: droppedCount,
+          }),
+        ],
+      };
+    const payload: CopyProposalPayload = {
+      listingId: context.listingId,
+      activeVersionId: context.activeVersionId,
+      activeVersionSequence: context.activeVersionSequence,
+      fields,
+      limitations: proposal.limitations.slice(0, 10),
+      asOf: input.now.toISOString(),
+    };
+    const created = await createCopyProposalOutput(
+      { getDatabase: () => deps.getDatabase() },
+      {
+        workspaceId: input.workspaceId,
+        actorId: input.session.actorId,
+        threadId: input.threadId,
+        runId: input.run.id,
+        title: `Copy proposal · ${context.currentCopy.title.en || context.currentCopy.title["zh-Hant"]}`,
+        payload,
+        asOf: input.now,
+      },
+    );
+    return {
+      output: { outputId: created.outputId, revision: created.revision },
+      fieldCount: fields.length,
+      droppedCount,
+      usage,
+      settledUsd,
+      trace,
+      limitations:
+        droppedCount > 0
+          ? [
+              translatedLine("studio.limit.copy_fields_dropped", {
+                count: droppedCount,
+              }),
+            ]
+          : [],
+    };
+  } catch (error) {
+    try {
+      await database().forWorkspace(input.workspaceId, (repos) =>
+        repos.studio.budget.markUncertain(input.run.id),
+      );
+    } catch {
+      // The hold stays uncertain by omission; the deterministic answer stands.
+    }
+    return {
+      ...none,
+      limitations: [translatedLine("studio.limit.copy_model_required")],
+      trace: modelTrace("failed", "studio.trace.model.failed", {
+        category: modelFailureCategory(error),
+      }),
+    };
+  }
+}
+
+/** Persist and return one completed deterministic (+ optional model) turn. */
   async function completeTurn(input: {
     session: SessionContext;
     settings: StudioSettings;
@@ -632,6 +895,11 @@ export function createStudioService(deps: StudioServiceDeps) {
           now: input.now,
           query: input.skill.inputs.some((field) => field.name === "query")
             ? input.body.text
+            : null,
+          listingId: input.skill.inputs.some(
+            (field) => field.name === "listingId",
+          )
+            ? parseListingId(input.body.text)
             : null,
         }),
     );
@@ -659,19 +927,51 @@ export function createStudioService(deps: StudioServiceDeps) {
         pack: packResult.pack,
       });
       trace = [...packResult.pack.trace];
-      const modelOutcome = await analyseTurn({
-        workspaceId: input.workspaceId,
-        settings: input.settings,
-        run: input.run,
-        skill: input.skill,
-        pack: packResult.pack,
-        body: input.body,
-      });
-      analysis = modelOutcome.analysis;
-      usage = modelOutcome.usage;
-      settledUsd = modelOutcome.settledUsd;
-      if (modelOutcome.trace) trace.push(modelOutcome.trace);
-      reply = turnReplySchema.parse({ ...deterministic, analysis });
+      if (input.skill.key === "listing.copy_proposal") {
+        const proposal = await proposeCopyTurn({
+          session: input.session,
+          settings: input.settings,
+          workspaceId: input.workspaceId,
+          threadId: input.threadId,
+          run: input.run,
+          skill: input.skill,
+          pack: packResult.pack,
+          body: input.body,
+          now: input.now,
+        });
+        usage = proposal.usage;
+        settledUsd = proposal.settledUsd;
+        if (proposal.trace) trace.push(proposal.trace);
+        const sections = [...deterministic.records.sections];
+        if (proposal.output)
+          sections.push(
+            translatedLine("studio.answer.copy_proposal", {
+              fields: proposal.fieldCount,
+              dropped: proposal.droppedCount,
+            }),
+          );
+        reply = turnReplySchema.parse({
+          ...deterministic,
+          status: proposal.output ? "answered" : "partial",
+          records: { ...deterministic.records, sections },
+          outputs: proposal.output ? [proposal.output] : [],
+          limitations: [...deterministic.limitations, ...proposal.limitations],
+        });
+      } else {
+        const modelOutcome = await analyseTurn({
+          workspaceId: input.workspaceId,
+          settings: input.settings,
+          run: input.run,
+          skill: input.skill,
+          pack: packResult.pack,
+          body: input.body,
+        });
+        analysis = modelOutcome.analysis;
+        usage = modelOutcome.usage;
+        settledUsd = modelOutcome.settledUsd;
+        if (modelOutcome.trace) trace.push(modelOutcome.trace);
+        reply = turnReplySchema.parse({ ...deterministic, analysis });
+      }
     }
 
     const assistant = await database().forWorkspace(
@@ -1032,6 +1332,108 @@ export function createStudioService(deps: StudioServiceDeps) {
           deepLink: "/jobs",
         },
       };
+    },
+
+    async listOutputs(): Promise<ListOutputsResult> {
+      const { session } = await requireStudioSession(deps, "viewer");
+      const listed = await database().forWorkspace(
+        session.workspaceId,
+        (repos) => repos.studio.outputs.list({ limit: 50 }),
+      );
+      const items: StudioOutputSummary[] = listed.map((output) => ({
+        outputId: output.id,
+        kind: output.kind,
+        title: output.title,
+        status: output.status,
+        currentVersion: output.currentVersion,
+        threadId: output.threadId,
+        createdAt: output.createdAt.toISOString(),
+        updatedAt: output.updatedAt.toISOString(),
+      }));
+      return { items, truncated: items.length === 50 };
+    },
+
+    async getOutput(outputId: string): Promise<GetOutputResult> {
+      const { session } = await requireStudioSession(deps, "viewer");
+      if (!UUID.safeParse(outputId).success) throw studioNotFound();
+      const bundle = await database().forWorkspace(
+        session.workspaceId,
+        async (repos) => {
+          const output = await repos.studio.outputs.get(outputId);
+          if (!output) return null;
+          const versions = await repos.studio.outputs.versions(outputId);
+          return { output, versions };
+        },
+      );
+      if (!bundle) throw studioNotFound();
+      const versions: StudioOutputVersionResponse[] = bundle.versions.map(
+        (version) => ({
+          revision: version.revision,
+          payload: version.payload,
+          contentDigest: version.contentDigest,
+          asOf: version.asOf.toISOString(),
+          scope: version.scope,
+          createdBy: version.createdBy,
+          createdAt: version.createdAt.toISOString(),
+        }),
+      );
+      return {
+        output: {
+          outputId: bundle.output.id,
+          kind: bundle.output.kind,
+          title: bundle.output.title,
+          status: bundle.output.status,
+          currentVersion: bundle.output.currentVersion,
+          threadId: bundle.output.threadId,
+          createdAt: bundle.output.createdAt.toISOString(),
+          updatedAt: bundle.output.updatedAt.toISOString(),
+        },
+        versions,
+      };
+    },
+
+    async setOutputStatus(
+      outputId: string,
+      action: "save" | "sign_off",
+    ): Promise<OutputActionResult> {
+      const minimum = action === "sign_off" ? "reviewer" : "operator";
+      const { session } = await requireStudioSession(deps, minimum);
+      if (!UUID.safeParse(outputId).success) throw studioNotFound();
+      const status = action === "sign_off" ? "signed_off" : "saved";
+      return database().forWorkspace(session.workspaceId, async (repos) => {
+        const output = await repos.studio.outputs.get(outputId);
+        if (!output) throw studioNotFound();
+        const changed = await repos.studio.outputs.setStatus(outputId, status);
+        if (!changed)
+          throw new ApiError(
+            409,
+            "output_without_version",
+            "The output has no saved version.",
+          );
+        const readback = await repos.studio.outputs.get(outputId);
+        if (!readback || readback.status !== status)
+          throw new Error("studio_output_status_readback_mismatch");
+        await repos.audit.write({
+          workspaceId: session.workspaceId,
+          actorId: session.actorId,
+          entityId: outputId,
+          action:
+            action === "sign_off"
+              ? "studio.output.signed_off"
+              : "studio.output.saved",
+          metadata: {
+            outputId,
+            kind: output.kind,
+            revision: readback.currentVersion,
+            status,
+          },
+        });
+        return {
+          outputId,
+          status: readback.status,
+          version: readback.currentVersion,
+        };
+      });
     },
   };
 }

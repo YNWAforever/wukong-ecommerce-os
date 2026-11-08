@@ -107,6 +107,32 @@ export function buildStudioReadDeps(
       };
     },
 
+    async getListingCopy(listingId) {
+      const snapshot = await repos.listings.getReviewSnapshot(listingId);
+      if (!snapshot?.activeVersion) return null;
+      const content = snapshot.activeVersion.content;
+      return {
+        listingId: snapshot.listing.id,
+        activeVersionId: snapshot.activeVersion.id,
+        activeVersionSequence: snapshot.activeVersion.sequence,
+        title: { en: content.title.en, "zh-Hant": content.title["zh-Hant"] },
+        description: {
+          en: content.description.en,
+          "zh-Hant": content.description["zh-Hant"],
+        },
+        seo: {
+          title: {
+            en: content.seo.title.en,
+            "zh-Hant": content.seo.title["zh-Hant"],
+          },
+          description: {
+            en: content.seo.description.en,
+            "zh-Hant": content.seo.description["zh-Hant"],
+          },
+        },
+      };
+    },
+
     async getQuality(): Promise<QualityEvidence> {
       const summary = await repos.qualityProjection.read();
       return {

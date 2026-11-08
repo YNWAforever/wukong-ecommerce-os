@@ -152,3 +152,46 @@ export type StudioOverviewResult = {
     deepLink: "/jobs";
   };
 };
+
+/** Versioned Studio artifacts (plan Task 9). */
+export type StudioOutputSummary = {
+  outputId: string;
+  kind: string;
+  title: string;
+  status: string;
+  currentVersion: number;
+  threadId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StudioOutputVersionResponse = {
+  revision: number;
+  payload: Record<string, unknown>;
+  contentDigest: string;
+  asOf: string;
+  scope: Record<string, unknown>;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type ListOutputsResult = {
+  items: StudioOutputSummary[];
+  truncated: boolean;
+};
+
+export type GetOutputResult = {
+  output: StudioOutputSummary;
+  versions: StudioOutputVersionResponse[];
+};
+
+export type OutputActionResult = {
+  outputId: string;
+  status: string;
+  version: number;
+};
+
+export const outputActionBodySchema = z
+  .object({ action: z.enum(["save", "sign_off"]) })
+  .strict();
+export type OutputActionBody = z.infer<typeof outputActionBodySchema>;

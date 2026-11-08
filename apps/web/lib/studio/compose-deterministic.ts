@@ -111,6 +111,24 @@ export function composeDeterministicReply(input: {
           noActiveVersion: numberValue(quality, "noActiveVersion"),
         }),
       );
+  } else if (skill.key === "listing.copy_proposal") {
+    const copyChecks = pack.checks.filter(
+      (check) => check.key === "studio.check.copy_current",
+    );
+    const present = copyChecks.filter(
+      (check) => check.values.present === true,
+    ).length;
+    const copyGaps = pack.checks.filter(
+      (check) => check.key === "studio.check.copy_gap",
+    ).length;
+    sections.push(
+      translatedLine("studio.answer.copy_current", {
+        fields: copyChecks.length,
+        present,
+        gaps: copyGaps,
+        proposal: "pending",
+      }),
+    );
   }
 
   return turnReplySchema.parse({

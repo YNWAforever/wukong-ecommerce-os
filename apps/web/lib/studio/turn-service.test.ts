@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { fakeStudioUsage, type StudioModel } from "@wukong/ai";
+import {
+  fakeStudioUsage,
+  type StudioCopyProposalField,
+  type StudioModel,
+} from "@wukong/ai";
 import type { StudioSettings } from "@wukong/db";
 
 import { isStudioAiEnabled, isStudioEnabled } from "../studio-flags";
@@ -186,6 +190,9 @@ function answeredModel(
       throw new Error("planner is not used by the v1 deterministic turn");
     },
     compose,
+    async propose() {
+      throw new Error("proposer is not used by this fixture");
+    },
   };
 }
 
@@ -618,6 +625,9 @@ describe("studio optional model analysis", () => {
         error.name = "ProviderApiError";
         throw error;
       },
+      async propose() {
+        throw new Error("proposer is not used");
+      },
     };
     const { service, fake } = harness({
       options: populatedOptions(),
@@ -710,5 +720,214 @@ describe("studio overview", () => {
     expect(overview.recentJobs.deepLink).toBe("/jobs");
     expect(modelCalls).toBe(0);
     expect(fake.state.writes).not.toContain("budget.reserve");
+  });
+});
+
+describe("studio copy-proposal turns", () => {
+  const COPY_LISTING_ID = "11111111-1111-4111-8111-111111111111";
+
+  function copyOptions(): FakeStudioOptions {
+    return {
+      catalog: catalogOptions(),
+      snapshots: {
+        [COPY_LISTING_ID]: reviewSnapshot({
+          listingId: COPY_LISTING_ID,
+          content: reviewableContent(),
+          flags: [],
+        }),
+      },
+      pipelineRuns: [],
+    };
+  }
+
+  function proposeModel(
+    fieldsFor: (input: {
+      listingId: string;
+      activeVersionId: string;
+      activeVersionSequence: number;
+      refs: string[];
+    }) => Array<{
+      field: StudioCopyProposalField;
+      current: string | null;
+      proposed: string;
+      evidenceRefs: string[];
+    }>,
+  ): StudioModel {
+    return {
+      async plan() {
+        throw new Error("planner is not used");
+      },
+      async compose() {
+        throw new Error("composer is not used");
+      },
+      async propose(input) {
+        return {
+          proposal: {
+            listingId: input.listing.listingId,
+            activeVersionId: input.listing.activeVersionId,
+            activeVersionSequence: input.listing.activeVersionSequence,
+            fields: fieldsFor({
+              listingId: input.listing.listingId,
+              activeVersionId: input.listing.activeVersionId,
+              activeVersionSequence: input.listing.activeVersionSequence,
+              refs: [...input.evidenceRefs],
+            }),
+            limitations: [] as string[],
+          },
+          usage: fakeStudioUsage({ estimatedCostUsd: 0.02 }),
+        };
+      },
+    };
+  }
+
+  it("creates a versioned, grounded proposal artifact and settles the budget", async () => {
+    const { service, fake } = harness({
+      options: copyOptions(),
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () =>
+        proposeModel((input) => [
+          {
+            field: "description.en",
+            current: "Old description.",
+            proposed: "Bright red fruit with a long finish.",
+            evidenceRefs: [input.refs[0]!],
+          },
+        ]),
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "copy-1",
+        text: `Propose better copy for listing ${COPY_LISTING_ID}`,
+        skillKey: "listing.copy_proposal",
+      }),
+    );
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.outputs).toHaveLength(1);
+    expect(result.reply.outputs[0]?.revision).toBe(1);
+    expect(fake.state.outputs).toHaveLength(1);
+    expect(fake.state.outputs[0]).toMatchObject({
+      kind: "copy_proposal",
+      status: "draft",
+      currentVersion: 1,
+      runId: result.runId,
+    });
+    expect(fake.state.outputVersions).toHaveLength(1);
+    expect(fake.state.outputVersions[0]?.payload).toMatchObject({
+      listingId: COPY_LISTING_ID,
+      fields: [
+        expect.objectContaining({
+          field: "description.en",
+          proposed: "Bright red fruit with a long finish.",
+        }),
+      ],
+    });
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+    expect(fake.state.runs[0]?.settledUsd).not.toBeNull();
+    expect(fake.state.budgets[0]?.state).toBe("settled");
+    expect(auditActions(fake)).toEqual(
+      expect.arrayContaining([
+        "studio.message.received",
+        "studio.output.proposed",
+        "studio.run.completed",
+      ]),
+    );
+    expect(
+      result.trace.some(
+        (step) =>
+          step.detail.key === "studio.trace.model.done" &&
+          step.state === "done",
+      ),
+    ).toBe(true);
+  });
+
+  it("drops ungrounded fields and records the dropped count", async () => {
+    const { service, fake } = harness({
+      options: copyOptions(),
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () =>
+        proposeModel((input) => [
+          {
+            field: "title.en",
+            current: "Margaux 2019",
+            proposed: "Margaux 2019 Grand Vin",
+            evidenceRefs: [input.refs[0]!],
+          },
+          {
+            field: "description.en",
+            current: "Old description.",
+            proposed: "Unsupported new claim.",
+            evidenceRefs: ["invented-source-ref"],
+          },
+        ]),
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "copy-2",
+        text: `Improve ${COPY_LISTING_ID}`,
+        skillKey: "listing.copy_proposal",
+      }),
+    );
+    expect(fake.state.outputVersions[0]?.payload).toMatchObject({
+      fields: [expect.objectContaining({ field: "title.en" })],
+    });
+    const summary = result.reply.records.sections.find(
+      (section) => section.key === "studio.answer.copy_proposal",
+    );
+    expect(summary?.values.dropped).toBe(1);
+    expect(result.reply.limitations.map((line) => line.key)).toContain(
+      "studio.limit.copy_fields_dropped",
+    );
+  });
+
+  it("degrades honestly when no live model is available", async () => {
+    const { service, fake } = harness({
+      options: copyOptions(),
+      settings: AI_SETTINGS,
+      env: STUDIO_ENV,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "copy-3",
+        text: `Improve ${COPY_LISTING_ID}`,
+        skillKey: "listing.copy_proposal",
+      }),
+    );
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.outputs).toEqual([]);
+    expect(fake.state.outputs).toHaveLength(0);
+    expect(result.reply.limitations.map((line) => line.key)).toContain(
+      "studio.limit.copy_model_required",
+    );
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+  });
+
+  it("asks for a listing id instead of running without one", async () => {
+    const { service } = harness({
+      options: copyOptions(),
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () => proposeModel(() => []),
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "copy-4",
+        text: "propose better copy",
+        skillKey: "listing.copy_proposal",
+      }),
+    );
+    expect(result.reply.status).toBe("needs_input");
+    expect(result.reply.followUps[0]?.key).toBe(
+      "studio.needs_input.copy_listing",
+    );
   });
 });

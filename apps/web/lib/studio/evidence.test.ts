@@ -76,6 +76,28 @@ function baseDeps(overrides: Partial<StudioReadDeps> = {}): StudioReadDeps {
         },
       ];
     },
+    async getListingCopy(listingId) {
+      if (listingId !== LISTING_A && listingId !== LISTING_B) return null;
+      const title =
+        listingId === LISTING_A ? "Margaux 2019" : "Rioja 2021";
+      return {
+        listingId,
+        activeVersionId: `version-${listingId}`,
+        activeVersionSequence: listingId === LISTING_A ? 2 : 1,
+        title: { en: title, "zh-Hant": title },
+        description: {
+          en: `${title} tasting note.`,
+          "zh-Hant": `${title} tasting note.`,
+        },
+        seo: {
+          title: { en: title, "zh-Hant": title },
+          description: {
+            en: `${title} SEO description.`,
+            "zh-Hant": `${title} SEO description.`,
+          },
+        },
+      };
+    },
     async getListingGaps(listingId) {
       if (listingId === LISTING_A)
         return {
@@ -321,5 +343,84 @@ describe("studio tool runner", () => {
     expect(run.state).toBe("done");
     expect(run.detail.key).toBe("studio.trace.tool.done");
     expect((run.output as { listingId: string }).listingId).toBe(LISTING_A);
+  });
+});
+
+describe("copy-proposal evidence", () => {
+  const copySkill = skill("listing.copy_proposal");
+
+  it("records the exact listing version and current copy as the proposal target", async () => {
+    const result = await buildEvidencePack({
+      skill: copySkill,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: null,
+      listingId: LISTING_A,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const pack = result.pack;
+    expect(pack.coverage.get("listing")).toBe("present");
+    expect(pack.coverage.get("quality")).toBe("present");
+    const context = pack.context.copyProposal as {
+      listingId: string;
+      activeVersionId: string;
+      activeVersionSequence: number;
+      allowedFields: string[];
+      currentCopy: { title: { en: string } };
+    };
+    expect(context.listingId).toBe(LISTING_A);
+    expect(context.activeVersionSequence).toBe(2);
+    expect(context.currentCopy.title.en).toBe("Margaux 2019");
+    expect(context.allowedFields).toHaveLength(8);
+    expect(
+      pack.checks.filter((check) => check.key === "studio.check.copy_current"),
+    ).toHaveLength(8);
+    const reply = composeDeterministicReply({ skill: copySkill, pack });
+    const summary = reply.records.sections.find(
+      (section) => section.key === "studio.answer.copy_current",
+    );
+    expect(summary?.values.fields).toBe(8);
+  });
+
+  it("asks for a listing instead of searching when none is supplied", async () => {
+    let catalogCalled = false;
+    const result = await buildEvidencePack({
+      skill: copySkill,
+      deps: baseDeps({
+        async getListing() {
+          catalogCalled = true;
+          return null;
+        },
+      }),
+      role: "operator",
+      now,
+      query: null,
+      listingId: null,
+    });
+    expect(result.status).toBe("needs_input");
+    expect(catalogCalled).toBe(false);
+    if (result.status !== "needs_input") throw new Error("unreachable");
+    expect(result.question.key).toBe("studio.needs_input.copy_listing");
+  });
+
+  it("reports a missing current-copy snapshot honestly", async () => {
+    const result = await buildEvidencePack({
+      skill: copySkill,
+      deps: baseDeps({
+        async getListingCopy() {
+          return null;
+        },
+      }),
+      role: "operator",
+      now,
+      query: null,
+      listingId: LISTING_A,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    expect(
+      result.pack.limitations.map((line) => line.key),
+    ).toContain("studio.limit.copy_unavailable");
+    expect(result.pack.context.copyProposal).toBeUndefined();
   });
 });

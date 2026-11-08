@@ -336,3 +336,43 @@ describe("studio read deps: listing gaps", () => {
     expect(result).toEqual({ gaps: [] });
   });
 });
+
+describe("copy snapshot mapping", () => {
+  it("maps the reviewed listing version's current copy for proposals", async () => {
+    const listingId = "11111111-1111-4111-8111-111111111111";
+    const snapshot = reviewSnapshot({
+      listingId,
+      content: reviewableContent(),
+      flags: [],
+    });
+    const repos = {
+      listings: {
+        getReviewSnapshot: vi.fn(async () => snapshot),
+      },
+    } as unknown as WorkspaceRepositories;
+    const copy = await buildStudioReadDeps(repos).getListingCopy(listingId);
+    expect(copy).not.toBeNull();
+    expect(copy?.listingId).toBe(listingId);
+    expect(copy?.activeVersionId).toBe(snapshot.activeVersion?.id);
+    expect(copy?.title.en.length).toBeGreaterThan(0);
+    expect(copy?.seo.description["zh-Hant"].length).toBeGreaterThan(0);
+  });
+
+  it("returns null when the listing has no active version", async () => {
+    const listingId = "11111111-1111-4111-8111-111111111111";
+    const snapshot = reviewSnapshot({
+      listingId,
+      content: reviewableContent(),
+      flags: [],
+    });
+    const repos = {
+      listings: {
+        getReviewSnapshot: vi.fn(async () => ({
+          ...snapshot,
+          activeVersion: null,
+        })),
+      },
+    } as unknown as WorkspaceRepositories;
+    expect(await buildStudioReadDeps(repos).getListingCopy(listingId)).toBeNull();
+  });
+});

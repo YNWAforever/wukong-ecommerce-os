@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+import { z } from "zod";
 
 import {
   getTool,
@@ -55,6 +55,19 @@ export type JobEvidence = {
 
 export type ListingGap = { code: string; blocking: boolean };
 
+/** Current copy snapshot for the reviewed listing version (proposal context). */
+export type ListingCopySnapshot = {
+  listingId: string;
+  activeVersionId: string;
+  activeVersionSequence: number;
+  title: { en: string; "zh-Hant": string };
+  description: { en: string; "zh-Hant": string };
+  seo: {
+    title: { en: string; "zh-Hant": string };
+    description: { en: string; "zh-Hant": string };
+  };
+};
+
 /**
  * The only data the v1 read tools may touch. Task 6 binds this to
  * `db.forWorkspace` repositories; Task 1 integration proves the SQL underneath.
@@ -71,6 +84,11 @@ export type StudioReadDeps = {
   getListingGaps(
     listingId: string,
   ): Promise<{ gaps: ListingGap[] } | null>;
+  /**
+   * Current copy snapshot for the reviewed version. Used by the copy-proposal
+   * skill as the immutable target/context; it is not a tool-requestable action.
+   */
+  getListingCopy(listingId: string): Promise<ListingCopySnapshot | null>;
 };
 
 export type ToolRun = {

@@ -6,7 +6,10 @@ import type {
 import type {
   StudioApiToken,
   StudioMcpCall,
+  StudioMcpConnection,
   StudioMessage,
+  StudioOutput,
+  StudioOutputVersion,
   StudioRun,
   StudioRunEvent,
   StudioSettings,
@@ -248,6 +251,9 @@ export type FakeStudioOptions = {
   memberships?: FakeMembership[];
   apiTokens?: StudioApiToken[];
   mcpCalls?: StudioMcpCall[];
+  mcpConnections?: StudioMcpConnection[];
+  outputs?: StudioOutput[];
+  outputVersions?: StudioOutputVersion[];
   /** Make the assistant message append fail, to exercise the failure path. */
   failOnAssistantAppend?: boolean;
 };
@@ -264,6 +270,9 @@ export type FakeStudio = {
     memberships: FakeMembership[];
     apiTokens: StudioApiToken[];
     mcpCalls: StudioMcpCall[];
+    mcpConnections: StudioMcpConnection[];
+    outputs: StudioOutput[];
+    outputVersions: StudioOutputVersion[];
     audits: DomainAuditEvent[];
     writes: string[];
     workspaceCalls: string[];
@@ -414,6 +423,9 @@ export function createFakeStudio(
     memberships: [...(options.memberships ?? [{ userId: "actor_ops", role: "admin" }])],
     apiTokens: [...(options.apiTokens ?? [])],
     mcpCalls: [...(options.mcpCalls ?? [])],
+    mcpConnections: [...(options.mcpConnections ?? [])],
+    outputs: [...(options.outputs ?? [])],
+    outputVersions: [...(options.outputVersions ?? [])],
     audits: [],
     writes: [],
     workspaceCalls: [],
@@ -675,7 +687,91 @@ export function createFakeStudio(
             .sort((left, right) => left.sequence - right.sequence);
         },
       },
-      outputs: {},
+      outputs: {
+        create: async (input: {
+          threadId?: string | null;
+          runId?: string | null;
+          kind: StudioOutput["kind"];
+          title: string;
+          createdBy: string;
+        }) => {
+          state.writes.push("outputs.create");
+          const row: StudioOutput = {
+            id: uuid("output"),
+            workspaceId: settings.workspaceId,
+            threadId: input.threadId ?? null,
+            runId: input.runId ?? null,
+            kind: input.kind,
+            title: input.title,
+            status: "draft",
+            currentVersion: 0,
+            createdBy: input.createdBy,
+            createdAt: new Date(FIXED_NOW.getTime() + sequenceCounter),
+            updatedAt: new Date(FIXED_NOW.getTime() + sequenceCounter),
+          };
+          state.outputs.push(row);
+          return row;
+        },
+        addVersion: async (input: {
+          outputId: string;
+          payload: Record<string, unknown>;
+          contentDigest: string;
+          asOf: Date;
+          scope?: Record<string, unknown>;
+          createdBy: string;
+        }) => {
+          state.writes.push("outputs.addVersion");
+          const output = state.outputs.find(
+            (entry) => entry.id === input.outputId,
+          );
+          if (!output) throw new Error("studio output not found");
+          const revision = output.currentVersion + 1;
+          const version: StudioOutputVersion = {
+            id: uuid("outputVersion"),
+            workspaceId: settings.workspaceId,
+            outputId: input.outputId,
+            revision,
+            payload: input.payload,
+            contentDigest: input.contentDigest,
+            asOf: input.asOf,
+            scope: input.scope ?? {},
+            createdBy: input.createdBy,
+            createdAt: new Date(FIXED_NOW.getTime() + sequenceCounter),
+          };
+          state.outputVersions.push(version);
+          output.currentVersion = revision;
+          output.updatedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+          return { output, version };
+        },
+        get: async (id: string) => {
+          state.writes.push("outputs.get");
+          return state.outputs.find((entry) => entry.id === id) ?? null;
+        },
+        list: async (input: { limit?: number } = {}) => {
+          state.writes.push("outputs.list");
+          const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+          return [...state.outputs]
+            .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+            .slice(0, limit);
+        },
+        versions: async (outputId: string) => {
+          state.writes.push("outputs.versions");
+          return state.outputVersions
+            .filter((version) => version.outputId === outputId)
+            .sort((left, right) => right.revision - left.revision);
+        },
+        setStatus: async (
+          id: string,
+          status: Exclude<StudioOutput["status"], "draft">,
+        ) => {
+          state.writes.push("outputs.setStatus");
+          const output = state.outputs.find((entry) => entry.id === id);
+          if (!output || output.currentVersion === 0) return false;
+          output.status = status;
+          output.updatedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+          return true;
+        },
+      },
       budget: {
         reserve: async (input: {
           runId: string;
@@ -832,6 +928,67 @@ export function createFakeStudio(
           state.writes.push("mcpCalls.list");
           const limit = Math.min(Math.max(input.limit ?? 100, 1), 200);
           return state.mcpCalls.slice(0, limit);
+        },
+      },
+      mcpConnections: {
+        create: async (input: {
+          label: string;
+          endpointUrl: string;
+          transport?: "http" | "sse";
+          toolAllowlist: readonly string[];
+          schemaHashes: Record<string, unknown>;
+          credentialEnvelope?: string | null;
+          createdBy: string;
+        }) => {
+          state.writes.push("mcpConnections.create");
+          const createdAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+          const connection: StudioMcpConnection = {
+            id: uuid("connection"),
+            workspaceId: settings.workspaceId,
+            label: input.label,
+            endpointUrl: input.endpointUrl,
+            transport: input.transport ?? "http",
+            status: "draft",
+            generation: 1,
+            toolAllowlist: [...input.toolAllowlist],
+            schemaHashes: { ...input.schemaHashes },
+            credentialEnvelope: input.credentialEnvelope ?? null,
+            createdBy: input.createdBy,
+            approvedBy: null,
+            approvedAt: null,
+            createdAt,
+            updatedAt: createdAt,
+          };
+          state.mcpConnections.push(connection);
+          return connection;
+        },
+        list: async () => {
+          state.writes.push("mcpConnections.list");
+          return state.mcpConnections.slice();
+        },
+        get: async (id: string) => {
+          state.writes.push("mcpConnections.get");
+          return state.mcpConnections.find((entry) => entry.id === id) ?? null;
+        },
+        updateStatus: async (
+          id: string,
+          status: StudioMcpConnection["status"],
+          approvedBy: string | null = null,
+        ) => {
+          state.writes.push("mcpConnections.updateStatus");
+          const connection = state.mcpConnections.find(
+            (entry) => entry.id === id,
+          );
+          if (!connection) return null;
+          connection.status = status;
+          if (status === "approved") {
+            connection.approvedBy = approvedBy;
+            connection.approvedAt = new Date(
+              FIXED_NOW.getTime() + sequenceCounter,
+            );
+          }
+          connection.updatedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+          return connection;
         },
       },
     },
