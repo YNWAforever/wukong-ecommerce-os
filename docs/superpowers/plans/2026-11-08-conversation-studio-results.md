@@ -352,3 +352,22 @@ database, inserting/updating the pilot workspace's `studio_workspace_settings` r
 (no production user credentials are available here). Live model activation is impossible without a
 provider credential. All flags remain off; the release gate's first-real-write confirmation was not
 touched.
+
+## Post-release development (roadmap P0/P1) — 2026-11-09
+
+The Studio is merged and deployed with all flags off. Subsequent development follows
+`docs/superpowers/plans/2026-11-09-next-development-roadmap.md`; each item ships as its own PR with
+the full repository gates (CI on Node 24, including the flags-on Studio browser acceptance step).
+
+| Roadmap item                     | PR   | Delivered                                                                                                                                                                                                                                                                                            | Verification                                                                                                                             |
+| -------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| A1 admin workspace settings      | #146 | Admin GET/PATCH Studio settings API (enable, pilot skills, budgets, retention, default home, validated all-or-none AI block via the reviewed cost registry), audit + DB readback, editable settings card with honest states, bilingual copy                                                          | Full web suite 282 files / 2761 tests; scoped 76; typecheck/lint/format clean; CI green                                                  |
+| A4 flags-on acceptance in CI     | #147 | New CI step seeds a pilot workspace, starts the production build with `CONVERSATION_STUDIO_ENABLED=true` (AI/MCP unset), runs the full sign-in → answer → trace → reload → 390 px acceptance on port 49300; seed fixture made idempotent and root-resolvable                                         | Step passed in real CI (18m27s), and every later PR run re-validates it                                                                  |
+| A5 observability                 | #148 | Content-free `studio.turn.metrics` per turn (status/duration/bounded counters/trace/output/limitations/settled USD or safe failure code) and `studio.budget.alert` at 80%/100% of the workspace cap; best-effort emission; runbook section                                                           | New observability suite 7 tests + turn-service metric/alert tests; full web suite 283/2771; CI green                                     |
+| B1 attachment uploads            | #149 | Composer attach control wired to the reviewed presign → PUT → finalize stack with shared media policy (JPG/PNG/WebP/PDF, 20 MiB, 8 files); per-file chips with remove/retry, send blocked while uploading, finalized `attachmentAssetIds`, failure keeps draft + reusable ids                        | Full web suite 284/2792; one CI-only timing flake in an upload test fixed by waiting on real macrotasks; CI green                        |
+| B2 copy-proposal handoff/exports | #150 | `format=pdf` server-rendered export alongside the unchanged canonical JSON; review-card per-field/all copy with digest-gated JSON/PDF links; read-only `?studioOutput=<id>` handoff banner on `/listings/[id]` that fails closed on every invalid/foreign/mismatched case and never seeds form state | Full web suite 287/2820; scoped 86; PDF round-trip tests; CI green on rerun (first attempt hit an unrelated pre-existing Opak e2e flake) |
+
+Production redeploys from `main` after each merge; alias smoke checks (`/signin` 200, `/` and
+`/studio` → sign-in, `POST /api/mcp` 404) remain green with every Studio flag off. Still blocked on
+user inputs: A2 (production DB migration window), A3 (provider credential/budget), C3 (first external
+MCP provider/credential ownership). B4, C1 and the broader P1/P2 list remain in progress/queued.
