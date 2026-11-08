@@ -33,6 +33,8 @@ export type BuildEvidenceInput = {
   query: string | null;
   listingIds?: readonly string[];
   listingId?: string | null;
+  /** Source asset ids the operator attached to the turn (plan Task 10). */
+  attachmentAssetIds?: readonly string[];
   limit?: number;
 };
 
@@ -441,10 +443,123 @@ function pushFollowUps(pack: EvidencePack, skillKey: string): void {
   } else if (skillKey === "listing.copy_proposal") {
     pack.followUps.push(translatedLine("studio.followup.open_listing"));
     pack.followUps.push(translatedLine("studio.followup.review_gaps"));
+  } else if (skillKey === "listing.draft_from_sources") {
+    pack.followUps.push(translatedLine("studio.followup.confirm_dispatch"));
+    pack.followUps.push(translatedLine("studio.followup.open_jobs"));
   } else {
     pack.followUps.push(translatedLine("studio.followup.list_attention"));
     pack.followUps.push(translatedLine("studio.followup.open_listing"));
   }
+}
+
+/** A UUID token, used to read asset ids pinned in the operator's message. */
+const UUID_TOKEN =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
+const UUID_EXACT =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Source asset ids for a draft turn (plan Task 10).
+ *
+ * The composer attachment flow supplies `attachmentAssetIds`; until that UI
+ * ships, an operator can also pin asset ids in the message text. Both are
+ * bounded to the reviewed eight, de-duplicated, and never read from anywhere
+ * else. Returns an empty list when the turn names none.
+ */
+export function draftAssetIds(input: {
+  attachmentAssetIds?: readonly string[];
+  query: string | null;
+}): string[] {
+  const explicit = (input.attachmentAssetIds ?? []).filter((id) =>
+    UUID_EXACT.test(id),
+  );
+  if (explicit.length > 0)
+    return [...new Set(explicit.map((id) => id.toLowerCase()))].slice(0, 8);
+  UUID_TOKEN.lastIndex = 0;
+  const matches = (input.query ?? "").match(UUID_TOKEN) ?? [];
+  UUID_TOKEN.lastIndex = 0;
+  return [...new Set(matches.map((id) => id.toLowerCase()))].slice(0, 8);
+}
+
+/**
+ * Draft-from-sources evidence (plan Task 10).
+ *
+ * Reads the operator's source assets inside the workspace and records exactly
+ * what an explicit dispatch would send. It performs no writes and starts no
+ * pipeline: the turn only prepares a dispatch-ready reference, and the reviewed
+ * dispatch route creates the canonical listing after the operator confirms.
+ */
+async function buildDraftFromSources(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+  assetIds: readonly string[],
+): Promise<void> {
+  const resolved = await input.deps.getSourceAssets(assetIds);
+  for (const asset of resolved.items) {
+    markCoverage(pack, "source_import", "present");
+    pushSource(
+      pack,
+      {
+        ref: `asset:${asset.assetId}`,
+        kind: "source_import",
+        label: asset.contentType,
+        refId: asset.assetId,
+        version: null,
+        coverage: "present",
+        // Assets have no operator-facing record screen; never invent a link.
+        deepLink: null,
+      },
+      input.now,
+    );
+  }
+  if (resolved.items.length === 0)
+    pushLimitation(pack, "studio.limit.draft_assets_missing", {
+      count: resolved.missingAssetIds.length,
+    });
+  else if (resolved.missingAssetIds.length > 0)
+    pushLimitation(pack, "studio.limit.draft_assets_missing", {
+      count: resolved.missingAssetIds.length,
+    });
+
+  const attached = resolved.items.filter(
+    (asset) => asset.listingId !== null,
+  ).length;
+  pushCheck(pack, {
+    key: "studio.check.draft_assets",
+    values: {
+      count: resolved.items.length,
+      missing: resolved.missingAssetIds.length,
+      attached,
+    },
+    state:
+      resolved.missingAssetIds.length > 0 || attached > 0
+        ? "gap"
+        : resolved.items.length > 0
+          ? "ok"
+          : "missing",
+  });
+
+  pack.trace.push({
+    kind: "evidence",
+    toolId: null,
+    state: "done",
+    durationMs: null,
+    detail: translatedLine("studio.trace.assets_read", {
+      count: resolved.items.length,
+    }),
+  });
+
+  const dispatchAssetIds = resolved.items.map((asset) => asset.assetId);
+  pack.context.draftDispatch =
+    dispatchAssetIds.length > 0
+      ? {
+          kind: "listing_draft",
+          assetIds: dispatchAssetIds,
+          note: input.query?.trim() ? input.query.trim().slice(0, 2000) : null,
+          ready:
+            resolved.missingAssetIds.length === 0 && attached === 0,
+        }
+      : null;
 }
 
 /** Editable copy fields and where each current value lives in the snapshot. */
@@ -651,6 +766,18 @@ export async function buildEvidencePack(
       skill: input.skill,
       question: translatedLine("studio.needs_input.copy_listing"),
     };
+  const draftAssets = draftAssetIds({
+    ...(input.attachmentAssetIds
+      ? { attachmentAssetIds: input.attachmentAssetIds }
+      : {}),
+    query: input.query,
+  });
+  if (input.skill.key === "listing.draft_from_sources" && draftAssets.length === 0)
+    return {
+      status: "needs_input",
+      skill: input.skill,
+      question: translatedLine("studio.needs_input.draft_assets"),
+    };
 
   if (input.skill.key === "catalog.find")
     await buildCatalogFind(input, pack);
@@ -658,6 +785,8 @@ export async function buildEvidencePack(
     await buildGapReview(input, pack);
   else if (input.skill.key === "listing.copy_proposal")
     await buildCopyProposal(input, pack);
+  else if (input.skill.key === "listing.draft_from_sources")
+    await buildDraftFromSources(input, pack, draftAssets);
   else throw new Error(`unsupported pilot skill ${input.skill.key}`);
 
   pushFollowUps(pack, input.skill.key);

@@ -7,7 +7,9 @@ import type {
   JobEvidence,
   ListingEvidence,
   ListingGap,
+  ListingRunStatus,
   QualityEvidence,
+  SourceAssetEvidence,
   StudioReadDeps,
 } from "./tools.js";
 
@@ -180,6 +182,43 @@ export function buildStudioReadDeps(
         }
       }
       return { gaps };
+    },
+
+    async getSourceAssets(assetIds): Promise<{
+      items: SourceAssetEvidence[];
+      missingAssetIds: string[];
+    }> {
+      if (assetIds.length === 0)
+        return { items: [], missingAssetIds: [] };
+      // Workspace-scoped repository: a foreign asset id cannot resolve here, so
+      // it is reported as missing exactly like a deleted one.
+      const rows = await repos.sourceAssets.getByIds([...assetIds]);
+      const found = new Map(
+        rows.map((row) => [
+          row.id,
+          {
+            assetId: row.id,
+            contentType: row.kind,
+            listingId: row.listingId ?? null,
+          } satisfies SourceAssetEvidence,
+        ]),
+      );
+      return {
+        items: assetIds.flatMap((id) => {
+          const item = found.get(id);
+          return item ? [item] : [];
+        }),
+        missingAssetIds: assetIds.filter((id) => !found.has(id)),
+      };
+    },
+
+    async getListingRunStatus(
+      listingId,
+      runId,
+    ): Promise<ListingRunStatus | null> {
+      const operation = await repos.pipelineRuns.getOperation(runId);
+      if (!operation || operation.listingId !== listingId) return null;
+      return { state: operation.executionState };
     },
   };
 }

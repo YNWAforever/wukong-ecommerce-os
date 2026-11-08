@@ -9,6 +9,7 @@ import {
 } from "../lib/studio/types";
 import { formatHkDate } from "../lib/ui-copy";
 import { StudioEvidence } from "./studio-evidence";
+import { StudioDispatchCard } from "./studio-dispatch-card";
 import { StudioOutputCard } from "./studio-output-card";
 import { StudioTrace } from "./studio-trace";
 import styles from "./studio.module.css";
@@ -85,10 +86,14 @@ export function parseStudioAssistantContent(
 export type StudioTurnProps = {
   readonly locale: Locale;
   readonly message: StudioTurnMessage;
+  /** Thread the turn belongs to; needed by the dispatch card's action. */
+  readonly threadId?: string;
   /** Whether the workspace has live analysis configured for this request. */
   readonly aiEnabled?: boolean;
   /** Reviewer-or-higher; gates the artifact sign-off action, never inferred. */
   readonly canSignOff?: boolean;
+  /** Operator-or-higher; gates the confirmed dispatch action, never inferred. */
+  readonly canDispatch?: boolean;
   /** Persisted trace steps for this turn, or `null` until loaded. */
   readonly trace?: StudioTraceStep[] | null;
   readonly traceLoading?: boolean;
@@ -249,14 +254,18 @@ function AssistantTurn({
   traceLoading,
   traceError,
   onLoadTrace,
+  threadId,
   canSignOff = false,
+  canDispatch = false,
 }: {
   locale: Locale;
   message: StudioTurnMessage;
 } & Pick<
   StudioTurnProps,
+  | "threadId"
   | "aiEnabled"
   | "canSignOff"
+  | "canDispatch"
   | "trace"
   | "traceLoading"
   | "traceError"
@@ -398,6 +407,16 @@ function AssistantTurn({
             ))}
           </ul>
         </section>
+      ) : null}
+
+      {reply.dispatch !== null && threadId ? (
+        <StudioDispatchCard
+          locale={locale}
+          threadId={threadId}
+          runId={message.runId ?? null}
+          dispatch={reply.dispatch}
+          canDispatch={canDispatch}
+        />
       ) : null}
     </article>
   );

@@ -94,6 +94,22 @@ export const modelAnalysisSchema = z.strictObject({
 });
 export type ModelAnalysis = z.infer<typeof modelAnalysisSchema>;
 
+/**
+ * A dispatch-ready reference produced by a read-only turn (plan Task 10).
+ *
+ * The turn never dispatches: it validates the operator's selected source assets
+ * and records what a later *explicitly confirmed* dispatch would send. `ready`
+ * is false when some assets were not resolved, so the UI can disable the action
+ * with a stated reason instead of offering a doomed request.
+ */
+export const draftDispatchSchema = z.strictObject({
+  kind: z.literal("listing_draft"),
+  assetIds: z.array(z.string().min(1).max(200)).min(1).max(8),
+  note: z.string().max(2000).nullable(),
+  ready: z.boolean(),
+});
+export type DraftDispatch = z.infer<typeof draftDispatchSchema>;
+
 export const turnReplySchema = z.strictObject({
   status: z.enum(["answered", "needs_input", "partial"]),
   skillKey: z.string().min(1).max(120),
@@ -111,6 +127,11 @@ export const turnReplySchema = z.strictObject({
       }),
     )
     .max(10),
+  /**
+   * Absent (null) for every skill that does not prepare a dispatch. Defaulted so
+   * replies persisted before this field existed keep parsing.
+   */
+  dispatch: draftDispatchSchema.nullable().default(null),
   /** Absent (null) when no live model analysis was attempted or configured. */
   analysis: modelAnalysisSchema.nullable(),
   traceSummary: z.strictObject({

@@ -246,6 +246,17 @@ export type FakeStudioOptions = {
   };
   quality?: Partial<QualitySummary>;
   pipelineRuns?: PipelineRun[];
+  /** Source assets the draft/proposal skills may resolve (plan Task 10). */
+  sourceAssets?: Array<{
+    id: string;
+    kind: string;
+    listingId: string | null;
+  }>;
+  /** Listing-pipeline operations keyed by run id, for run-status reads. */
+  operations?: Record<
+    string,
+    { listingId: string; executionState: string }
+  >;
   counts?: Record<string, number>;
   /** Current workspace memberships; defaults to one admin (`actor_ops`). */
   memberships?: FakeMembership[];
@@ -1048,6 +1059,11 @@ export function createFakeStudio(
         state.writes.push("listings.getReviewSnapshot");
         return options.snapshots?.[id] ?? null;
       },
+      getById: async (id: string) => {
+        state.writes.push("listings.getById");
+        const snapshot = options.snapshots?.[id];
+        return snapshot ? snapshot.listing : null;
+      },
       countByStatus: async () => {
         state.writes.push("listings.countByStatus");
         const counts: Record<string, number> = {
@@ -1072,7 +1088,43 @@ export function createFakeStudio(
         return quality;
       },
     },
+    sourceAssets: {
+      getByIds: async (ids: readonly string[]) => {
+        state.writes.push("sourceAssets.getByIds");
+        const rows = options.sourceAssets ?? [];
+        return ids.flatMap((id) => {
+          const row = rows.find((asset) => asset.id === id);
+          return row ? [{ ...row }] : [];
+        });
+      },
+      attachToListing: async (listingId: string, ids: readonly string[]) => {
+        state.writes.push("sourceAssets.attachToListing");
+        for (const asset of options.sourceAssets ?? []) {
+          if (ids.includes(asset.id)) asset.listingId = listingId;
+        }
+      },
+    },
+    dispatchOutbox: {
+      record: async () => [],
+      pending: async () => [],
+      markDispatched: async (ids: readonly string[]) => {
+        state.writes.push(`dispatchOutbox.markDispatched:${ids.length}`);
+      },
+      markAttempted: async (ids: readonly string[]) => {
+        state.writes.push(`dispatchOutbox.markAttempted:${ids.length}`);
+      },
+    },
     pipelineRuns: {
+      getOperation: async (id: string) => {
+        state.writes.push("pipelineRuns.getOperation");
+        const operation = options.operations?.[id];
+        if (!operation) return null;
+        return {
+          id,
+          listingId: operation.listingId,
+          executionState: operation.executionState,
+        };
+      },
       listForWorkspace: async (limit = 100) => {
         state.writes.push("pipelineRuns.listForWorkspace");
         return (options.pipelineRuns ?? []).slice(

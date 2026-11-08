@@ -108,6 +108,19 @@ function baseDeps(overrides: Partial<StudioReadDeps> = {}): StudioReadDeps {
         };
       return { gaps: [] };
     },
+    async getSourceAssets(assetIds) {
+      return {
+        items: assetIds.map((assetId) => ({
+          assetId,
+          contentType: "image/png",
+          listingId: null,
+        })),
+        missingAssetIds: [],
+      };
+    },
+    async getListingRunStatus() {
+      return { state: "queued" as const };
+    },
     ...overrides,
   };
 }
@@ -422,5 +435,168 @@ describe("copy-proposal evidence", () => {
       result.pack.limitations.map((line) => line.key),
     ).toContain("studio.limit.copy_unavailable");
     expect(result.pack.context.copyProposal).toBeUndefined();
+  });
+});
+
+describe("studio draft-from-sources evidence (plan Task 10)", () => {
+  const draftSkill = skill("listing.draft_from_sources");
+  const ASSET_A = "11111111-1111-4111-8111-111111111111";
+  const ASSET_B = "22222222-2222-4222-8222-222222222222";
+
+  it("asks for at least one source asset instead of guessing", async () => {
+    let read = false;
+    const result = await buildEvidencePack({
+      skill: draftSkill,
+      deps: baseDeps({
+        async getSourceAssets() {
+          read = true;
+          return { items: [], missingAssetIds: [] };
+        },
+      }),
+      role: "operator",
+      now,
+      query: "create a draft from my uploaded files",
+    });
+    expect(result.status).toBe("needs_input");
+    expect(read).toBe(false);
+    if (result.status !== "needs_input") throw new Error("unreachable");
+    expect(result.question.key).toBe("studio.needs_input.draft_assets");
+  });
+
+  it("reads attached asset ids, marks coverage present and prepares a dispatch", async () => {
+    const requested: string[][] = [];
+    const result = await buildEvidencePack({
+      skill: draftSkill,
+      deps: baseDeps({
+        async getSourceAssets(assetIds) {
+          requested.push([...assetIds]);
+          return {
+            items: assetIds.map((assetId) => ({
+              assetId,
+              contentType: "image/jpeg",
+              listingId: null,
+            })),
+            missingAssetIds: [],
+          };
+        },
+      }),
+      role: "operator",
+      now,
+      query: "Create the draft",
+      attachmentAssetIds: [ASSET_A, ASSET_B],
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    expect(requested[0]).toEqual([ASSET_A, ASSET_B]);
+    expect(result.pack.coverage.get("source_import")).toBe("present");
+    const check = result.pack.checks.find(
+      (entry) => entry.key === "studio.check.draft_assets",
+    );
+    expect(check?.values).toMatchObject({ count: 2, missing: 0, attached: 0 });
+    expect(check?.state).toBe("ok");
+    expect(result.pack.context.draftDispatch).toMatchObject({
+      kind: "listing_draft",
+      assetIds: [ASSET_A, ASSET_B],
+      note: "Create the draft",
+      ready: true,
+    });
+    const reply = composeDeterministicReply({
+      skill: draftSkill,
+      pack: result.pack,
+    });
+    expect(reply.dispatch).toMatchObject({
+      kind: "listing_draft",
+      assetIds: [ASSET_A, ASSET_B],
+      ready: true,
+    });
+    expect(reply.status).toBe("answered");
+    expect(
+      reply.records.sections.some(
+        (section) => section.key === "studio.answer.draft_ready",
+      ),
+    ).toBe(true);
+    // The turn never creates a listing or claims one exists.
+    expect(reply.outputs).toEqual([]);
+  });
+
+  it("reads asset ids pinned in the message text when no attachments are supplied", async () => {
+    const requested: string[][] = [];
+    const result = await buildEvidencePack({
+      skill: draftSkill,
+      deps: baseDeps({
+        async getSourceAssets(assetIds) {
+          requested.push([...assetIds]);
+          return {
+            items: assetIds.map((assetId) => ({
+              assetId,
+              contentType: "application/pdf",
+              listingId: null,
+            })),
+            missingAssetIds: [],
+          };
+        },
+      }),
+      role: "operator",
+      now,
+      query: `Please draft from asset ${ASSET_A.toUpperCase()}`,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    expect(requested[0]).toEqual([ASSET_A]);
+  });
+
+  it("is partial and not ready when assets are missing or already attached", async () => {
+    const result = await buildEvidencePack({
+      skill: draftSkill,
+      deps: baseDeps({
+        async getSourceAssets(assetIds) {
+          return {
+            items: assetIds.map((assetId, index) => ({
+              assetId,
+              contentType: "image/png",
+              listingId: index === 0 ? "listing-other" : null,
+            })),
+            missingAssetIds: ["33333333-3333-4333-8333-333333333333"],
+          };
+        },
+      }),
+      role: "operator",
+      now,
+      query: "Draft it",
+      attachmentAssetIds: [ASSET_A, ASSET_B],
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const reply = composeDeterministicReply({
+      skill: draftSkill,
+      pack: result.pack,
+    });
+    expect(reply.dispatch?.ready).toBe(false);
+    expect(reply.status).toBe("partial");
+    expect(
+      result.pack.limitations.map((line) => line.key),
+    ).toContain("studio.limit.draft_assets_missing");
+  });
+
+  it("offers no dispatch at all when no asset resolved", async () => {
+    const result = await buildEvidencePack({
+      skill: draftSkill,
+      deps: baseDeps({
+        async getSourceAssets() {
+          return {
+            items: [],
+            missingAssetIds: ["33333333-3333-4333-8333-333333333333"],
+          };
+        },
+      }),
+      role: "operator",
+      now,
+      query: "Draft it",
+      attachmentAssetIds: [ASSET_A],
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const reply = composeDeterministicReply({
+      skill: draftSkill,
+      pack: result.pack,
+    });
+    expect(reply.dispatch).toBeNull();
+    expect(reply.status).toBe("partial");
   });
 });

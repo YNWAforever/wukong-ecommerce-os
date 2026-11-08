@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   fakeStudioUsage,
@@ -450,6 +450,63 @@ describe("studio deterministic turns", () => {
     ).toEqual([1]);
     expect(auditActions(fake)).toContain("studio.message.received");
     expect(auditActions(fake)).toContain("studio.run.completed");
+  });
+
+  it("prepares a draft dispatch from source assets without a model or a write", async () => {
+    const modelFactory = vi.fn(() => {
+      throw new Error("the draft turn must not build a model");
+    });
+    const assetA = "11111111-1111-4111-8111-111111111111";
+    const assetB = "22222222-2222-4222-8222-222222222222";
+    const { service, fake } = harness({
+      options: {
+        ...populatedOptions(),
+        sourceAssets: [
+          { id: assetA, kind: "image/png", listingId: null },
+          { id: assetB, kind: "image/jpeg", listingId: null },
+        ],
+      },
+      createModel: modelFactory as never,
+    });
+    const threadId = await openThread(service);
+
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        text: "Create the draft",
+        skillKey: "listing.draft_from_sources",
+        attachmentAssetIds: [assetA, assetB],
+      }),
+    );
+
+    expect(result.reply.skillKey).toBe("listing.draft_from_sources");
+    expect(result.reply.skillVersion).toBe("1.1.0");
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.dispatch).toMatchObject({
+      kind: "listing_draft",
+      assetIds: [assetA, assetB],
+      ready: true,
+    });
+    expect(result.reply.outputs).toEqual([]);
+    expect(modelFactory).not.toHaveBeenCalled();
+    // A read-only turn: no canonical listing write and no dispatch audit.
+    expect(fake.state.writes).not.toContain("listings.create");
+    expect(auditActions(fake)).not.toContain("studio.dispatch.listing_draft");
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+  });
+
+  it("asks for source assets instead of preparing a dispatch when none are given", async () => {
+    const { service } = harness({ options: populatedOptions() });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({ text: "Create a draft", skillKey: "listing.draft_from_sources" }),
+    );
+    expect(result.reply.status).toBe("needs_input");
+    expect(result.reply.dispatch).toBeNull();
+    expect(result.reply.followUps[0]?.key).toBe(
+      "studio.needs_input.draft_assets",
+    );
   });
 
   it("answers from records, persists the turn and records ordered tool events", async () => {

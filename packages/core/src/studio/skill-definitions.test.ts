@@ -13,7 +13,7 @@ const EXPECTED_STATUS = {
   "catalog.find": "pilot",
   "catalog.gap_review": "pilot",
   "listing.copy_proposal": "pilot",
-  "listing.draft_from_sources": "planned",
+  "listing.draft_from_sources": "pilot",
   "merchant.audit": "planned",
   "product_shot.prepare": "planned",
   "category.map_proposal": "planned",
@@ -26,6 +26,7 @@ const EXECUTABLE_KEYS = [
   "catalog.find",
   "catalog.gap_review",
   "listing.copy_proposal",
+  "listing.draft_from_sources",
 ];
 
 function parseDefinition(value: unknown): boolean {
@@ -142,7 +143,7 @@ describe("SKILL_DEFINITIONS", () => {
 
   it("resolves skills by key and returns undefined for unknown keys", () => {
     expect(getSkill("catalog.find")?.version).toBe("1.0.0");
-    expect(getSkill("listing.draft_from_sources")?.version).toBe("1.0.0");
+    expect(getSkill("listing.draft_from_sources")?.version).toBe("1.1.0");
     expect(getSkill("catalog.missing")).toBeUndefined();
     expect(getSkill("")).toBeUndefined();
   });

@@ -333,8 +333,10 @@ export function StudioThreadView({
                       <StudioTurn
                         locale={locale}
                         message={toTurnMessage(message)}
+                        threadId={thread.threadId}
                         aiEnabled={aiEnabled}
                         canSignOff={canSignOff}
+                        canDispatch={canSend}
                         trace={traceState?.steps ?? null}
                         traceLoading={traceState?.loading ?? false}
                         traceError={traceState?.error ?? false}

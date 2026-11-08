@@ -391,6 +391,14 @@ export const STUDIO_COPY = {
     "此步驟沒有可顯示的詳情。",
     "No details are available for this step.",
   ],
+  "studio.trace.assets_read": [
+    "已讀取 {count} 個來源素材。",
+    "Read {count} source asset(s).",
+  ],
+  "studio.trace.dispatch.done": [
+    "已建立商品草稿 {listingId}；佇列狀態：{queueState}。",
+    "Created listing draft {listingId}; queue state: {queueState}.",
+  ],
   "studio.trace.toolId": ["工具 {tool}", "Tool {tool}"],
   "studio.trace.needs_input": [
     "需要更多資訊才能查詢，未執行任何讀取。",
@@ -489,6 +497,10 @@ export const STUDIO_COPY = {
     "文案建議：{fields} 個欄位；已略過 {dropped} 個沒有依據的建議。",
     "Copy proposal: {fields} field(s); {dropped} ungrounded suggestion(s) dropped.",
   ],
+  "studio.answer.draft_ready": [
+    "已準備 {assets} 個來源素材；缺少 {missing} 個。確認後才會建立草稿。",
+    "Prepared {assets} source asset(s); {missing} missing. The draft is only created after explicit confirmation.",
+  ],
 
   // -- evidence checks ------------------------------------------------------
   "studio.check.catalog_matches": [
@@ -515,6 +527,10 @@ export const STUDIO_COPY = {
   "studio.check.copy_gap": [
     "商品 {listingId}：缺口 {code}；阻塞核准：{blocking}。",
     "Listing {listingId}: gap {code}; blocking: {blocking}.",
+  ],
+  "studio.check.draft_assets": [
+    "來源素材：{count} 個可用；缺少 {missing} 個；已附在其他商品 {attached} 個。",
+    "Source assets: {count} usable; {missing} missing; {attached} already attached to another listing.",
   ],
 
   // -- honest read limits ---------------------------------------------------
@@ -550,6 +566,10 @@ export const STUDIO_COPY = {
     "未能讀取目前文案；未提出任何建議。",
     "The current copy could not be read, so no proposal was made.",
   ],
+  "studio.limit.draft_assets_missing": [
+    "缺少 {count} 個來源素材；未準備任何派送動作。",
+    "{count} source asset(s) are missing; no dispatch was prepared.",
+  ],
   "studio.limit.copy_fields_dropped": [
     "已略過 {count} 個沒有依據的建議欄位。",
     "{count} proposed field(s) were dropped because their evidence did not resolve.",
@@ -563,6 +583,10 @@ export const STUDIO_COPY = {
   "studio.needs_input.copy_listing": [
     "請提供要提出文案建議的商品。",
     "Provide the listing to propose copy for.",
+  ],
+  "studio.needs_input.draft_assets": [
+    "請附上或貼上至少一個來源素材識別碼。",
+    "Attach or paste at least one source asset id.",
   ],
   "studio.followup.explain_status": [
     "解釋商品目前的狀態",
@@ -579,6 +603,14 @@ export const STUDIO_COPY = {
   "studio.followup.open_listing": [
     "開啟某個商品的記錄",
     "Open a listing's record",
+  ],
+  "studio.followup.confirm_dispatch": [
+    "確認後建立商品草稿",
+    "Create the listing draft after confirming",
+  ],
+  "studio.followup.open_jobs": [
+    "查看作業與處理狀態",
+    "Check jobs and processing status",
   ],
 
   // -- records answer / evidence -------------------------------------------
@@ -887,6 +919,80 @@ export const STUDIO_COPY = {
     "找不到此對話。",
     "This conversation could not be found.",
   ],
+
+  // -- dispatch card (plan Task 10) -----------------------------------------
+  "studio.dispatch.title": ["建立商品草稿", "Create listing draft"],
+  "studio.dispatch.intro": [
+    "此動作會依來源素材建立商品草稿，並交由現有上線流程處理。",
+    "This creates a listing draft from the source assets and hands it to the existing listing pipeline.",
+  ],
+  "studio.dispatch.assetCount": [
+    "來源素材 {count} 個",
+    "{count} source asset(s)",
+  ],
+  "studio.dispatch.note": ["備註：{note}", "Note: {note}"],
+  "studio.dispatch.noNote": ["沒有備註", "No note"],
+  "studio.dispatch.review": ["檢視並確認", "Review and confirm"],
+  "studio.dispatch.warning": [
+    "確認後會建立正式商品草稿；工作室不會自動核准或發佈。",
+    "Confirming creates a real listing draft; Studio never approves or publishes automatically.",
+  ],
+  "studio.dispatch.confirm": ["確認建立草稿", "Confirm create draft"],
+  "studio.dispatch.cancel": ["取消", "Cancel"],
+  "studio.dispatch.sending": ["正在建立草稿…", "Creating the draft…"],
+  "studio.dispatch.notReady": [
+    "部分來源素材未能解析，因此無法建立草稿。",
+    "Some source assets could not be resolved, so no draft can be created.",
+  ],
+  "studio.dispatch.viewerNote": [
+    "需要操作員或以上權限才能建立草稿。",
+    "An operator or higher role is required to create a draft.",
+  ],
+  "studio.dispatch.created": ["已建立商品草稿。", "Listing draft created."],
+  "studio.dispatch.replayed": [
+    "此素材組合先前已建立草稿，顯示同一個商品。",
+    "These assets already created a draft earlier; the same listing is shown.",
+  ],
+  "studio.dispatch.openListing": ["開啟商品", "Open the listing"],
+  "studio.dispatch.queueEnqueued": [
+    "已排入現有上線流程。",
+    "Queued into the existing listing pipeline.",
+  ],
+  "studio.dispatch.queueUnavailable": [
+    "草稿已建立，但處理尚未開始；不會顯示為處理中。",
+    "The draft exists, but processing has not started; it is never shown as processing.",
+  ],
+  "studio.dispatch.failed": [
+    "未能建立草稿，請重試。",
+    "The draft could not be created. Try again.",
+  ],
+  "studio.dispatch.forbidden": [
+    "你沒有權限建立草稿。",
+    "You do not have permission to create a draft.",
+  ],
+  "studio.dispatch.processing": [
+    "處理狀態",
+    "Processing status",
+  ],
+  "studio.dispatch.readingStatus": [
+    "正在讀取處理狀態…",
+    "Reading processing status…",
+  ],
+  "studio.dispatch.checkStatus": ["重新讀取狀態", "Re-read status"],
+  "studio.dispatch.noRun": [
+    "尚未有可讀取的處理執行。",
+    "No processing run is available yet.",
+  ],
+  "studio.dispatch.runState.queued": ["已排隊", "Queued"],
+  "studio.dispatch.runState.running": ["處理中", "Running"],
+  "studio.dispatch.runState.succeeded": ["成功", "Succeeded"],
+  "studio.dispatch.runState.failed": ["失敗", "Failed"],
+  "studio.dispatch.runState.cancelled": ["已取消", "Cancelled"],
+  "studio.dispatch.runState.outcome_unknown": [
+    "結果未知",
+    "Outcome unknown",
+  ],
+  "studio.dispatch.runState.unavailable": ["未能提供", "Unavailable"],
 
   // -- renderer fallbacks ---------------------------------------------------
   "studio.render.fallback": [

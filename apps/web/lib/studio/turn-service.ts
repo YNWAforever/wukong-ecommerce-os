@@ -901,6 +901,10 @@ async function proposeCopyTurn(input: {
           )
             ? parseListingId(input.body.text)
             : null,
+          ...(input.body.attachmentAssetIds &&
+          input.body.attachmentAssetIds.length > 0
+            ? { attachmentAssetIds: input.body.attachmentAssetIds }
+            : {}),
         }),
     );
 
@@ -957,6 +961,12 @@ async function proposeCopyTurn(input: {
           outputs: proposal.output ? [proposal.output] : [],
           limitations: [...deterministic.limitations, ...proposal.limitations],
         });
+      } else if (input.skill.key === "listing.draft_from_sources") {
+        // Dispatch preparation is deterministic on purpose: the turn validates
+        // the operator's source assets and records what a confirmed dispatch
+        // would send. It never creates the listing; only the explicit dispatch
+        // route does that (plan Task 10).
+        reply = turnReplySchema.parse({ ...deterministic });
       } else {
         const modelOutcome = await analyseTurn({
           workspaceId: input.workspaceId,

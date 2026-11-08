@@ -64,6 +64,7 @@ const reply: StudioTurnReply = {
     coverage: {},
   },
   outputs: [],
+  dispatch: null,
   analysis: null,
   traceSummary: { stepCount: 1 },
   limitations: [],

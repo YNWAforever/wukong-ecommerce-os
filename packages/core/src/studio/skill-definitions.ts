@@ -155,8 +155,8 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
   },
   {
     key: "listing.draft_from_sources",
-    version: "1.0.0",
-    status: "planned",
+    version: "1.1.0",
+    status: "pilot",
     title: {
       "zh-Hant": "從來源建立商品草稿",
       en: "Create listing draft from sources",

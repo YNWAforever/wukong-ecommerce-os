@@ -4,6 +4,7 @@ import {
   coverageRecord,
   translatedLine,
   turnReplySchema,
+  draftDispatchSchema,
   type EvidencePack,
   type NeedsInput,
   type StudioTurnReply,
@@ -129,10 +130,31 @@ export function composeDeterministicReply(input: {
         proposal: "pending",
       }),
     );
+  } else if (skill.key === "listing.draft_from_sources") {
+    const assetCheck = pack.checks.find(
+      (check) => check.key === "studio.check.draft_assets",
+    );
+    sections.push(
+      translatedLine("studio.answer.draft_ready", {
+        assets: numberValue(assetCheck?.values ?? null, "count"),
+        missing: numberValue(assetCheck?.values ?? null, "missing"),
+      }),
+    );
   }
 
+  const dispatch = draftDispatchSchema.safeParse(pack.context.draftDispatch);
+  const parsedDispatch = dispatch.success ? dispatch.data : null;
+  // A draft turn is only "answered" when the prepared dispatch is actually
+  // ready. A partial asset resolution stays visibly partial.
+  const replyStatus =
+    skill.key === "listing.draft_from_sources"
+      ? parsedDispatch?.ready === true && pack.limitations.length === 0
+        ? "answered"
+        : "partial"
+      : status;
+
   return turnReplySchema.parse({
-    status,
+    status: replyStatus,
     skillKey: skill.key,
     skillVersion: skill.version,
     records: {
@@ -141,6 +163,7 @@ export function composeDeterministicReply(input: {
       coverage: coverageRecord(pack.coverage),
     },
     outputs: [],
+    dispatch: parsedDispatch,
     analysis: null,
     traceSummary: { stepCount: pack.trace.length },
     limitations: pack.limitations,
@@ -155,6 +178,7 @@ export function composeNeedsInputReply(needs: NeedsInput): StudioTurnReply {
     skillVersion: needs.skill.version,
     records: { sections: [], checks: [], coverage: {} },
     outputs: [],
+    dispatch: null,
     analysis: null,
     traceSummary: { stepCount: 0 },
     limitations: [],

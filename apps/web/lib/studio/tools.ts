@@ -11,6 +11,7 @@ import {
   translatedLine,
   type TranslatedLine,
 } from "./types.js";
+import { readListingRunStatus } from "./tools/listing-run-status.js";
 
 /**
  * Typed internal tool plane for the deterministic Studio (plan Task 5).
@@ -55,6 +56,24 @@ export type JobEvidence = {
 
 export type ListingGap = { code: string; blocking: boolean };
 
+/** A source asset the operator attached, resolved inside the workspace. */
+export type SourceAssetEvidence = {
+  assetId: string;
+  contentType: string;
+  listingId: string | null;
+};
+
+/** One listing-pipeline operation's persisted state, read for the UI. */
+export type ListingRunStatus = {
+  state:
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "superseded";
+};
+
 /** Current copy snapshot for the reviewed listing version (proposal context). */
 export type ListingCopySnapshot = {
   listingId: string;
@@ -89,6 +108,21 @@ export type StudioReadDeps = {
    * skill as the immutable target/context; it is not a tool-requestable action.
    */
   getListingCopy(listingId: string): Promise<ListingCopySnapshot | null>;
+  /**
+   * Resolve operator-attached source asset ids inside the workspace (plan
+   * Task 10). A missing id is reported, never silently dropped, and an asset
+   * already attached to a listing is surfaced so the dispatch can be refused
+   * honestly. This is a server read for evidence, not a model-requestable tool.
+   */
+  getSourceAssets(assetIds: readonly string[]): Promise<{
+    items: SourceAssetEvidence[];
+    missingAssetIds: string[];
+  }>;
+  /** Persisted state of one listing-pipeline operation (read tool support). */
+  getListingRunStatus(
+    listingId: string,
+    runId: string,
+  ): Promise<ListingRunStatus | null>;
 };
 
 export type ToolRun = {
@@ -164,11 +198,18 @@ async function runReadTool(
         },
       };
     }
-    // Registered for later phases; the v1 pilot skills never require them.
+    case "listing.get_run_status": {
+      const input = parsed as { listingId: string; runId: string };
+      const status = await readListingRunStatus(deps, input);
+      if (!status) return { state: "unavailable" };
+      return { output: status };
+    }
+    // Dispatch never runs through the tool plane: `listing.create_draft` is a
+    // reviewed registry entry, but creating canonical listing data must go
+    // through the explicit confirmed Studio dispatch route (plan Task 10).
     case "imports.list":
     case "exports.get":
     case "assets.list":
-    case "listing.get_run_status":
     case "listing.create_draft":
     case "listing.propose_copy":
       return { state: "unavailable" };

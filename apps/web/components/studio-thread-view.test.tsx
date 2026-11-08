@@ -50,6 +50,7 @@ const reply: StudioTurnReply = {
     coverage: { listing: "present" },
   },
   outputs: [],
+  dispatch: null,
   analysis: null,
   traceSummary: { stepCount: 1 },
   limitations: [],
