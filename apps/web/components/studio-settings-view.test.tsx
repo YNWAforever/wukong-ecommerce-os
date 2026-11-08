@@ -6,23 +6,34 @@ import type {
   McpConnectionsSnapshot,
 } from "../lib/studio/mcp-connections";
 import type { McpTokenView } from "../lib/studio/mcp-tokens";
+import { studioSettingsAdminView } from "../lib/studio/settings-admin";
 import { StudioSettingsView } from "./studio-settings-view";
 
 /**
- * Settings-view rendering tests (plan Task 13): honest workspace state, token
- * and connection panels mounted, and a read-only tool catalogue. Static render
- * only — the panels' interactive behaviour is covered in their own tests.
+ * Settings-view rendering tests (plan Task 13 + A1): the editable workspace
+ * card, token and connection panels, and the reviewed tool catalogue. Static
+ * render only — interactive save behaviour is covered by the workspace panel's
+ * own test.
  */
 
-const settings = {
+const SETTINGS_ROW = {
+  workspaceId: "ws_test",
   enabled: true,
-  defaultHome: false,
+  allowedSkills: [] as string[],
   monthlyBudgetUsd: null,
   runCeilingUsd: null,
   retentionDays: null,
-  allowedSkills: [] as string[],
-  aiConfigured: false,
+  defaultHome: false,
+  ai: null,
+  updatedBy: "actor_ops",
+  updatedAt: new Date("2026-11-08T10:00:00.000Z"),
 };
+
+function adminView() {
+  return studioSettingsAdminView(SETTINGS_ROW, {
+    CONVERSATION_STUDIO_ENABLED: "true",
+  } as unknown as NodeJS.ProcessEnv);
+}
 
 function connection(
   overrides: Partial<McpConnectionView> = {},
@@ -91,7 +102,6 @@ const tools = [
 function render(
   overrides: {
     locale?: "en" | "zh-Hant";
-    settings?: typeof settings;
     tokens?: readonly McpTokenView[];
     connections?: McpConnectionsSnapshot;
   } = {},
@@ -99,7 +109,7 @@ function render(
   return renderToStaticMarkup(
     <StudioSettingsView
       locale={overrides.locale ?? "en"}
-      settings={overrides.settings ?? settings}
+      settingsAdmin={adminView()}
       tokens={overrides.tokens ?? tokens}
       connections={overrides.connections ?? snapshot()}
       tools={tools}
@@ -108,15 +118,16 @@ function render(
 }
 
 describe("StudioSettingsView", () => {
-  it("renders the settings header and read-only workspace state", () => {
+  it("renders the editable workspace settings card and readiness flags", () => {
     const html = render();
     expect(html).toContain("Studio settings");
-    expect(html).toContain("Workspace Studio state");
+    expect(html).toContain("Workspace settings");
     expect(html).toContain("Monthly model budget (USD)");
-    // Missing values are stated as not set, never invented as zero.
-    expect(html).toContain("Not set");
-    expect(html).toContain("Live model not configured");
-    expect(html).toContain("All reviewed skills");
+    expect(html).toContain("Save settings");
+    // Missing values are stated as blank/not set, never invented as zero.
+    expect(html).toContain("Readiness");
+    expect(html).toContain("Deployment flag");
+    expect(html).toContain("No live model (deterministic only)");
   });
 
   it("renders token rows without any token value and revoked state", () => {
@@ -167,7 +178,7 @@ describe("StudioSettingsView", () => {
   it("renders zh-Hant copy for the zh-Hant locale", () => {
     const html = render({ locale: "zh-Hant" });
     expect(html).toContain("工作室設定");
-    expect(html).toContain("工作區工作室狀態");
+    expect(html).toContain("工作區設定");
     expect(html).toContain("外部 MCP 連線");
     expect(html).toContain("預設停用");
   });

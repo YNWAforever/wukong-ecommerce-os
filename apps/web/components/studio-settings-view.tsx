@@ -1,32 +1,25 @@
 import type { Locale } from "../lib/locale";
 import type { McpConnectionsSnapshot } from "../lib/studio/mcp-connections";
 import type { McpTokenView } from "../lib/studio/mcp-tokens";
+import type { StudioSettingsAdminView } from "../lib/studio/settings-admin";
 import {
   studioSettingsCopy,
   type StudioSettingsCopyKey,
 } from "../lib/studio-settings-copy";
 import { StudioMcpConnectionsPanel } from "./studio-mcp-connections-panel";
 import { StudioTokenPanel } from "./studio-token-panel";
+import { StudioWorkspaceSettingsPanel } from "./studio-workspace-settings-panel";
 import styles from "./studio.module.css";
 
 /**
- * Admin Studio settings view (plan Task 13).
+ * Admin Studio settings view (plan Task 13 + A1).
  *
- * Read-only workspace state plus the two admin panels (API tokens, external
- * MCP registry) and the reviewed tool catalogue. The page gates on admin and
- * has already resolved every value server-side; the view never fetches on
- * first render and shows no fabricated connection status.
+ * Editable workspace settings, the two admin panels (API tokens, external MCP
+ * registry) and the reviewed tool catalogue. The page gates on admin and has
+ * already resolved every value server-side; the view never fetches on its own
+ * beyond the workspace card's explicit save action, and shows no fabricated
+ * connection or model status.
  */
-
-export type StudioSettingsSummary = {
-  enabled: boolean;
-  defaultHome: boolean;
-  monthlyBudgetUsd: string | null;
-  runCeilingUsd: string | null;
-  retentionDays: number | null;
-  allowedSkills: readonly string[];
-  aiConfigured: boolean;
-};
 
 export type StudioToolRow = {
   id: string;
@@ -38,7 +31,7 @@ export type StudioToolRow = {
 
 export type StudioSettingsViewProps = {
   locale: Locale;
-  settings: StudioSettingsSummary;
+  settingsAdmin: StudioSettingsAdminView;
   tokens: readonly McpTokenView[];
   connections: McpConnectionsSnapshot;
   tools: readonly StudioToolRow[];
@@ -58,17 +51,12 @@ const COST_KEYS: Record<StudioToolRow["costClass"], StudioSettingsCopyKey> = {
 
 export function StudioSettingsView({
   locale,
-  settings,
+  settingsAdmin,
   tokens,
   connections,
   tools,
 }: StudioSettingsViewProps) {
   const copy = (key: StudioSettingsCopyKey) => studioSettingsCopy(locale, key);
-  const notSet = copy("studio.settings.workspace.notSet");
-  const yesNo = (value: boolean) =>
-    value
-      ? copy("studio.settings.workspace.yes")
-      : copy("studio.settings.workspace.no");
 
   return (
     <div className={styles["studio-section"]}>
@@ -87,89 +75,7 @@ export function StudioSettingsView({
         </p>
       </header>
 
-      <section
-        className={styles["studio-section"]}
-        aria-labelledby="studio-settings-workspace"
-      >
-        <header className={styles["studio-section-header"]}>
-          <h2
-            id="studio-settings-workspace"
-            className={styles["studio-section-title"]}
-          >
-            {copy("studio.settings.workspace.title")}
-          </h2>
-          <p className={styles["studio-section-lede"]}>
-            {copy("studio.settings.workspace.lede")}
-          </p>
-        </header>
-        <dl className={styles["studio-overview-grid"]}>
-          <div className={styles["studio-overview-tile"]}>
-            <dt className={styles["studio-overview-label"]}>
-              {settings.enabled
-                ? copy("studio.settings.workspace.enabled")
-                : copy("studio.settings.workspace.disabled")}
-            </dt>
-            <dd className={styles["studio-overview-value"]}>
-              {yesNo(settings.enabled)}
-            </dd>
-          </div>
-          <div className={styles["studio-overview-tile"]}>
-            <dt className={styles["studio-overview-label"]}>
-              {copy("studio.settings.workspace.budget")}
-            </dt>
-            <dd className={styles["studio-overview-value"]}>
-              {settings.monthlyBudgetUsd ?? notSet}
-            </dd>
-          </div>
-          <div className={styles["studio-overview-tile"]}>
-            <dt className={styles["studio-overview-label"]}>
-              {copy("studio.settings.workspace.runCeiling")}
-            </dt>
-            <dd className={styles["studio-overview-value"]}>
-              {settings.runCeilingUsd ?? notSet}
-            </dd>
-          </div>
-          <div className={styles["studio-overview-tile"]}>
-            <dt className={styles["studio-overview-label"]}>
-              {copy("studio.settings.workspace.retention")}
-            </dt>
-            <dd className={styles["studio-overview-value"]}>
-              {settings.retentionDays ?? notSet}
-            </dd>
-          </div>
-          <div className={styles["studio-overview-tile"]}>
-            <dt className={styles["studio-overview-label"]}>
-              {copy("studio.settings.workspace.defaultHome")}
-            </dt>
-            <dd className={styles["studio-overview-value"]}>
-              {yesNo(settings.defaultHome)}
-            </dd>
-          </div>
-          <div className={styles["studio-overview-tile"]}>
-            <dt className={styles["studio-overview-label"]}>
-              {copy("studio.settings.workspace.allowedSkills")}
-            </dt>
-            <dd className={styles["studio-overview-value"]}>
-              {settings.allowedSkills.length > 0
-                ? settings.allowedSkills.join(", ")
-                : copy("studio.settings.workspace.allSkills")}
-            </dd>
-          </div>
-          <div className={styles["studio-overview-tile"]}>
-            <dt className={styles["studio-overview-label"]}>
-              {settings.aiConfigured
-                ? copy("studio.settings.workspace.aiConfigured")
-                : copy("studio.settings.workspace.aiNotConfigured")}
-            </dt>
-            <dd className={styles["studio-overview-value"]}>
-              {yesNo(settings.aiConfigured)}
-            </dd>
-          </div>
-        </dl>
-        <p className={styles["studio-notice"]}>
-          {copy("studio.settings.workspace.budgetNote")}
-        </p>
-      </section>
+      <StudioWorkspaceSettingsPanel locale={locale} initial={settingsAdmin} />
 
       <StudioTokenPanel locale={locale} initialTokens={tokens} />
       <StudioMcpConnectionsPanel locale={locale} snapshot={connections} />

@@ -1,4 +1,4 @@
-﻿import { sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 
@@ -260,6 +260,21 @@ export type StudioRepository = {
   settings: {
     get(): Promise<StudioSettings>;
     upsert(
+      input: StudioSettingsInput,
+      actorId: string,
+    ): Promise<StudioSettings>;
+  };
+  /**
+   * Explicit admin-facing workspace-settings surface (Studio settings API).
+   *
+   * Same validated row as `settings`; named for the administrative use case so
+   * callers do not have to know that `upsert` is the storage spelling. The
+   * write runs inside the caller's `forWorkspace` transaction and returns the
+   * persisted row, so a readback is a separate `get()` on the same repos.
+   */
+  workspaceSettings: {
+    get(): Promise<StudioSettings>;
+    update(
       input: StudioSettingsInput,
       actorId: string,
     ): Promise<StudioSettings>;
@@ -654,75 +669,82 @@ export function createStudioRepository(
   workspaceId: string,
   scope: WorkspaceScope,
 ): StudioRepository {
-  return {
-    settings: {
-      async get() {
-        scope.assertOpen();
-        const rows = await transaction.execute(
-          sql`select * from studio_workspace_settings where workspace_id=${workspaceId}`,
-        );
-        const row = rows[0];
-        return row
-          ? readSettings(row as Record<string, unknown>)
-          : { workspaceId, ...DEFAULT_SETTINGS };
-      },
-      async upsert(input, actorId) {
-        scope.assertOpen();
-        if (
-          input.retentionDays != null &&
-          (input.retentionDays < 1 || input.retentionDays > 3650)
+  const settingsRepository: StudioRepository["settings"] = {
+    async get() {
+      scope.assertOpen();
+      const rows = await transaction.execute(
+        sql`select * from studio_workspace_settings where workspace_id=${workspaceId}`,
+      );
+      const row = rows[0];
+      return row
+        ? readSettings(row as Record<string, unknown>)
+        : { workspaceId, ...DEFAULT_SETTINGS };
+    },
+    async upsert(input, actorId) {
+      scope.assertOpen();
+      if (
+        input.retentionDays != null &&
+        (input.retentionDays < 1 || input.retentionDays > 3650)
+      )
+        throw new Error("retentionDays must be between 1 and 3650");
+      const monthly =
+        input.monthlyBudgetUsd === null
+          ? null
+          : money(input.monthlyBudgetUsd, "monthlyBudgetUsd", true);
+      const ceiling =
+        input.runCeilingUsd === null
+          ? null
+          : money(input.runCeilingUsd, "runCeilingUsd", true);
+      const ai = input.ai;
+      if (ai) {
+        money(ai.inputUsdPerMillion, "inputUsdPerMillion");
+        money(ai.outputUsdPerMillion, "outputUsdPerMillion");
+        if (ai.provider !== "openrouter" && ai.provider !== "opencode-go")
+          throw new Error("unsupported studio ai provider");
+      }
+      const rows = await transaction.execute(sql`
+        insert into studio_workspace_settings(
+          workspace_id,enabled,allowed_skills,monthly_budget_usd,run_ceiling_usd,
+          retention_days,default_home,ai_provider,ai_model,pricing_version,
+          max_input_tokens,input_usd_per_million,output_usd_per_million,max_output_tokens,
+          updated_by
+        ) values (
+          ${workspaceId},${input.enabled},${textArray(input.allowedSkills)},
+          ${monthly}::numeric,${ceiling}::numeric,${input.retentionDays},
+          ${input.defaultHome},${ai?.provider ?? null},${ai?.model ?? null},
+          ${ai?.pricingVersion ?? null},${ai?.maxInputTokens ?? null},
+          ${ai?.inputUsdPerMillion ?? null}::numeric,
+          ${ai?.outputUsdPerMillion ?? null}::numeric,
+          ${ai?.maxOutputTokens ?? null},${actorId}
         )
-          throw new Error("retentionDays must be between 1 and 3650");
-        const monthly =
-          input.monthlyBudgetUsd === null
-            ? null
-            : money(input.monthlyBudgetUsd, "monthlyBudgetUsd", true);
-        const ceiling =
-          input.runCeilingUsd === null
-            ? null
-            : money(input.runCeilingUsd, "runCeilingUsd", true);
-        const ai = input.ai;
-        if (ai) {
-          money(ai.inputUsdPerMillion, "inputUsdPerMillion");
-          money(ai.outputUsdPerMillion, "outputUsdPerMillion");
-          if (ai.provider !== "openrouter" && ai.provider !== "opencode-go")
-            throw new Error("unsupported studio ai provider");
-        }
-        const rows = await transaction.execute(sql`
-          insert into studio_workspace_settings(
-            workspace_id,enabled,allowed_skills,monthly_budget_usd,run_ceiling_usd,
-            retention_days,default_home,ai_provider,ai_model,pricing_version,
-            max_input_tokens,input_usd_per_million,output_usd_per_million,max_output_tokens,
-            updated_by
-          ) values (
-            ${workspaceId},${input.enabled},${textArray(input.allowedSkills)},
-            ${monthly}::numeric,${ceiling}::numeric,${input.retentionDays},
-            ${input.defaultHome},${ai?.provider ?? null},${ai?.model ?? null},
-            ${ai?.pricingVersion ?? null},${ai?.maxInputTokens ?? null},
-            ${ai?.inputUsdPerMillion ?? null}::numeric,
-            ${ai?.outputUsdPerMillion ?? null}::numeric,
-            ${ai?.maxOutputTokens ?? null},${actorId}
-          )
-          on conflict (workspace_id) do update set
-            enabled=excluded.enabled,
-            allowed_skills=excluded.allowed_skills,
-            monthly_budget_usd=excluded.monthly_budget_usd,
-            run_ceiling_usd=excluded.run_ceiling_usd,
-            retention_days=excluded.retention_days,
-            default_home=excluded.default_home,
-            ai_provider=excluded.ai_provider,
-            ai_model=excluded.ai_model,
-            pricing_version=excluded.pricing_version,
-            max_input_tokens=excluded.max_input_tokens,
-            input_usd_per_million=excluded.input_usd_per_million,
-            output_usd_per_million=excluded.output_usd_per_million,
-            max_output_tokens=excluded.max_output_tokens,
-            updated_by=excluded.updated_by,
-            updated_at=now()
-          returning *
-        `);
-        return readSettings(rows[0] as Record<string, unknown>);
-      },
+        on conflict (workspace_id) do update set
+          enabled=excluded.enabled,
+          allowed_skills=excluded.allowed_skills,
+          monthly_budget_usd=excluded.monthly_budget_usd,
+          run_ceiling_usd=excluded.run_ceiling_usd,
+          retention_days=excluded.retention_days,
+          default_home=excluded.default_home,
+          ai_provider=excluded.ai_provider,
+          ai_model=excluded.ai_model,
+          pricing_version=excluded.pricing_version,
+          max_input_tokens=excluded.max_input_tokens,
+          input_usd_per_million=excluded.input_usd_per_million,
+          output_usd_per_million=excluded.output_usd_per_million,
+          max_output_tokens=excluded.max_output_tokens,
+          updated_by=excluded.updated_by,
+          updated_at=now()
+        returning *
+      `);
+      return readSettings(rows[0] as Record<string, unknown>);
+    },
+  };
+
+  return {
+    settings: settingsRepository,
+
+    workspaceSettings: {
+      get: () => settingsRepository.get(),
+      update: (input, actorId) => settingsRepository.upsert(input, actorId),
     },
 
     threads: {

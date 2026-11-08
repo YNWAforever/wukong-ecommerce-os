@@ -12,15 +12,18 @@ import { isStudioEnabled } from "../../../../lib/studio-flags";
 import { createMcpConnectionService } from "../../../../lib/studio/mcp-connections";
 import { createMcpTokenService } from "../../../../lib/studio/mcp-tokens";
 import { requireStudioSession } from "../../../../lib/studio/session";
+import { studioSettingsAdminView } from "../../../../lib/studio/settings-admin";
 
 /**
- * `/studio/settings` — admin-only Studio administration (plan Task 13).
+ * `/studio/settings` — admin-only Studio administration (plan Task 13 + A1).
  *
  * The shared `requireStudioSession(deps, "admin")` gate runs first: no
  * session redirects to sign-in, a disabled Studio or a non-admin membership
  * answers `notFound()` so the surface never reveals itself to a reader who
- * cannot administer it. Token and connection reads use the same services the
- * APIs use, so what this page renders is exactly what the routes enforce.
+ * cannot administer it. Token, connection and settings reads all use the same
+ * services the APIs use, so what this page renders is exactly what the routes
+ * enforce; the workspace card edits through `PATCH /api/studio/settings` and
+ * shows only the server readback.
  */
 export default async function StudioSettingsPage() {
   const session = await authSessionContext.resolve();
@@ -54,20 +57,11 @@ export default async function StudioSettingsPage() {
 
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE_NAME)?.value);
-  const settings = studioSession.settings;
 
   return (
     <StudioSettingsView
       locale={locale}
-      settings={{
-        enabled: settings.enabled,
-        defaultHome: settings.defaultHome,
-        monthlyBudgetUsd: settings.monthlyBudgetUsd,
-        runCeilingUsd: settings.runCeilingUsd,
-        retentionDays: settings.retentionDays,
-        allowedSkills: settings.allowedSkills,
-        aiConfigured: settings.ai !== null,
-      }}
+      settingsAdmin={studioSettingsAdminView(studioSession.settings)}
       tokens={tokens.items}
       connections={connections}
       tools={TOOL_DEFINITIONS.map((tool) => ({

@@ -2305,3 +2305,111 @@ article.studio-output .studio-output-body {
     padding: 6px;
   }
 }
+
+/* -- editable workspace settings (A1) ------------------------------------ */
+
+.studio-settings-form {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+}
+
+.studio-settings-subsection {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.studio-settings-subsection-title {
+  margin: 0;
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.studio-settings-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.studio-settings-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.studio-settings-input {
+  min-height: 44px;
+  padding: 8px 10px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 400;
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius);
+}
+
+.studio-settings-input:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.studio-settings-checkboxes {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.studio-settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.studio-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.studio-settings-state {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.studio-settings-state-success {
+  color: var(--success);
+}
+
+.studio-settings-state-error {
+  color: var(--danger);
+}
+
+.studio-settings-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.studio-settings-readiness {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 0;
+}

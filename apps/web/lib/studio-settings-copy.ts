@@ -196,6 +196,104 @@ export const STUDIO_SETTINGS_COPY = {
     "Enter a connection label.",
   ],
 
+  // -- editable workspace settings (A1) -------------------------------------
+  "studio.settings.workspace.formTitle": ["工作區設定", "Workspace settings"],
+  "studio.settings.workspace.roleNote": [
+    "只有管理員或擁有者可以變更工作區設定；儲存後以伺服器回讀值為準。",
+    "Only an admin or owner can change workspace settings; saved values are read back from the server.",
+  ],
+  "studio.settings.workspace.enableToggle": ["啟用工作室", "Enable Studio"],
+  "studio.settings.workspace.enableHint": [
+    "亦須部署旗標 CONVERSATION_STUDIO_ENABLED 為 true，工作區成員才會看到工作室。",
+    "The deployment flag CONVERSATION_STUDIO_ENABLED must also be true before members see Studio.",
+  ],
+  "studio.settings.workspace.allowedSkillsHint": [
+    "未選取任何技能即代表全部已試行技能；未知或未試行技能不能儲存。",
+    "No selection means every pilot skill; unknown or non-pilot skills cannot be saved.",
+  ],
+  "studio.settings.workspace.monthlyBudgetHint": [
+    "0 至 100 美元，最多 6 位小數；留空表示未設定。",
+    "0 to 100 USD, up to 6 decimals; blank means not set.",
+  ],
+  "studio.settings.workspace.runCeilingHint": [
+    "不得高於月度預算；留空表示未設定。",
+    "May not exceed the monthly budget; blank means not set.",
+  ],
+  "studio.settings.workspace.retentionHint": [
+    "1 至 365 天；留空表示未設定保留政策（目前只儲存，尚未強制執行）。",
+    "1 to 365 days; blank means no retention policy (stored only; not enforced yet).",
+  ],
+  "studio.settings.workspace.defaultHomeHint": [
+    "僅在部署旗標與工作區皆啟用時生效。",
+    "Only applies when both the deployment flag and the workspace row are enabled.",
+  ],
+  "studio.settings.workspace.readinessTitle": ["就緒狀態", "Readiness"],
+  "studio.settings.workspace.deploymentFlag": ["部署旗標", "Deployment flag"],
+  "studio.settings.workspace.effectiveEnabled": [
+    "工作區可見",
+    "Visible in workspace",
+  ],
+  "studio.settings.workspace.modelConfiguredLabel": ["即時模型", "Live model"],
+  "studio.settings.workspace.budgetsPresent": [
+    "預算與上限",
+    "Budget and ceiling",
+  ],
+  "studio.settings.workspace.on": ["開", "On"],
+  "studio.settings.workspace.off": ["關", "Off"],
+  "studio.settings.workspace.aiTitle": [
+    "即時模型（選填）",
+    "Live model (optional)",
+  ],
+  "studio.settings.workspace.aiHint": [
+    "留空即維持純規則模式：不會呼叫模型，也不會預留預算。",
+    "Leave empty to stay deterministic-only: no model call and no budget hold.",
+  ],
+  "studio.settings.workspace.aiDeterministic": [
+    "不使用即時模型（純規則模式）",
+    "No live model (deterministic only)",
+  ],
+  "studio.settings.workspace.aiProvider": ["供應商", "Provider"],
+  "studio.settings.workspace.aiModel": ["模型", "Model"],
+  "studio.settings.workspace.aiNoReviewedModels": [
+    "此供應商目前沒有已審核模型，無法儲存即時模型設定。",
+    "No reviewed model exists for this provider yet, so live-model settings cannot be saved.",
+  ],
+  "studio.settings.workspace.aiPricingVersion": ["定價版本", "Pricing version"],
+  "studio.settings.workspace.aiMaxInputTokens": [
+    "最大輸入 Token",
+    "Max input tokens",
+  ],
+  "studio.settings.workspace.aiInputPrice": [
+    "輸入價格（每百萬 Token 美元）",
+    "Input price (USD per million tokens)",
+  ],
+  "studio.settings.workspace.aiOutputPrice": [
+    "輸出價格（每百萬 Token 美元）",
+    "Output price (USD per million tokens)",
+  ],
+  "studio.settings.workspace.aiMaxOutputTokens": [
+    "最大輸出 Token",
+    "Max output tokens",
+  ],
+  "studio.settings.workspace.aiReviewHint": [
+    "模型與價格下限來自已審核成本登記冊；低於下限、未知模型或超出模型 Token 上限的設定會被拒絕。",
+    "Model and price floors come from the reviewed cost registry; below-floor prices, unknown models or token contexts above the model maximum are rejected.",
+  ],
+  "studio.settings.workspace.invalidNumber": [
+    "請輸入有效的數字（預算最多 6 位小數、價格最多 4 位小數）。",
+    "Enter a valid number (up to 6 decimals for budgets and 4 for prices).",
+  ],
+  "studio.settings.workspace.save": ["儲存設定", "Save settings"],
+  "studio.settings.workspace.saving": ["正在儲存…", "Saving…"],
+  "studio.settings.workspace.saved": [
+    "已儲存；以下數值為伺服器回讀結果。",
+    "Saved; the values below are read back from the server.",
+  ],
+  "studio.settings.workspace.saveError": [
+    "設定未能儲存；請檢查欄位後重試。",
+    "Settings were not saved; check the fields and try again.",
+  ],
+
   // -- tool catalogue -------------------------------------------------------
   "studio.settings.tools.title": [
     "工具目錄（唯讀）",
