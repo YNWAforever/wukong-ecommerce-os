@@ -4,9 +4,13 @@ import { notFound, redirect } from "next/navigation";
 import { StudioShell } from "../../../components/studio-shell";
 import { getDatabase } from "../../../lib/intake-runtime";
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
-import { authSessionContext } from "../../../lib/session-context";
+import {
+  authSessionContext,
+  requireWorkspaceRole,
+} from "../../../lib/session-context";
 import { isStudioEnabled } from "../../../lib/studio-flags";
 import { resolveWorkspaceChrome } from "../workspace-chrome";
+import { studioService } from "./studio-service";
 
 /**
  * Gate for every `/studio` route.
@@ -21,6 +25,10 @@ import { resolveWorkspaceChrome } from "../workspace-chrome";
  * failure, so direct access must not become the only visible Studio surface.
  * The `(app)` layout resolves the session too; `authSessionContext.resolve` is
  * wrapped in React `cache()`, so this is the same per-request result.
+ *
+ * The recent-conversation list is read through the same Studio service. A
+ * failure there is not a reason to hide the enabled Studio surface: it logs a
+ * content-free diagnostic and renders the rail's honest empty state instead.
  */
 export default async function StudioLayout({
   children,
@@ -45,6 +53,19 @@ export default async function StudioLayout({
 
   if (!isStudioEnabled(process.env, settings)) notFound();
 
+  const recentThreads = await studioService()
+    .listThreads()
+    .catch((error: unknown) => {
+      console.info(
+        JSON.stringify({
+          event: "studio_layout_threads_read_failed",
+          outcome: "failure",
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        }),
+      );
+      return { items: [], truncated: false };
+    });
+
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE_NAME)?.value);
   const { workspaceName } = await resolveWorkspaceChrome({
@@ -53,7 +74,13 @@ export default async function StudioLayout({
   });
 
   return (
-    <StudioShell locale={locale} workspaceName={workspaceName}>
+    <StudioShell
+      locale={locale}
+      workspaceName={workspaceName}
+      recentThreads={recentThreads.items}
+      recentTruncated={recentThreads.truncated}
+      canCreateThread={requireWorkspaceRole("operator", session.role)}
+    >
       {children}
     </StudioShell>
   );

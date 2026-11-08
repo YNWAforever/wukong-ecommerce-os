@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *
  * The layout is the security-adjacent UX gate (the APIs re-check everything):
  * session -> workspace settings row -> env flags, and every failure mode ends
- * in a 404 rather than a crash or a half-rendered shell.
+ * in a 404 rather than a crash or a half-rendered shell. The recent-thread read
+ * happens after the gate and must degrade to the rail's empty state instead of
+ * taking the enabled surface down.
  */
 
 const state = vi.hoisted(() => ({
@@ -22,6 +24,7 @@ const state = vi.hoisted(() => ({
   } | null,
   settingsError: null as Error | null,
   locale: undefined as string | undefined,
+  listThreads: null as null | (() => Promise<unknown>),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -31,6 +34,7 @@ vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("notFound");
   },
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("next/headers", () => ({
@@ -42,9 +46,20 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-vi.mock("../../../lib/session-context", () => ({
-  authSessionContext: { resolve: async () => state.session },
-}));
+vi.mock("../../../lib/session-context", () => {
+  const roleRank: Record<string, number> = {
+    viewer: 10,
+    operator: 20,
+    reviewer: 30,
+    admin: 40,
+    owner: 50,
+  };
+  return {
+    authSessionContext: { resolve: async () => state.session },
+    requireWorkspaceRole: (required: string, actual: string) =>
+      (roleRank[actual] ?? 0) >= (roleRank[required] ?? 0),
+  };
+});
 
 vi.mock("../../../lib/intake-runtime", () => ({
   getDatabase: () => ({
@@ -74,6 +89,16 @@ vi.mock("../workspace-chrome", () => ({
   }),
 }));
 
+vi.mock("./studio-service", () => ({
+  studioService: () => ({
+    listThreads: () =>
+      state.listThreads === null
+        ? Promise.resolve({ items: [], truncated: false })
+        : state.listThreads(),
+  }),
+  studioAiEnabled: async () => false,
+}));
+
 import StudioLayout from "./layout";
 
 function children() {
@@ -89,10 +114,12 @@ beforeEach(() => {
   state.settings = { enabled: true, defaultHome: false, ai: null };
   state.settingsError = null;
   state.locale = undefined;
+  state.listThreads = null;
 });
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 describe("StudioLayout gate", () => {
@@ -146,8 +173,58 @@ describe("StudioLayout gate", () => {
     expect(html).toContain("Opak Cellar");
     expect(html).toContain("新對話");
     expect(html).toContain("最近的對話");
-    expect(html).toContain("還沒有對話。");
+    expect(html).toContain("還沒有對話");
     expect(html).toContain("home slot");
+  });
+
+  it("passes the recent threads the service returned to the rail", async () => {
+    vi.stubEnv("CONVERSATION_STUDIO_ENABLED", "true");
+    state.listThreads = async () => ({
+      items: [
+        {
+          threadId: "thread-1",
+          title: "Synthetic recent conversation",
+          skillKey: "catalog.find",
+          visibility: "workspace",
+          status: "open",
+          createdBy: "actor",
+          lastMessageAt: "2026-11-08T00:00:00.000Z",
+          createdAt: "2026-11-08T00:00:00.000Z",
+          updatedAt: "2026-11-08T00:00:00.000Z",
+        },
+      ],
+      truncated: true,
+    });
+
+    const html = await render();
+
+    expect(html).toContain("Synthetic recent conversation");
+    expect(html).toContain('href="/studio/t/thread-1"');
+    expect(html).toContain(
+      "只顯示最近更新的對話。",
+    );
+  });
+
+  it("fails closed to the empty rail when the threads read throws, logging no content", async () => {
+    vi.stubEnv("CONVERSATION_STUDIO_ENABLED", "true");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    state.listThreads = async () => {
+      throw new Error("connection string must never be rendered");
+    };
+
+    const html = await render();
+
+    expect(html).toContain("還沒有對話");
+    expect(html).not.toContain("connection string");
+    const logged = info.mock.calls.map((call) => String(call[0]));
+    expect(
+      logged.some((line) =>
+        line.includes("studio_layout_threads_read_failed"),
+      ),
+    ).toBe(true);
+    for (const line of logged) {
+      expect(line).not.toContain("connection string");
+    }
   });
 
   it("renders English rail copy when the locale cookie says en", async () => {
@@ -158,6 +235,25 @@ describe("StudioLayout gate", () => {
 
     expect(html).toContain("New conversation");
     expect(html).toContain("Studio navigation");
-    expect(html).toContain("No conversations yet.");
+    expect(html).toContain("No conversations yet");
+  });
+
+  it("disables New conversation for a viewer with the stated reason", async () => {
+    vi.stubEnv("CONVERSATION_STUDIO_ENABLED", "true");
+    state.locale = "en";
+    state.session = {
+      workspaceId: "workspace",
+      actorId: "viewer",
+      role: "viewer",
+    };
+
+    const html = await render();
+
+    expect(html).toMatch(
+      /<button[^>]*disabled[^>]*>New conversation<\/button>/,
+    );
+    expect(html).toContain(
+      "An operator or higher role is required to create conversations.",
+    );
   });
 });

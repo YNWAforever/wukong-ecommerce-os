@@ -38,6 +38,58 @@ const BANNED_CLAIMS: ReadonlyArray<readonly [string, RegExp]> = [
   ],
 ];
 
+/**
+ * Every key the committed service/evidence/renderer emits (plan Task 7).
+ *
+ * The service stores copy keys, not prose, so a missing key would reach an
+ * operator as the generic fallback line instead of the real step. Pinning the
+ * list here makes a rename a visible decision in the app's own test suite
+ * rather than a runtime surprise.
+ */
+const SERVICE_KEY_PATTERN: readonly StudioCopyKey[] = [
+  // task turn service
+  "studio.trace.needs_input",
+  "studio.trace.model.done",
+  "studio.trace.model.failed",
+  "studio.trace.model.budget_blocked",
+  "studio.trace.model.not_admitted",
+  "studio.trace.unknown",
+  // deterministic composer
+  "studio.answer.heading",
+  "studio.answer.coverage",
+  "studio.answer.catalog_found",
+  "studio.answer.quality_summary",
+  "studio.answer.recent_jobs",
+  "studio.answer.gap_review",
+  "studio.answer.workspace_quality",
+  // evidence engine checks
+  "studio.check.catalog_matches",
+  "studio.check.listing_status",
+  "studio.check.quality_summary",
+  "studio.check.recent_jobs",
+  "studio.check.content_gap",
+  // evidence engine read limits
+  "studio.limit.catalog_unavailable",
+  "studio.limit.listing_unavailable",
+  "studio.limit.quality_unavailable",
+  "studio.limit.jobs_unavailable",
+  "studio.limit.results_truncated",
+  "studio.limit.exports_not_read",
+  // needs input + follow-ups
+  "studio.needs_input.catalog_query",
+  "studio.followup.explain_status",
+  "studio.followup.review_gaps",
+  "studio.followup.list_attention",
+  "studio.followup.open_listing",
+  // tool executor trace details
+  "studio.trace.tool.done",
+  "studio.trace.tool.unknown",
+  "studio.trace.tool.insufficient_role",
+  "studio.trace.tool.invalid_arguments",
+  "studio.trace.tool.unavailable",
+  "studio.trace.tool.failed",
+];
+
 describe("STUDIO_COPY", () => {
   it("has a non-empty zh-Hant and en value for every key", () => {
     for (const key of KEYS) {
@@ -76,7 +128,7 @@ describe("STUDIO_COPY", () => {
     );
   });
 
-  it("keeps the availability labels the template cards and Tasks 6/7 rely on", () => {
+  it("keeps the availability labels the template cards rely on", () => {
     expect(studioCopy("en", "studio.availability.ready")).toBe("Ready");
     expect(studioCopy("en", "studio.availability.pilot")).toBe("Pilot");
     expect(studioCopy("en", "studio.availability.planned")).toBe("Planned");
@@ -85,28 +137,41 @@ describe("STUDIO_COPY", () => {
     );
   });
 
+  it("contains every key the committed service emits", () => {
+    for (const key of SERVICE_KEY_PATTERN) {
+      expect(KEYS, key).toContain(key);
+    }
+  });
+
   it("keeps the navigation, thread, trace, evidence, output and connection keys stable", () => {
     // These are the Task 6/7 contract keys. Pinned as a list so a rename is a
     // visible decision in this test rather than a runtime undefined.
     const requiredKeys: readonly StudioCopyKey[] = [
       "studio.nav.label",
       "studio.rail.newConversation",
+      "studio.rail.newConversationUnavailable",
       "studio.rail.overview",
       "studio.rail.conversations",
       "studio.rail.outputs",
       "studio.rail.tools",
       "studio.rail.settings",
+      "studio.rail.settingsUnavailable",
       "studio.rail.recent",
       "studio.rail.recentEmpty",
       "studio.home.greeting",
       "studio.composer.placeholder",
-      "studio.composer.sendingUnavailable",
+      "studio.composer.empty",
+      "studio.composer.working",
+      "studio.composer.retry",
       "studio.composer.disclaimer",
       "studio.overview.rule",
       "studio.overview.notYetAvailable",
       "studio.trace.title",
+      "studio.trace.summary",
       "studio.trace.status.done",
       "studio.trace.status.running",
+      "studio.trace.status.started",
+      "studio.trace.status.info",
       "studio.trace.status.unavailable",
       "studio.trace.status.blocked",
       "studio.evidence.title",
@@ -115,16 +180,36 @@ describe("STUDIO_COPY", () => {
       "studio.evidence.coverage.unsupported",
       "studio.model.title",
       "studio.model.notConfigured",
+      "studio.model.failed",
       "studio.outputs.title",
       "studio.outputs.signoff",
       "studio.signoff.signedOff",
       "studio.connections.title",
       "studio.connections.external",
+      "studio.connections.hostedTokens",
       "studio.honest.disabled",
       "studio.honest.unknownOutcome",
       "studio.honest.quotaExhausted",
+      "studio.render.fallback",
+      "studio.render.yes",
+      "studio.render.no",
     ];
     for (const key of requiredKeys) expect(KEYS).toContain(key);
+  });
+
+  it("declares placeholders in balanced braces with identifier names", () => {
+    for (const key of KEYS) {
+      for (const value of STUDIO_COPY[key]) {
+        const opens = (value.match(/\{/g) ?? []).length;
+        const closes = (value.match(/\}/g) ?? []).length;
+        expect(opens, `${key} has unbalanced braces`).toBe(closes);
+        for (const match of value.matchAll(/\{([^}]*)\}/g)) {
+          expect(match[1], `${key} has a malformed placeholder`).toMatch(
+            /^[a-zA-Z][a-zA-Z0-9_]*$/,
+          );
+        }
+      }
+    }
   });
 });
 
@@ -148,6 +233,18 @@ describe("studio copy honesty", () => {
     expect(studioCopy("en", "studio.model.title")).toContain("unverified");
     expect(studioCopy("en", "studio.model.limitation")).toContain(
       "no write authority",
+    );
+  });
+
+  it("describes read limits without turning missing evidence into zero", () => {
+    expect(studioCopy("en", "studio.evidence.missingAction")).toContain(
+      "Missing is not zero",
+    );
+    expect(studioCopy("en", "studio.limit.catalog_unavailable")).toContain(
+      "no zero is substituted",
+    );
+    expect(studioCopy("zh-Hant", "studio.evidence.missingAction")).toContain(
+      "缺少不等於零",
     );
   });
 });

@@ -23,8 +23,16 @@ export const STUDIO_COPY = {
   "studio.rail.workspace": ["工作區", "Workspace"],
   "studio.rail.newConversation": ["新對話", "New conversation"],
   "studio.rail.newConversationUnavailable": [
-    "尚未提供建立對話功能。",
-    "Creating conversations is not available yet.",
+    "需要操作員或以上權限才能建立對話。",
+    "An operator or higher role is required to create conversations.",
+  ],
+  "studio.rail.newConversationCreating": [
+    "正在建立對話…",
+    "Creating a conversation…",
+  ],
+  "studio.rail.newConversationFailed": [
+    "未能建立對話，請重試。",
+    "Could not create the conversation. Try again.",
   ],
   "studio.rail.navigation": ["工作室導覽", "Studio navigation"],
   "studio.rail.overview": ["總覽", "Overview"],
@@ -33,28 +41,38 @@ export const STUDIO_COPY = {
   "studio.rail.tools": ["工具", "Tools"],
   "studio.rail.settings": ["設定", "Settings"],
   "studio.rail.recent": ["最近的對話", "Recent conversations"],
-  "studio.rail.recentEmpty": ["還沒有對話。", "No conversations yet."],
-  "studio.rail.notAvailableInBuild": [
-    "此版本只提供總覽頁；其餘導覽目的地尚未實作。",
-    "This build only provides the overview page; the other destinations are not implemented yet.",
+  "studio.rail.recentEmpty": [
+    "還沒有對話；建立第一個對話後會顯示在這裡。",
+    "No conversations yet; the first one will appear here.",
+  ],
+  "studio.rail.settingsUnavailable": [
+    "設定頁尚未提供。",
+    "Settings are not available yet.",
+  ],
+  "studio.rail.viewAllThreads": ["檢視所有對話", "View all conversations"],
+  "studio.rail.recentTruncated": [
+    "只顯示最近更新的對話。",
+    "Only the most recently updated conversations are shown.",
   ],
 
   // -- conversation home ----------------------------------------------------
   "studio.home.eyebrow": ["工作室", "STUDIO"],
   "studio.home.greeting": ["歡迎回來", "Welcome back"],
   "studio.home.intro": [
-    "工作室是對話式的工作區介面。此版本是靜態外殼：沒有模型呼叫、沒有捏造數字，也不會傳送訊息。",
-    "Studio is a conversational workspace surface. This build is a static shell: no model calls, no invented numbers and no message sending.",
+    "工作室從工作區記錄回答問題；設定允許時另附清楚標示的即時分析建議。",
+    "Studio answers from workspace records and, when configured, adds clearly labelled live analysis suggestions.",
   ],
   "studio.home.staticNotice": [
-    "此頁未連接後端；所有動作保持停用。",
-    "This page is not connected to a backend; every action stays disabled.",
+    "工作室不會在對話中批准或發佈；相關動作只會連到現有畫面。",
+    "Studio never approves or publishes inside a conversation; those actions open the existing screens.",
   ],
   "studio.home.recentTitle": ["最近的對話", "Recent conversations"],
   "studio.home.recentEmpty": [
-    "還沒有對話。建立及傳送功能尚未提供。",
-    "No conversations yet. Creating and sending are not available yet.",
+    "還沒有對話。",
+    "No conversations yet.",
   ],
+  "studio.home.composerTitle": ["開始對話", "Start a conversation"],
+  "studio.home.templatesTitle": ["角色範本", "Role templates"],
 
   // -- composer -------------------------------------------------------------
   "studio.composer.label": ["訊息", "Message"],
@@ -63,14 +81,31 @@ export const STUDIO_COPY = {
     "Ask about listings, quality or jobs…",
   ],
   "studio.composer.send": ["傳送", "Send"],
-  "studio.composer.sendingUnavailable": [
-    "尚未提供傳送功能。",
-    "Sending is not available yet.",
+  "studio.composer.empty": ["請先輸入訊息。", "Enter a message first."],
+  "studio.composer.working": ["正在處理…", "Working…"],
+  "studio.composer.retry": ["重試傳送", "Retry send"],
+  "studio.composer.hint": [
+    "Enter 傳送，Shift+Enter 換行。",
+    "Enter to send, Shift+Enter for a new line.",
+  ],
+  "studio.composer.skillLabel": ["已選技能", "Selected skill"],
+  "studio.composer.clearSkill": ["清除技能", "Clear skill"],
+  "studio.composer.newThreadHint": [
+    "首次傳送會建立新對話。",
+    "Sending starts a new conversation.",
+  ],
+  "studio.composer.tooLong": [
+    "訊息上限為 2000 字元。",
+    "Messages are limited to 2000 characters.",
+  ],
+  "studio.composer.viewerNote": [
+    "你的角色只能閱讀；傳送需要操作員或以上權限。",
+    "Your role can read only; sending requires operator or higher.",
   ],
   "studio.composer.attach": ["附加檔案", "Attach files"],
   "studio.composer.attachUnavailable": [
-    "尚未提供附加檔案功能。",
-    "Attachments are not available yet.",
+    "此版本尚未提供附加檔案功能。",
+    "Attachments are not available in this build.",
   ],
   "studio.composer.draftKept": [
     "訊息未能傳送時，草稿會保留。",
@@ -88,9 +123,9 @@ export const STUDIO_COPY = {
     "From workspace records; no AI call.",
   ],
   "studio.overview.notYetAvailable": ["尚未提供", "Not yet available"],
-  "studio.overview.pending": [
-    "概況會由工作區記錄計算，讀取介面尚未實作；此區塊不會顯示推算或虛構數字。",
-    "The overview is computed from workspace records. The read surface is not implemented yet; this card shows no estimated or invented numbers.",
+  "studio.overview.loadFailed": [
+    "未能讀取工作區概況；未顯示推算或虛構數字。",
+    "The workspace overview could not be read; no estimated or invented numbers are shown.",
   ],
   "studio.overview.openBlockingFlags": [
     "未解決的阻塞標記",
@@ -104,6 +139,31 @@ export const STUDIO_COPY = {
   "studio.overview.qualityGaps": ["品質缺口", "Quality gaps"],
   "studio.overview.lastImport": ["最近匯入", "Last import"],
   "studio.overview.lastExport": ["最近匯出", "Last export"],
+  "studio.overview.unavailableTile": [
+    "尚未提供此記錄讀取。",
+    "This record read is not available yet.",
+  ],
+  "studio.overview.totalListings": ["商品記錄", "Listing records"],
+  "studio.overview.totalCount": ["共 {count} 個", "{count} in total"],
+  "studio.overview.byStatus": ["依狀態：{statuses}", "By status: {statuses}"],
+  "studio.overview.noListings": ["沒有商品記錄。", "No listing records."],
+  "studio.overview.qualityAssessed": [
+    "已評估 {totalAssessed} / {totalListings}",
+    "{totalAssessed} of {totalListings} assessed",
+  ],
+  "studio.overview.qualityClean": ["無缺口 {count} 個", "{count} clean"],
+  "studio.overview.qualityGapCount": ["有缺口 {count} 個", "{count} with gaps"],
+  "studio.overview.projectionReady": ["彙總：就緒", "Projection: ready"],
+  "studio.overview.projectionPending": ["彙總：更新中", "Projection: pending"],
+  "studio.overview.projectionFailed": ["彙總：失敗", "Projection: failed"],
+  "studio.overview.asOf": ["資料截至 {asOf}", "As of {asOf}"],
+  "studio.overview.recentJobs": ["最近作業 {count} 筆", "{count} recent jobs"],
+  "studio.overview.recentJobsEmpty": ["最近沒有作業記錄。", "No recent jobs."],
+  "studio.overview.failedWithinRecent": [
+    "最近 {count} 筆作業中有 {failed} 筆失敗",
+    "{failed} failed within the {count} most recent jobs",
+  ],
+  "studio.overview.open": ["開啟記錄", "Open records"],
 
   // -- template cards -------------------------------------------------------
   "studio.templates.title": ["角色範本", "Role templates"],
@@ -114,6 +174,11 @@ export const STUDIO_COPY = {
   "studio.templates.unavailableHint": [
     "未能使用的範本不可點擊，並會說明原因。",
     "Unavailable templates cannot be used and state why.",
+  ],
+  "studio.templates.fill": ["帶入輸入框", "Fill the composer"],
+  "studio.templates.fillHint": [
+    "只會帶入輸入框，不會自動傳送。",
+    "Only fills the composer; it never sends.",
   ],
   "studio.availability.ready": ["已就緒", "Ready"],
   "studio.availability.pilot": ["試行", "Pilot"],
@@ -126,8 +191,12 @@ export const STUDIO_COPY = {
     "Find and explain listings, quality issues and jobs from records.",
   ],
   "studio.template.catalogFind.limitation": [
-    "此階段標示為試行；規則式讀取尚未實作。",
-    "Marked pilot for this phase; the rule-based read is not implemented yet.",
+    "只根據工作區現有記錄回答；記錄沒有的事項會標示為未知。",
+    "Answers only from existing workspace records; anything not recorded is reported as unknown.",
+  ],
+  "studio.template.catalogFind.starter": [
+    "尋找並解釋這些商品：",
+    "Find and explain these listings: ",
   ],
   "studio.template.standards.title": [
     "檢視上架標準",
@@ -138,8 +207,12 @@ export const STUDIO_COPY = {
     "Explain which listings block approval or export, and why.",
   ],
   "studio.template.standards.limitation": [
-    "此階段標示為試行；規則式讀取尚未實作。",
-    "Marked pilot for this phase; the rule-based read is not implemented yet.",
+    "只讀取商品、品質與作業記錄；不會讀取匯出紀錄。",
+    "Reads listing, quality and job records only; export records are not read.",
+  ],
+  "studio.template.standards.starter": [
+    "檢視並解釋目前的阻擋缺口：",
+    "Review the current blocking gaps: ",
   ],
   "studio.template.listingDraft.title": ["上架草稿", "Listing draft"],
   "studio.template.listingDraft.outcome": [
@@ -221,16 +294,260 @@ export const STUDIO_COPY = {
     "No messages in this conversation yet.",
   ],
   "studio.thread.operatorTurn": ["你的訊息", "Your message"],
+  "studio.thread.assistantTurn": ["工作室", "Studio"],
+  "studio.thread.limitations": ["已知限制", "Known limitations"],
   "studio.thread.followUps": ["延伸問題", "Follow-up questions"],
+  "studio.thread.skill": ["技能", "Skill"],
+  "studio.thread.noSkill": ["未指定技能", "No skill selected"],
+  "studio.thread.status.open": ["進行中", "Open"],
+  "studio.thread.status.archived": ["已封存", "Archived"],
+  "studio.thread.visibility.workspace": ["工作區可見", "Workspace"],
+  "studio.thread.visibility.private": ["私人", "Private"],
+  "studio.thread.answered": ["已回覆", "Answered"],
+  "studio.thread.partial": ["部分回答", "Partially answered"],
+  "studio.thread.needsInput": ["需要更多資訊", "More information needed"],
+  "studio.thread.invalidAssistant": [
+    "此回覆無法顯示；沒有捏造內容。",
+    "This reply could not be displayed; nothing is invented.",
+  ],
+  "studio.thread.invalidOperator": [
+    "此訊息無法顯示。",
+    "This message could not be displayed.",
+  ],
+  "studio.thread.replayed": [
+    "此訊息先前已處理；顯示已儲存的回覆。",
+    "This message was already processed; the saved reply is shown.",
+  ],
+  "studio.thread.sendFailed": [
+    "訊息未能傳送；草稿已保留，可重試。",
+    "The message was not sent; your draft was kept so you can retry.",
+  ],
+  "studio.thread.reload": ["重新載入對話", "Reload conversation"],
+  "studio.thread.back": ["返回工作室首頁", "Back to Studio home"],
+  "studio.thread.createdAt": ["建立於 {asOf}", "Created {asOf}"],
+  "studio.thread.loading": ["正在載入對話…", "Loading conversation…"],
+  "studio.thread.recentThreads": ["最近的對話", "Recent conversations"],
+
+  // -- conversations list ---------------------------------------------------
+  "studio.threads.title": ["對話", "Conversations"],
+  "studio.threads.intro": [
+    "依最近更新排序；只包含你在此工作區可讀取的對話。",
+    "Ordered by most recent update; only conversations you can read in this workspace are listed.",
+  ],
+  "studio.threads.empty": ["還沒有對話。", "No conversations yet."],
+  "studio.threads.error": [
+    "未能讀取對話清單；沒有顯示推算或虛構的對話。",
+    "The conversation list could not be loaded; no estimated or invented conversations are shown.",
+  ],
+  "studio.threads.truncated": [
+    "只顯示最近更新的 50 個對話。",
+    "Only the 50 most recently updated conversations are shown.",
+  ],
+  "studio.threads.searchLabel": ["搜尋對話", "Search conversations"],
+  "studio.threads.searchPlaceholder": [
+    "標題或技能",
+    "Title or skill",
+  ],
+  "studio.threads.searchAction": ["搜尋", "Search"],
+  "studio.threads.searchEmpty": [
+    "沒有符合搜尋的對話。",
+    "No conversations match this search.",
+  ],
+  "studio.threads.updated": ["最近更新", "Last updated"],
+  "studio.threads.open": ["開啟對話", "Open conversation"],
 
   // -- execution trace ------------------------------------------------------
   "studio.trace.title": ["執行步驟", "Execution trace"],
   "studio.trace.count": ["步", "steps"],
+  "studio.trace.summary": [
+    "執行步驟 · {count} 步",
+    "Execution trace · {count} steps",
+  ],
+  "studio.trace.load": ["載入執行步驟", "Load execution trace"],
+  "studio.trace.loading": ["正在載入執行步驟…", "Loading execution trace…"],
+  "studio.trace.error": [
+    "未能載入執行步驟。",
+    "The execution trace could not be loaded.",
+  ],
+  "studio.trace.empty": [
+    "此回覆沒有可顯示的執行步驟。",
+    "This reply has no displayable execution steps.",
+  ],
+  "studio.trace.duration": ["{duration} 毫秒", "{duration} ms"],
+  "studio.trace.stepKind.tool": ["工具", "Tool"],
+  "studio.trace.stepKind.evidence": ["證據", "Evidence"],
+  "studio.trace.stepKind.model": ["模型", "Model"],
+  "studio.trace.stepKind.notice": ["提示", "Notice"],
+  "studio.trace.stepKind.error": ["錯誤", "Error"],
+  "studio.trace.stepKind.dispatch": ["派送", "Dispatch"],
   "studio.trace.status.done": ["完成", "Done"],
   "studio.trace.status.running": ["執行中", "Running"],
+  "studio.trace.status.started": ["已開始", "Started"],
   "studio.trace.status.unavailable": ["未能提供", "Unavailable"],
   "studio.trace.status.blocked": ["已封鎖", "Blocked"],
   "studio.trace.status.failed": ["失敗", "Failed"],
+  "studio.trace.status.info": ["資訊", "Info"],
+  "studio.trace.unknown": [
+    "此步驟沒有可顯示的詳情。",
+    "No details are available for this step.",
+  ],
+  "studio.trace.toolId": ["工具 {tool}", "Tool {tool}"],
+  "studio.trace.needs_input": [
+    "需要更多資訊才能查詢，未執行任何讀取。",
+    "More information is needed before querying; nothing was read.",
+  ],
+  "studio.trace.model.done": [
+    "模型分析完成（{model}；輸入 {inputTokens}、輸出 {outputTokens}；略過 {droppedClaims} 條無依據主張）。",
+    "Model analysis completed ({model}; {inputTokens} input, {outputTokens} output tokens; {droppedClaims} ungrounded claims dropped).",
+  ],
+  "studio.trace.model.failed": [
+    "模型分析未完成（{category}）；記錄答案仍然有效。",
+    "Model analysis did not complete ({category}); the records answer still applies.",
+  ],
+  "studio.trace.model.budget_blocked": [
+    "預算未允許模型分析；只顯示記錄答案。",
+    "Budget did not admit a model analysis; only the records answer is shown.",
+  ],
+  "studio.trace.model.not_admitted": [
+    "模型分析未獲准（{reason}）。",
+    "Model analysis was not admitted ({reason}).",
+  ],
+  "studio.trace.tool.done": [
+    "已讀取 {tool}（{durationMs} 毫秒）。",
+    "Read {tool} ({durationMs} ms).",
+  ],
+  "studio.trace.tool.unknown": [
+    "未知的工具 {tool}；未執行。",
+    "Unknown tool {tool}; nothing was run.",
+  ],
+  "studio.trace.tool.insufficient_role": [
+    "權限不足，未執行 {tool}。",
+    "Insufficient role; {tool} was not run.",
+  ],
+  "studio.trace.tool.invalid_arguments": [
+    "工具參數不符，未執行 {tool}。",
+    "Arguments did not match; {tool} was not run.",
+  ],
+  "studio.trace.tool.unavailable": [
+    "{tool} 未能提供（{durationMs} 毫秒）。",
+    "{tool} was unavailable ({durationMs} ms).",
+  ],
+  "studio.trace.tool.failed": [
+    "{tool} 失敗（{durationMs} 毫秒）。",
+    "{tool} failed ({durationMs} ms).",
+  ],
+
+  // -- tool labels (trace and connections use the same readable names) ------
+  "studio.tool.catalog.search": ["搜尋商品目錄", "Search catalog"],
+  "studio.tool.catalog.get": ["讀取商品詳情", "Get listing detail"],
+  "studio.tool.quality.get_gaps": ["讀取品質缺口", "Get quality gaps"],
+  "studio.tool.imports.list": ["列出匯入紀錄", "List imports"],
+  "studio.tool.exports.get": ["讀取匯出紀錄", "Get export record"],
+  "studio.tool.jobs.list": ["列出作業記錄", "List jobs"],
+  "studio.tool.assets.list": ["列出商品素材", "List listing assets"],
+  "studio.tool.listing.get_run_status": [
+    "讀取上架流程狀態",
+    "Get listing run status",
+  ],
+  "studio.tool.listing.create_draft": ["建立商品草稿", "Create listing draft"],
+  "studio.tool.listing.propose_copy": [
+    "建立文案建議",
+    "Propose listing copy",
+  ],
+
+  // -- records answer -------------------------------------------------------
+  "studio.answer.heading": [
+    "技能：{skill}（版本 {skillVersion}）",
+    "Skill: {skill} (version {skillVersion})",
+  ],
+  "studio.answer.coverage": [
+    "已解析 {present} 個來源；缺少 {missing} 個。",
+    "Sources present: {present}; missing: {missing}.",
+  ],
+  "studio.answer.catalog_found": [
+    "找到 {count} 筆符合的商品記錄。結果已截斷：{truncated}。",
+    "Found {count} matching listing records. Results truncated: {truncated}.",
+  ],
+  "studio.answer.quality_summary": [
+    "品質概況：共 {totalListings} 個商品，已評估 {totalAssessed} 個，無缺口 {cleanCount} 個，有缺口 {hasGapsCount} 個（彙總狀態：{projectionState}）。",
+    "Quality summary: {totalListings} listings, {totalAssessed} assessed, {cleanCount} clean, {hasGapsCount} with gaps (projection: {projectionState}).",
+  ],
+  "studio.answer.recent_jobs": ["最近的作業記錄：{count} 筆。", "Recent jobs: {count}."],
+  "studio.answer.gap_review": [
+    "內容缺口：{contentGaps} 個，其中阻塞 {blockingGaps} 個。",
+    "Content gaps: {contentGaps}, of which {blockingGaps} blocking.",
+  ],
+  "studio.answer.workspace_quality": [
+    "工作區品質：共 {totalListings} 個商品，無缺口 {cleanCount} 個，有缺口 {hasGapsCount} 個，沒有生效版本 {noActiveVersion} 個。",
+    "Workspace quality: {totalListings} listings, {cleanCount} clean, {hasGapsCount} with gaps, {noActiveVersion} without an active version.",
+  ],
+
+  // -- evidence checks ------------------------------------------------------
+  "studio.check.catalog_matches": [
+    "符合條件的商品：{count} 筆。結果已截斷：{truncated}。",
+    "Matching listings: {count}. Truncated: {truncated}.",
+  ],
+  "studio.check.listing_status": [
+    "商品 {listingId}：狀態 {status}；生效版本：{activeVersion}。",
+    "Listing {listingId}: status {status}; active version: {activeVersion}.",
+  ],
+  "studio.check.quality_summary": [
+    "商品 {totalListings} 個；已評估 {totalAssessed} 個；無缺口 {cleanCount} 個；有缺口 {hasGapsCount} 個；彙總狀態 {projectionState}。",
+    "Listings {totalListings}; assessed {totalAssessed}; clean {cleanCount}; with gaps {hasGapsCount}; projection {projectionState}.",
+  ],
+  "studio.check.recent_jobs": ["近期作業：{count} 筆。", "Recent jobs: {count}."],
+  "studio.check.content_gap": [
+    "商品 {listingId}：缺口 {code}；阻塞核准：{blocking}。",
+    "Listing {listingId}: gap {code}; blocking: {blocking}.",
+  ],
+
+  // -- honest read limits ---------------------------------------------------
+  "studio.limit.catalog_unavailable": [
+    "未能讀取商品目錄；未以零值代替。",
+    "The catalog could not be read; no zero is substituted.",
+  ],
+  "studio.limit.listing_unavailable": [
+    "未能讀取商品 {listingId} 的記錄；未顯示推算內容。",
+    "The record for listing {listingId} could not be read; nothing is estimated.",
+  ],
+  "studio.limit.quality_unavailable": [
+    "未能讀取品質彙總；未提供品質數字。",
+    "The quality summary could not be read; no quality numbers are shown.",
+  ],
+  "studio.limit.jobs_unavailable": [
+    "未能讀取作業記錄。",
+    "Job records could not be read.",
+  ],
+  "studio.limit.results_truncated": [
+    "結果多於顯示上限，只顯示部分。",
+    "There are more results than the display limit; only some are shown.",
+  ],
+  "studio.limit.exports_not_read": [
+    "此技能不會讀取匯出紀錄；未知不等於沒有匯出。",
+    "This skill does not read export records; unknown is not the same as no export.",
+  ],
+
+  // -- needs input and follow-ups ------------------------------------------
+  "studio.needs_input.catalog_query": [
+    "請提供要查詢的商品、SKU 或關鍵字。",
+    "Provide the listing, SKU or keyword to look up.",
+  ],
+  "studio.followup.explain_status": [
+    "解釋商品目前的狀態",
+    "Explain a listing's current status",
+  ],
+  "studio.followup.review_gaps": [
+    "檢視阻擋核准或匯出的缺口",
+    "Review gaps blocking approval or export",
+  ],
+  "studio.followup.list_attention": [
+    "列出需要注意的商品",
+    "List listings that need attention",
+  ],
+  "studio.followup.open_listing": [
+    "開啟某個商品的記錄",
+    "Open a listing's record",
+  ],
 
   // -- records answer / evidence -------------------------------------------
   "studio.evidence.title": ["來自你的記錄", "From your records"],
@@ -243,12 +560,47 @@ export const STUDIO_COPY = {
     "缺少不等於零；請先開啟匯入或執行品質檢查。",
     "Missing is not zero; open an import or run a quality review first.",
   ],
+  "studio.evidence.sources": ["來源記錄", "Source records"],
+  "studio.evidence.checks": ["檢查", "Checks"],
+  "studio.evidence.noSources": [
+    "此回覆沒有儲存來源列。",
+    "No source rows are stored with this reply.",
+  ],
+  "studio.evidence.restricted": [
+    "受限記錄；不顯示內容。",
+    "Restricted record; content is not shown.",
+  ],
+  "studio.evidence.openSource": ["開啟來源", "Open source"],
+  "studio.evidence.checkState.ok": ["通過", "OK"],
+  "studio.evidence.checkState.gap": ["缺口", "Gap"],
+  "studio.evidence.checkState.missing": ["缺少", "Missing"],
+  "studio.evidence.checkState.unsupported": ["未支援", "Unsupported"],
+  "studio.evidence.sourceKind.listing": ["商品", "Listing"],
+  "studio.evidence.sourceKind.catalog": ["商品目錄", "Catalog"],
+  "studio.evidence.sourceKind.quality": ["品質", "Quality"],
+  "studio.evidence.sourceKind.source_import": ["來源匯入", "Source import"],
+  "studio.evidence.sourceKind.export_attempt": [
+    "匯出紀錄",
+    "Export record",
+  ],
+  "studio.evidence.sourceKind.job": ["作業", "Job"],
+  "studio.evidence.sourceKind.audit": ["稽核", "Audit"],
+  "studio.evidence.sourceKind.website": ["網站", "Website"],
+  "studio.evidence.sourceKind.workbook": ["工作簿", "Workbook"],
+  "studio.evidence.sourceKind.shopline_projection": [
+    "商店投影",
+    "Store projection",
+  ],
 
   // -- model suggestion card ------------------------------------------------
   "studio.model.title": ["AI 建議 · 未經驗證", "AI suggestion · unverified"],
   "studio.model.notConfigured": [
     "未設定即時分析。",
     "Live analysis is not configured.",
+  ],
+  "studio.model.configured": [
+    "由已設定的即時分析產生；內容未經驗證。",
+    "Produced by configured live analysis; unverified.",
   ],
   "studio.model.failed": [
     "即時分析未能完成；記錄答案仍然有效。",
@@ -258,6 +610,13 @@ export const STUDIO_COPY = {
     "AI 建議未經驗證，也沒有寫入權限。",
     "AI suggestions are unverified and have no write authority.",
   ],
+  "studio.model.claims": ["主張", "Claims"],
+  "studio.model.claimRefs": ["依據：{refs}", "Evidence: {refs}"],
+  "studio.model.droppedClaims": [
+    "{count} 條主張因依據未能解析而未顯示。",
+    "{count} claims were dropped because their evidence did not resolve.",
+  ],
+  "studio.model.noClaims": ["沒有可顯示的主張。", "No claims to show."],
 
   // -- outputs and sign-off -------------------------------------------------
   "studio.outputs.title": ["輸出", "Outputs"],
@@ -271,6 +630,14 @@ export const STUDIO_COPY = {
     "Open in the existing screen",
   ],
   "studio.outputs.copyLink": ["複製連結", "Copy link"],
+  "studio.outputs.pending": [
+    "技能儲存成品後會顯示於此；輸出與簽核尚未實作。",
+    "Outputs appear here after a skill saves an artifact; outputs and sign-off are not implemented yet.",
+  ],
+  "studio.outputs.intro": [
+    "只顯示已儲存的成品，並附版本、資料時間與簽核狀態。",
+    "Only saved artifacts are shown, with their version, as-of time and sign-off state.",
+  ],
   "studio.signoff.draft": ["草稿", "Draft"],
   "studio.signoff.saved": ["已儲存", "Saved"],
   "studio.signoff.signedOff": ["已簽核", "Signed off"],
@@ -285,6 +652,62 @@ export const STUDIO_COPY = {
   "studio.connections.empty": [
     "沒有可用的連線。",
     "No connections are available.",
+  ],
+  "studio.connections.intro": [
+    "此頁只陳述實際狀態：沒有偽造的連線，也沒有可直接開啟的外部存取。",
+    "This page states the actual state only: no invented connections and no external access that can be switched on here.",
+  ],
+  "studio.connections.internalTitle": ["內部工具", "Internal tools"],
+  "studio.connections.internalIntro": [
+    "已登記的工具及其限制；登記不代表已開放外部存取。",
+    "Registered tools and their limits; being registered does not mean external access is open.",
+  ],
+  "studio.connections.table.tool": ["工具", "Tool"],
+  "studio.connections.table.kind": ["類型", "Kind"],
+  "studio.connections.table.minRole": ["最低角色", "Minimum role"],
+  "studio.connections.table.capability": ["功能代號", "Capability"],
+  "studio.connections.table.state": ["狀態", "State"],
+  "studio.connections.kind.read": ["讀取", "Read"],
+  "studio.connections.kind.propose": ["建議", "Propose"],
+  "studio.connections.kind.dispatch": ["派送", "Dispatch"],
+  "studio.connections.planned": ["規劃中；尚未實作。", "Planned; not implemented yet."],
+  "studio.role.viewer": ["檢視者", "Viewer"],
+  "studio.role.operator": ["操作員", "Operator"],
+  "studio.role.reviewer": ["審核員", "Reviewer"],
+  "studio.role.admin": ["管理員", "Admin"],
+  "studio.role.owner": ["擁有者", "Owner"],
+  "studio.connections.toolState.read": [
+    "讀取工具；只由已啟用的技能使用。",
+    "Read tool; used only by enabled skills.",
+  ],
+  "studio.connections.toolState.propose": [
+    "已登記；尚未開放執行。",
+    "Registered; not executable yet.",
+  ],
+  "studio.connections.toolState.dispatch": [
+    "已登記；尚未開放執行。",
+    "Registered; not executable yet.",
+  ],
+  "studio.connections.hostedBody": [
+    "託管 MCP 伺服器尚未實作；目前沒有外部呼叫者可以存取工作區記錄。",
+    "The hosted MCP server is not implemented; no external caller can reach workspace records yet.",
+  ],
+  "studio.connections.externalBody": [
+    "外部 MCP 連線預設停用；不接受使用者提供的端點或憑證。",
+    "External MCP connections are disabled by default; no user-supplied endpoint or credential is accepted.",
+  ],
+  "studio.connections.blockedTitle": ["受阻的連線", "Blocked connections"],
+  "studio.connections.whatsapp": [
+    "WhatsApp：沒有支援的通道，維持封鎖。",
+    "WhatsApp: no supported channel exists; stays blocked.",
+  ],
+  "studio.connections.customerService": [
+    "客服收件匣：沒有資料來源，維持封鎖。",
+    "Customer-service inbox: no data source exists; stays blocked.",
+  ],
+  "studio.connections.logistics": [
+    "物流與訂單：沒有資料來源，維持封鎖。",
+    "Logistics and orders: no data source exists; stays blocked.",
   ],
 
   // -- honest states (spec §2.4) --------------------------------------------
@@ -319,6 +742,52 @@ export const STUDIO_COPY = {
     "找不到此對話。",
     "This conversation could not be found.",
   ],
+
+  // -- renderer fallbacks ---------------------------------------------------
+  "studio.render.fallback": [
+    "此步驟的內容未能顯示。",
+    "This step's content could not be displayed.",
+  ],
+  "studio.render.yes": ["是", "Yes"],
+  "studio.render.no": ["否", "No"],
+
+  // -- client error surface ------------------------------------------------
+  "studio.error.generic": ["發生錯誤，請重試。", "Something went wrong. Try again."],
+  "studio.error.network": [
+    "無法連線至伺服器，請重試。",
+    "Could not reach the server. Try again.",
+  ],
+  "studio.error.auth": [
+    "登入狀態已失效，請重新登入。",
+    "Your session has expired; sign in again.",
+  ],
+  "studio.error.forbidden": [
+    "你沒有權限執行此操作。",
+    "You do not have permission to perform this action.",
+  ],
+  "studio.error.notFound": ["找不到此對話。", "This conversation could not be found."],
+  "studio.error.invalidBody": ["訊息格式不正確。", "The message was not valid."],
+  "studio.error.skillUnavailable": [
+    "此技能尚未提供。",
+    "This skill is not available.",
+  ],
+  "studio.error.runInProgress": [
+    "此訊息仍在處理中。",
+    "This message is still being processed.",
+  ],
+  "studio.error.runIncomplete": [
+    "先前的回覆不完整，請重新載入對話。",
+    "The previous reply is incomplete; reload the conversation.",
+  ],
+  "studio.error.tooManyRequests": [
+    "請求過多，請稍後再試。",
+    "Too many requests; try again later.",
+  ],
+  "studio.error.unavailable": [
+    "服務暫時無法使用，請重試。",
+    "The service is temporarily unavailable. Try again.",
+  ],
+  "studio.error.retry": ["重試", "Retry"],
 
   // -- route states ---------------------------------------------------------
   "studio.loading": ["正在載入工作室…", "Loading Studio…"],

@@ -1,20 +1,34 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useCallback, useRef, useState } from "react";
+
 import type { Locale } from "../lib/locale";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
+import type { StudioOverviewResult } from "../lib/studio/contracts";
+import {
+  createStudioClientMessageId,
+  useStudioSession,
+} from "../lib/use-studio-session";
+import { StudioComposer } from "./studio-composer";
+import { StudioHomeOverview } from "./studio-home-overview";
 import styles from "./studio.module.css";
 
 /**
- * The Conversation Studio conversation home, as a static P1 shell.
+ * The Conversation Studio home (design spec §2.2, plan Task 7).
  *
- * Everything here is honest about what does not exist yet:
- *  - the deterministic overview strip shows "Not yet available" and never a
- *    number, because the records read surface is Task 5;
- *  - the composer renders with every action disabled and says so;
- *  - template cards are non-interactive until Task 7 wires "fill the composer";
- *  - no fetch, no model call, no click handler, no invented data.
+ * Three deterministic regions: the overview strip (server props from
+ * `service.overview()`, records only), role-template cards, and the initial
+ * composer. Nothing on this page calls a model while rendering; the exact rule
+ * "From workspace records; no AI call." is printed beside the overview, and
+ * `studio-home.test.tsx` renders the component with `fetch` stubbed to throw so
+ * a silent fetch would fail the suite.
  *
- * Availability states mirror the skill definitions Task 4 will land: only the
- * two v1 read skills (`catalog.find`, `catalog.gap_review`) are pilot; every
- * role workflow is planned, and the two with no data source are unavailable.
+ * A template card fills the composer and focuses it, but never sends. The first
+ * send creates a thread (`POST /api/studio/threads`) and one message on it, then
+ * navigates to the thread so the persisted reply renders from the server. A
+ * failed send keeps the draft and the client message id: Retry reuses both, so
+ * the server's replay path wins instead of creating a duplicate turn.
  */
 
 export type StudioAvailability = "ready" | "pilot" | "planned" | "unavailable";
@@ -32,11 +46,14 @@ export type StudioTemplate = {
   readonly titleKey: StudioCopyKey;
   readonly outcomeKey: StudioCopyKey;
   readonly limitationKey: StudioCopyKey;
+  /** Copy filled into the composer when a pilot card is used. */
+  readonly starterKey?: StudioCopyKey;
 };
 
 /**
  * The two v1 read skills first, then the eight role templates from the design
- * spec §1.2. No card is `ready`: nothing in Studio can run a skill yet.
+ * spec §1.2. Only the two pilot read skills are interactive; every other card
+ * is `planned` or `unavailable` and states why.
  */
 export const STUDIO_TEMPLATES: readonly StudioTemplate[] = [
   {
@@ -45,6 +62,7 @@ export const STUDIO_TEMPLATES: readonly StudioTemplate[] = [
     titleKey: "studio.template.catalogFind.title",
     outcomeKey: "studio.template.catalogFind.outcome",
     limitationKey: "studio.template.catalogFind.limitation",
+    starterKey: "studio.template.catalogFind.starter",
   },
   {
     id: "catalog.gap_review",
@@ -52,6 +70,7 @@ export const STUDIO_TEMPLATES: readonly StudioTemplate[] = [
     titleKey: "studio.template.standards.title",
     outcomeKey: "studio.template.standards.outcome",
     limitationKey: "studio.template.standards.limitation",
+    starterKey: "studio.template.standards.starter",
   },
   {
     id: "listing.draft_from_sources",
@@ -111,25 +130,109 @@ export const STUDIO_TEMPLATES: readonly StudioTemplate[] = [
   },
 ];
 
-/**
- * The six numbers the deterministic overview will show (design spec §2.2).
- * This build renders their labels with a "Not yet available" state instead of
- * a fabricated snapshot.
- */
-const OVERVIEW_TILE_KEYS: readonly StudioCopyKey[] = [
-  "studio.overview.openBlockingFlags",
-  "studio.overview.unapprovedDrafts",
-  "studio.overview.failedJobs",
-  "studio.overview.qualityGaps",
-  "studio.overview.lastImport",
-  "studio.overview.lastExport",
-];
+type PendingHomeAttempt = {
+  text: string;
+  skillKey: string | null;
+  clientMessageId: string;
+  threadId: string | null;
+};
 
 export type StudioHomeProps = {
   readonly locale: Locale;
+  /** `null` when the deterministic overview read failed closed. */
+  readonly overview?: StudioOverviewResult | null;
+  readonly canCreateThread?: boolean;
 };
 
-export function StudioHome({ locale }: StudioHomeProps) {
+export function StudioHome({
+  locale,
+  overview = null,
+  canCreateThread = false,
+}: StudioHomeProps) {
+  const router = useRouter();
+  const session = useStudioSession();
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [draft, setDraft] = useState("");
+  const [skillKey, setSkillKey] = useState<string | null>(null);
+  const [pendingClientMessageId, setPendingClientMessageId] = useState<
+    string | null
+  >(null);
+  /** Thread created by a failed attempt, reused by Retry. */
+  const [pendingAttempt, setPendingAttempt] =
+    useState<PendingHomeAttempt | null>(null);
+
+  const fillComposer = useCallback(
+    (template: StudioTemplate) => {
+      if (!template.starterKey) return;
+      setDraft(studioCopy(locale, template.starterKey));
+      setSkillKey(template.id);
+      setPendingClientMessageId(null);
+      setPendingAttempt(null);
+      session.clearError();
+      textareaRef.current?.focus();
+    },
+    [locale, session],
+  );
+
+  const runSend = useCallback(
+    async (attempt: PendingHomeAttempt) => {
+      const outcome = await session.send({
+        threadId: attempt.threadId,
+        text: attempt.text,
+        skillKey: attempt.skillKey,
+        locale,
+        clientMessageId: attempt.clientMessageId,
+      });
+      if (outcome === null) return;
+      if (!outcome.ok) {
+        // The hook stored the error; remember the thread id (if any) so Retry
+        // continues on the same thread instead of creating another one.
+        const createdThreadId = outcome.error.threadId;
+        if (createdThreadId !== null && createdThreadId !== attempt.threadId) {
+          setPendingAttempt({ ...attempt, threadId: createdThreadId });
+        }
+        return;
+      }
+      const result = outcome.result;
+      setDraft("");
+      setSkillKey(null);
+      setPendingClientMessageId(null);
+      setPendingAttempt(null);
+      router.push(`/studio/t/${result.threadId}`);
+    },
+    [locale, router, session],
+  );
+
+  const handleSend = useCallback(() => {
+    if (!canCreateThread || session.inFlight) return;
+    const text = draft.trim();
+    if (text.length === 0) return;
+    const clientMessageId =
+      pendingClientMessageId ?? createStudioClientMessageId();
+    setPendingClientMessageId(clientMessageId);
+    const attempt: PendingHomeAttempt = {
+      text,
+      skillKey,
+      clientMessageId,
+      threadId: pendingAttempt?.threadId ?? null,
+    };
+    setPendingAttempt(attempt);
+    void runSend(attempt);
+  }, [
+    canCreateThread,
+    draft,
+    pendingAttempt,
+    pendingClientMessageId,
+    session.inFlight,
+    skillKey,
+    runSend,
+  ]);
+
+  const handleRetry = useCallback(() => {
+    if (pendingAttempt === null || session.inFlight) return;
+    void runSend(pendingAttempt);
+  }, [pendingAttempt, runSend, session.inFlight]);
+
   return (
     <div className={styles["studio-home"]}>
       <header className={styles["studio-home-header"]}>
@@ -149,83 +252,33 @@ export function StudioHome({ locale }: StudioHomeProps) {
       </p>
 
       <section
-        className={styles["studio-composer"]}
-        aria-label={studioCopy(locale, "studio.composer.label")}
+        className={styles["studio-section"]}
+        aria-label={studioCopy(locale, "studio.home.composerTitle")}
       >
-        <label
-          htmlFor="studio-composer-input"
-          className={styles["studio-visually-hidden"]}
-        >
-          {studioCopy(locale, "studio.composer.label")}
-        </label>
-        <textarea
-          id="studio-composer-input"
-          className={styles["studio-composer-textarea"]}
-          placeholder={studioCopy(locale, "studio.composer.placeholder")}
-          rows={3}
-          aria-describedby="studio-composer-hint studio-composer-disclaimer"
+        <h2 className={styles["studio-section-title"]}>
+          {studioCopy(locale, "studio.home.composerTitle")}
+        </h2>
+        <StudioComposer
+          locale={locale}
+          id="studio-home-composer"
+          value={draft}
+          onChange={setDraft}
+          onSend={handleSend}
+          {...(pendingAttempt ? { onRetry: handleRetry } : {})}
+          sending={session.inFlight}
+          error={
+            pendingAttempt !== null ? (session.error?.copyKey ?? null) : null
+          }
+          sendDisabled={!canCreateThread}
+          sendDisabledReason="studio.composer.viewerNote"
+          skillKey={skillKey}
+          onClearSkill={() => setSkillKey(null)}
+          showNewThreadHint
+          textareaRef={textareaRef}
         />
-        <div className={styles["studio-composer-actions"]}>
-          <button
-            type="button"
-            className={styles["studio-composer-send"]}
-            disabled
-            aria-describedby="studio-composer-hint"
-          >
-            {studioCopy(locale, "studio.composer.send")}
-          </button>
-          <button
-            type="button"
-            className={styles["studio-composer-attach"]}
-            disabled
-            title={studioCopy(locale, "studio.composer.attachUnavailable")}
-          >
-            {studioCopy(locale, "studio.composer.attach")}
-          </button>
-          <p
-            id="studio-composer-hint"
-            className={styles["studio-composer-hint"]}
-          >
-            {studioCopy(locale, "studio.composer.sendingUnavailable")}
-          </p>
-        </div>
-        <p
-          id="studio-composer-disclaimer"
-          className={styles["studio-disclaimer"]}
-        >
-          {studioCopy(locale, "studio.composer.disclaimer")}
-        </p>
       </section>
 
-      <section
-        className={styles["studio-section"]}
-        aria-label={studioCopy(locale, "studio.overview.title")}
-      >
-        <div className={styles["studio-section-header"]}>
-          <h2 className={styles["studio-section-title"]}>
-            {studioCopy(locale, "studio.overview.title")}
-          </h2>
-          {/* The spec's exact rule for this strip: records only, no model. */}
-          <p className={styles["studio-section-lede"]}>
-            {studioCopy(locale, "studio.overview.rule")}
-          </p>
-        </div>
-        <ul className={styles["studio-overview-grid"]}>
-          {OVERVIEW_TILE_KEYS.map((key) => (
-            <li className={styles["studio-overview-tile"]} key={key}>
-              <span className={styles["studio-overview-label"]}>
-                {studioCopy(locale, key)}
-              </span>
-              <span className={styles["studio-overview-value"]}>
-                {studioCopy(locale, "studio.overview.notYetAvailable")}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p className={styles["studio-empty"]}>
-          {studioCopy(locale, "studio.overview.pending")}
-        </p>
-      </section>
+      <StudioHomeOverview locale={locale} overview={overview} />
 
       <section
         className={styles["studio-section"]}
@@ -243,44 +296,56 @@ export function StudioHome({ locale }: StudioHomeProps) {
           {studioCopy(locale, "studio.templates.unavailableHint")}
         </p>
         <ul className={styles["studio-template-grid"]}>
-          {STUDIO_TEMPLATES.map((template) => (
-            <li
-              key={template.id}
-              className={styles["studio-template-card"]}
-              data-availability={template.availability}
-            >
-              <div className={styles["studio-template-header"]}>
-                <h3 className={styles["studio-template-title"]}>
-                  {studioCopy(locale, template.titleKey)}
-                </h3>
-                <span
-                  className={styles["studio-badge"]}
-                  data-availability={template.availability}
-                >
-                  {studioCopy(locale, AVAILABILITY_KEY[template.availability])}
-                </span>
-              </div>
-              <p className={styles["studio-template-outcome"]}>
-                {studioCopy(locale, template.outcomeKey)}
-              </p>
-              <p className={styles["studio-template-limitation"]}>
-                {studioCopy(locale, template.limitationKey)}
-              </p>
-            </li>
-          ))}
+          {STUDIO_TEMPLATES.map((template) => {
+            const interactive =
+              template.availability === "pilot" &&
+              template.starterKey !== undefined;
+            return (
+              <li
+                key={template.id}
+                className={styles["studio-template-card"]}
+                data-availability={template.availability}
+                data-interactive={interactive ? "true" : "false"}
+              >
+                <div className={styles["studio-template-header"]}>
+                  <h3 className={styles["studio-template-title"]}>
+                    {studioCopy(locale, template.titleKey)}
+                  </h3>
+                  <span
+                    className={styles["studio-badge"]}
+                    data-availability={template.availability}
+                  >
+                    {studioCopy(
+                      locale,
+                      AVAILABILITY_KEY[template.availability],
+                    )}
+                  </span>
+                </div>
+                <p className={styles["studio-template-outcome"]}>
+                  {studioCopy(locale, template.outcomeKey)}
+                </p>
+                <p className={styles["studio-template-limitation"]}>
+                  {studioCopy(locale, template.limitationKey)}
+                </p>
+                {interactive ? (
+                  <button
+                    type="button"
+                    className={styles["studio-template-fill"]}
+                    onClick={() => fillComposer(template)}
+                    disabled={session.inFlight}
+                    title={studioCopy(locale, "studio.templates.fillHint")}
+                  >
+                    {studioCopy(locale, "studio.templates.fill")}
+                  </button>
+                ) : (
+                  <p className={styles["studio-template-unavailable"]}>
+                    {studioCopy(locale, "studio.honest.notYetAvailable")}
+                  </p>
+                )}
+              </li>
+            );
+          })}
         </ul>
-      </section>
-
-      <section
-        className={styles["studio-section"]}
-        aria-label={studioCopy(locale, "studio.home.recentTitle")}
-      >
-        <h2 className={styles["studio-section-title"]}>
-          {studioCopy(locale, "studio.home.recentTitle")}
-        </h2>
-        <p className={styles["studio-empty"]}>
-          {studioCopy(locale, "studio.home.recentEmpty")}
-        </p>
       </section>
     </div>
   );
