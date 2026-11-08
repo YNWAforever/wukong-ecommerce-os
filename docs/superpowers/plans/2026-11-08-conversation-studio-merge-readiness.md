@@ -1,9 +1,9 @@
 # Conversation Studio merge readiness
 
 Status: **merge prepared and verified locally under the project's Node 24 runtime with a real
-pnpm install and production build; nothing pushed, merged into `main`, deployed or activated.**
-Updated 2026-11-09 (Asia/Singapore) after the user approved merge preparation and kept every
-activation off.
+pnpm install and production build; flags-on browser acceptance also passed in a real Chromium
+session; nothing pushed, merged into `main`, deployed or activated.** Updated 2026-11-09
+(Asia/Singapore) after the user approved merge preparation and kept every activation off.
 
 - Feature branch: `claude/conversation-studio` (31 commits including documentation), isolated
   worktree `.worktrees/conversation-studio`.
@@ -46,7 +46,8 @@ runs in this session used the machine's Node 26.
 | `packages/assets` / `packages/shopline` / `packages/jobs` / `apps/worker` | 82(+1 skip) / 287 / 53 / 419 PASS |
 | Studio integration on disposable Postgres (Node 24) | **20/20 PASS** (migration replay, repositories, MCP resolver) |
 | Direct import-fix regression checks | web typecheck clean; Studio scoped 31 files / 252 tests PASS |
-| Playwright `tests/e2e/studio.spec.ts` | BLOCKED: 2 clean skips (flags-on authenticated fixture unavailable) |
+| Flags-on Studio browser acceptance (real Chromium, production build, seeded local Postgres, AI/MCP flags off) | **PASS** — sign-in, Studio home, deterministic answer, checks, follow-ups, trace, `Answered`, reload persistence, 390 px no overflow, thread list; evidence in the results round-8 record and `assets/2026-11-08-studio-browser-acceptance-390.png` |
+| Original `tests/e2e/studio.spec.ts` (flags-off browser case is still skipped without `PLAYWRIGHT_E2E=1`) | BLOCKED: 2 clean skips in the default environment; the new gated spec above covers the flags-on path |
 
 **The exact `pnpm test` root command is blocked by this sandbox** (not by the code): its
 `turbo run test` step launches Vitest's default forked workers/temp dirs and fails with
@@ -128,10 +129,11 @@ anywhere by this work.
 
 - Exact `pnpm test` turbo invocation in this sandbox (worker-spawn EPERM); run on a normal Node 24
   CI runner.
-- Flags-on authenticated browser acceptance (needs seeded auth + enabled workspace fixture; the
-  production build and all Studio routes now compile successfully, which was the main gap).
 - `audit:verify` CLI gate / readiness-gate log scan (need a seeded pilot workspace/deployment env).
 - Live provider, hosted-MCP client calls and external MCP transport (deliberately never activated).
+
+Flags-on authenticated browser acceptance is no longer blocked: it passed locally on 2026-11-09 with
+the committed gated spec, seed fixture and runbook steps (results round 8).
 
 See `docs/superpowers/plans/2026-11-08-conversation-studio-results.md` for the task-by-task record,
 commits and acceptance matrix; `docs/runbooks/conversation-studio.md` for operating it after an

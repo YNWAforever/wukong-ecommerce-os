@@ -172,3 +172,51 @@ node <repo>/node_modules/vitest/vitest.mjs run --config ../../vitest.integration
 - Stop and record rather than improvising: if a turn ever appears to write canonical listing data
   or approve/publish from inside the Studio, disable the Studio flags immediately and preserve the
   audit/ledger rows.
+
+## Local flags-on browser acceptance (verified 2026-11-09)
+
+The Studio was driven end-to-end in a real Chromium session against a production build with only
+`CONVERSATION_STUDIO_ENABLED=true` (no AI flag, no MCP, no SHOPLINE): password sign-in, Studio home,
+a deterministic records question, the engine/evidence/trace reply, `Answered` status, follow-ups,
+the "live analysis not configured" suggestion card, a full reload restoring the thread from
+Postgres, the 390 px layout without horizontal overflow, and the thread appearing on
+`/studio/threads`. Evidence screenshot:
+`docs/superpowers/plans/assets/2026-11-08-studio-browser-acceptance-390.png`.
+
+Reproduce locally (never against a shared/production database):
+
+```powershell
+# 0. disposable local Postgres only (docker compose up -d postgres), database `wukong`
+#    with the migration set applied and the `wukong_app` role present
+pnpm install --frozen-lockfile
+pnpm turbo run build --filter=@wukong/web          # package dists + production web build
+
+# 1. seed a local-only owner, an enabled Studio workspace row and its invite-eligibility row
+node tests/e2e/studio-browser-acceptance-seed.mjs  # BROWSER_E2E_DATABASE_ADMIN_URL defaults to local
+
+# 2. production server with the Studio flag on (terminal A)
+$env:DATABASE_URL="postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong"
+$env:AUTH_SECRET="local-browser-e2e-auth-secret-at-least-thirty-two-chars"
+$env:AUTH_SMTP_URL="smtp://127.0.0.1:1026"
+$env:AUTH_EMAIL_FROM="Wukong Auth <auth@local.invalid>"
+$env:BETTER_AUTH_URL="http://127.0.0.1:49300"
+$env:CONVERSATION_STUDIO_ENABLED="true"
+pnpm --filter @wukong/web exec next start --hostname 127.0.0.1 --port 49300
+
+# 3. run the gated acceptance spec (terminal B)
+$env:PLAYWRIGHT_BASE_URL="http://127.0.0.1:49300"
+$env:STUDIO_BROWSER_ACCEPTANCE="1"
+pnpm exec playwright test tests/e2e/studio-browser-acceptance.spec.ts
+```
+
+Notes learned from the run:
+
+- Sign-in eligibility is not just a user + credential: `auth_get_eligible_user` also requires a
+  `workspace_invites` row (pending/accepted) for that address. The seed fixture creates it.
+- Run this against `next build && next start`, not `next dev`: the dev server (Turbopack, development
+  export condition) resolves workspace package sources and cannot handle their NodeNext `.js`
+  relative specifiers, so any page importing `@wukong/db` fails to compile in dev. That is a
+  pre-existing dev-server limitation, unrelated to the Studio, and does not affect the production
+  build/browser acceptance or the deployed app.
+- The seeded password is local-only fixture data; never reuse it or point this flow at a shared
+  database.

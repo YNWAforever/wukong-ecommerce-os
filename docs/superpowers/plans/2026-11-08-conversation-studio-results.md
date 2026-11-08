@@ -258,3 +258,37 @@ worker-spawn limitation, not a test failure — every package suite passes under
 `--pool=threads --no-file-parallelism`. A normal Node 24 CI runner is the remaining confirmation.
 
 Merge readiness is otherwise green; nothing was pushed, merged into `main`, deployed or activated.
+
+## Round 8 (flags-on browser acceptance — PASS)
+
+The last browser-level BLOCKED item was cleared with a real Chromium session against a production
+build (Node 24, real pnpm install) on a disposable local Postgres database. Only
+`CONVERSATION_STUDIO_ENABLED=true` was set; `CONVERSATION_STUDIO_AI_ENABLED`, every MCP server/flag
+and SHOPLINE remained off, and no live provider/MCP call was made.
+
+**Flow verified end-to-end:** password sign-in → `/studio` home ("Start a conversation", workspace
+overview "From workspace records; no AI call") → send the records question `margaux` → thread page
+with operator turn, deterministic `catalog.find` answer (`Answered`, "Sources present: 3; missing:
+0", checks table, open-source links), follow-up questions, "Execution trace · 2 steps", and the
+honest "AI suggestion · unverified / Live analysis is not configured" card → full reload restores
+the same thread URL and content from Postgres → 390 px viewport has no horizontal overflow → the
+conversation appears on `/studio/threads`.
+
+Backend evidence from the same run (local DB, workspace `ws_studio_browser_e2e`): 2 threads,
+4 messages, 2 `succeeded` runs, audit events `studio.thread.created` ×2,
+`studio.message.received` ×2, `studio.run.completed` ×2.
+
+| Artifact | Path |
+| --- | --- |
+| Gated acceptance spec | `tests/e2e/studio-browser-acceptance.spec.ts` (`STUDIO_BROWSER_ACCEPTANCE=1`) |
+| Local seed fixture | `tests/e2e/studio-browser-acceptance-seed.mjs` |
+| Screenshot (390 px, full page) | `docs/superpowers/plans/assets/2026-11-08-studio-browser-acceptance-390.png` |
+| Reproduction steps | `docs/runbooks/conversation-studio.md` § Local flags-on browser acceptance |
+
+This supersedes the BLOCKED browser rows in the round-5 acceptance record and the merge-readiness
+document: flags-on browser acceptance is now **PASS** locally, with the exact prerequisites
+committed. Two notable environment findings: (1) sign-in eligibility requires a
+`workspace_invites` row in addition to user/credential/membership; (2) `next dev` (Turbopack,
+development export condition) cannot compile workspace package sources because of their NodeNext
+`.js` relative specifiers — a pre-existing dev-server limitation, so acceptance runs against
+`next build && next start`; the production build is unaffected.
