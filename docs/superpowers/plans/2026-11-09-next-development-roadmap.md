@@ -174,3 +174,17 @@ only when its verification is recorded.
   user approval and are recorded in `docs/runbooks/`.
 - The runbook (`docs/runbooks/conversation-studio.md`) remains the operating source of truth; every
   activation-affecting change updates it in the same PR.
+
+## Progress status — 2026-11-09
+
+- **Done and deployed:** A1 admin settings (#146), A4 flags-on CI acceptance (#147), A5 observability
+  (#148), B1 attachment uploads (#149), B2 copy-proposal handoff/exports (#150). Each PR passed CI
+  (including the authenticated flags-on Studio browser step) and redeployed production with all
+  flags off.
+- **In progress:** B4 hosted MCP quotas/rate limits/rotation.
+- **Blocked on the user:** A2 production activation runbook + migration window (needs production
+  database access approval), A3 live model onboarding (needs a reviewed provider credential/budget),
+  C3 first external MCP connection (needs provider choice and credential ownership).
+- **Queued:** C1 first planned skill (`product_shot.prepare` / `category.map_proposal`), remaining
+  P1/P2 items (merchant-audit v2 period/signed receipt, streaming/progress UX, skill authoring
+  harness, connectors).
