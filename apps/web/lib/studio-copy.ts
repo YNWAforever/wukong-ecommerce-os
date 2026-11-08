@@ -879,6 +879,53 @@ export const STUDIO_COPY = {
     "此建議的內容無法顯示；沒有捏造內容。",
     "This proposal could not be displayed; nothing is invented.",
   ],
+  "studio.review.copyProposed": ["複製建議值", "Copy proposed"],
+  "studio.review.copyAll": ["複製全部建議值", "Copy all proposed values"],
+  "studio.review.copied": ["已複製", "Copied"],
+  "studio.review.copyFailed": [
+    "無法複製到剪貼簿。",
+    "Could not copy to the clipboard.",
+  ],
+  "studio.review.notApplied": [
+    "尚未套用 — 請在審核畫面套用。",
+    "Not applied — apply only in the review screen.",
+  ],
+  "studio.review.exportTitle": ["匯出", "Export"],
+  "studio.review.exportJson": ["下載 JSON", "Download JSON"],
+  "studio.review.exportPdf": ["下載 PDF", "Download PDF"],
+  "studio.review.exportSavedOnly": [
+    "匯出只提供已儲存或已簽核的版本。",
+    "Only a saved or signed-off artifact can be exported.",
+  ],
+  "studio.review.saveBeforeExport": [
+    "請先儲存，才能匯出。",
+    "Save before exporting.",
+  ],
+
+  // -- listing review handoff (B2) -------------------------------------------
+  "studio.handoff.title": ["工作室建議", "Studio proposal"],
+  "studio.handoff.requiresReview": [
+    "工作室建議 — 須人工審核。此處不會自動套用任何內容。",
+    "Studio proposal — requires human review. Nothing here is applied automatically.",
+  ],
+  "studio.handoff.notApplied": [
+    "尚未套用；只可複製到審核表單。",
+    "Not applied; you can only copy values into the review form.",
+  ],
+  "studio.handoff.current": ["目前", "Current"],
+  "studio.handoff.proposed": ["建議", "Proposed"],
+  "studio.handoff.copyField": ["複製建議值", "Copy proposed"],
+  "studio.handoff.copyAll": ["複製全部建議值", "Copy all proposed values"],
+  "studio.handoff.copied": ["已複製", "Copied"],
+  "studio.handoff.copyFailed": [
+    "無法複製到剪貼簿。",
+    "Could not copy to the clipboard.",
+  ],
+  "studio.handoff.dismiss": ["關閉建議", "Dismiss proposal"],
+  "studio.handoff.source": [
+    "來自工作室成品；只讀顯示，不會改動表單。",
+    "From a Studio artifact; read-only, the form is not changed.",
+  ],
 
   // -- tools and connections ------------------------------------------------
   "studio.connections.title": ["工具與連線", "Tools and connections"],

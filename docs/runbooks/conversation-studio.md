@@ -133,6 +133,28 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
   (`retention_days` is stored only); no MCP token rate-limit ledger yet; no workspace-settings
   admin API (SQL above).
 
+## Copy-proposal handoff and artifact exports (B2)
+
+- **Handoff is read-only.** The review card links to
+  `/listings/<listingId>?studioOutput=<outputId>`. The listing page resolves that optional UUID
+  server-side: only a same-workspace `copy_proposal` for that same listing produces a banner with
+  the raw field ids and `current → proposed`; every invalid, foreign, mismatched, disabled-Studio or
+  read-error case fails closed to no banner. The banner can copy values and be dismissed (the link
+  drops the query parameter); it never writes canonical data and never seeds the review form.
+- **Exports are digest-gated.** `GET /api/studio/outputs/[id]/export?digest=<contentDigest>` keeps
+  the original canonical `sorted-json-v1` JSON contract (default `format=json`). `format=pdf`
+  renders the same packet server-side with `pdf-lib`; both formats require a `saved`/`signed_off`
+  artifact, re-hash the persisted payload, return `409` if it changed since the preview, and `404`
+  for a foreign/disabled-Studio id. An unknown `format` value is a `400`; missing `format` still
+  means JSON.
+- **PDF text uses the standard font.** No Unicode font is bundled and no dependency was added, so
+  characters outside Latin-1 in proposed values appear as `[U+XXXX]` code points in the PDF; the
+  canonical JSON export is the exact-text form. The PDF is generated only on the server, never in a
+  browser, and contains no secrets.
+- The review card exposes per-field "Copy proposed", "Copy all proposed values", an explicit
+  not-applied state, and JSON/PDF links only when the artifact is saved/signed off (with the latest
+  digest). Unsaved artifacts show "save before exporting" instead of a disabled claim of success.
+
 ## Deploy and rollback order
 
 1. Apply migrations `0054_conversation_studio.sql` and `0055_studio_mcp_token_lookup.sql` **before**

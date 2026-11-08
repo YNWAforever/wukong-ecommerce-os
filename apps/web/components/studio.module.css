@@ -2476,3 +2476,199 @@ article.studio-output .studio-output-body {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin: 0;
 }
+
+/* -- B2: copy-proposal actions, exports and review handoff ----------------- */
+
+.studio-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.studio-review-copy,
+.studio-review-copy-all {
+  min-height: 32px;
+  padding: 4px 10px;
+  color: var(--amber-dark);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.studio-review-copy {
+  margin-top: 4px;
+}
+
+.studio-review-copy-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.studio-review-not-applied {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  background: var(--amber-soft);
+  border-left: 3px solid var(--amber);
+  border-radius: 0 6px 6px 0;
+}
+
+.studio-review-export {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.studio-review-export-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.studio-review-export-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 12px;
+  color: var(--amber-dark);
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+  border-radius: 6px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.studio-review-export-link:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.studio-review-export-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.studio-handoff {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+  border-left: 4px solid var(--amber);
+  border-radius: 8px;
+}
+
+.studio-handoff-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.studio-handoff-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.studio-handoff-dismiss {
+  color: var(--amber-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.studio-handoff-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.studio-handoff-fields {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-handoff-field {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.studio-handoff-field-code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.studio-handoff-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.studio-handoff-value-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.studio-handoff-copy,
+.studio-handoff-copy-all {
+  min-height: 32px;
+  padding: 4px 10px;
+  color: var(--amber-dark);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.studio-handoff-copy {
+  justify-self: start;
+}
+
+.studio-handoff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.studio-handoff-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.studio-handoff-copy:focus-visible,
+.studio-handoff-copy-all:focus-visible,
+.studio-review-copy:focus-visible,
+.studio-review-copy-all:focus-visible,
+.studio-review-export-link:focus-visible,
+.studio-handoff-dismiss:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}

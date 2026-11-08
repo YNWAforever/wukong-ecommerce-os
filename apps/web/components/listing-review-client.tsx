@@ -10,7 +10,12 @@ import type {
 import { reviewErrorLabel } from "../lib/approval-ui-copy";
 import { useLocale } from "../lib/locale-context";
 import { REVIEW_FIELD_BINDINGS } from "../lib/review-field-bindings";
+import { copyTextToClipboard } from "../lib/studio/clipboard";
+import { formatProposedValues } from "../lib/studio/copy-proposal";
+import type { ListingStudioHandoff } from "../lib/studio/listing-handoff";
+import { studioCopy } from "../lib/studio-copy";
 import { localized, commonCopy, stateLabel, safeUiError } from "../lib/ui-copy";
+import studioStyles from "./studio.module.css";
 
 import type {
   CanonicalListing,
@@ -591,12 +596,127 @@ async function responseError(response: Response): Promise<CodedError> {
 const errorCodeOf = (cause: unknown): string | undefined =>
   cause instanceof Error ? (cause as CodedError).code : undefined;
 
+/**
+ * Read-only Studio copy-proposal handoff rendered above the review form (B2).
+ *
+ * It is display-only by construction: the only actions are clipboard copies and
+ * a dismiss link that drops the `studioOutput` query parameter. It never
+ * writes canonical data and is never used to seed the review form state.
+ */
+function StudioHandoffBanner({
+  locale,
+  listingId,
+  handoff,
+}: {
+  locale: ReturnType<typeof useLocale>;
+  listingId: string;
+  handoff: ListingStudioHandoff;
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const [copyFailed, setCopyFailed] = useState(false);
+
+  async function copy(text: string, marker: string) {
+    const ok = await copyTextToClipboard(text);
+    setCopied(ok ? marker : null);
+    setCopyFailed(!ok);
+  }
+
+  return (
+    <section
+      className={studioStyles["studio-handoff"]}
+      aria-label={studioCopy(locale, "studio.handoff.title")}
+      data-studio-handoff="true"
+      data-output-id={handoff.outputId}
+    >
+      <header className={studioStyles["studio-handoff-header"]}>
+        <h2 className={studioStyles["studio-handoff-title"]}>
+          {studioCopy(locale, "studio.handoff.title")}
+        </h2>
+        <Link
+          className={studioStyles["studio-handoff-dismiss"]}
+          href={`/listings/${encodeURIComponent(listingId)}`}
+        >
+          {studioCopy(locale, "studio.handoff.dismiss")}
+        </Link>
+      </header>
+      <p className={studioStyles["studio-handoff-note"]}>
+        {studioCopy(locale, "studio.handoff.requiresReview")}
+      </p>
+      <p className={studioStyles["studio-handoff-note"]}>
+        {studioCopy(locale, "studio.handoff.notApplied")}{" "}
+        {studioCopy(locale, "studio.handoff.source")}
+      </p>
+      {handoff.fields.length > 0 ? (
+        <ul className={studioStyles["studio-handoff-fields"]}>
+          {handoff.fields.map((field) => (
+            <li
+              key={field.field}
+              className={studioStyles["studio-handoff-field"]}
+              data-field={field.field}
+            >
+              <code className={studioStyles["studio-handoff-field-code"]}>
+                {field.field}
+              </code>
+              <span className={studioStyles["studio-handoff-values"]}>
+                <span className={studioStyles["studio-handoff-value-label"]}>
+                  {studioCopy(locale, "studio.handoff.current")}
+                </span>
+                <span>
+                  {field.current === null || field.current.length === 0
+                    ? studioCopy(locale, "studio.review.notAvailable")
+                    : field.current}
+                </span>
+                <span aria-hidden="true">→</span>
+                <span className={studioStyles["studio-handoff-value-label"]}>
+                  {studioCopy(locale, "studio.handoff.proposed")}
+                </span>
+                <span>{field.proposed}</span>
+              </span>
+              <button
+                type="button"
+                className={studioStyles["studio-handoff-copy"]}
+                aria-label={`${studioCopy(locale, "studio.handoff.copyField")}: ${field.field}`}
+                onClick={() => void copy(field.proposed, field.field)}
+              >
+                {studioCopy(locale, "studio.handoff.copyField")}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className={studioStyles["studio-handoff-actions"]}>
+        {handoff.fields.length > 0 ? (
+          <button
+            type="button"
+            className={studioStyles["studio-handoff-copy-all"]}
+            onClick={() =>
+              void copy(formatProposedValues(handoff.fields), "all-values")
+            }
+          >
+            {studioCopy(locale, "studio.handoff.copyAll")}
+          </button>
+        ) : null}
+        <p className={studioStyles["studio-handoff-status"]} role="status">
+          {copyFailed
+            ? studioCopy(locale, "studio.handoff.copyFailed")
+            : copied !== null
+              ? studioCopy(locale, "studio.handoff.copied")
+              : ""}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export function ListingReviewClient({
   listingId,
   initialProcessing,
+  studioHandoff,
 }: {
   listingId: string;
   initialProcessing?: "queued" | "retry_required";
+  /** Optional read-only copy-proposal banner resolved by the server page. */
+  studioHandoff?: ListingStudioHandoff;
 }) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
@@ -1084,6 +1204,13 @@ export function ListingReviewClient({
         </span>
       </div>
       <SourceReadinessSummary readiness={snapshot.sourceReadiness} banner />
+      {studioHandoff ? (
+        <StudioHandoffBanner
+          locale={locale}
+          listingId={listingId}
+          handoff={studioHandoff}
+        />
+      ) : null}
       {error ? (
         <p className="inline-warning" role="alert" id="listing-action-error">
           {actionErrorText}
