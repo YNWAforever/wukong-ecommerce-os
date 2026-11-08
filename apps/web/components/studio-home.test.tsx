@@ -336,9 +336,9 @@ describe("StudioHome", () => {
   }
 
   async function settle() {
-    for (let index = 0; index < 10; index += 1) {
+    for (let index = 0; index < 30; index += 1) {
       await act(async () => {
-        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
       });
     }
   }
