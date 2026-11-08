@@ -1,0 +1,714 @@
+import { describe, expect, it } from "vitest";
+
+import { fakeStudioUsage, type StudioModel } from "@wukong/ai";
+import type { StudioSettings } from "@wukong/db";
+
+import { isStudioAiEnabled, isStudioEnabled } from "../studio-flags";
+import type { SendMessageBody } from "./contracts.js";
+import {
+  createFakeStudio,
+  fakeGetDatabase,
+  fakeSessionContext,
+  fakeStudioRun,
+  fakeStudioThread,
+  fakeMessage,
+  reviewableContent,
+  reviewSnapshot,
+  type CatalogPage,
+  type FakeStudio,
+  type FakeStudioOptions,
+} from "./test-fakes.js";
+import {
+  createStudioService,
+  type StudioServiceDeps,
+} from "./turn-service.js";
+
+/**
+ * Turn-service contract tests (plan Task 6 + Task 8 integration).
+ *
+ * Everything is in-memory: fake session, fake workspace repositories and a
+ * scripted model. No database, no provider, no clock.
+ */
+
+const NOW = new Date("2026-11-08T10:00:00.000Z");
+const WORKSPACE = "ws_test";
+const LISTING_ID = "listing-1";
+const MISSING_THREAD_ID = "00000000-0000-4000-8000-000000000000";
+
+const STUDIO_ENV = {
+  CONVERSATION_STUDIO_ENABLED: "true",
+} as unknown as NodeJS.ProcessEnv;
+
+const AI_ENV = {
+  CONVERSATION_STUDIO_ENABLED: "true",
+  CONVERSATION_STUDIO_AI_ENABLED: "true",
+} as unknown as NodeJS.ProcessEnv;
+
+const AI_SETTINGS: Partial<StudioSettings> = {
+  monthlyBudgetUsd: "10.000000",
+  runCeilingUsd: "0.638976",
+  ai: {
+    provider: "opencode-go",
+    model: "deepseek-v4.1-flash",
+    pricingVersion: "go-2026-11",
+    maxInputTokens: 1048576,
+    inputUsdPerMillion: "0.3",
+    outputUsdPerMillion: "1.2",
+    maxOutputTokens: 4096,
+  },
+};
+
+function catalogOptions(): NonNullable<FakeStudioOptions["catalog"]> {
+  const createdAt = NOW.toISOString();
+  const items = [
+    {
+      sourceType: "platform" as const,
+      id: "product-1",
+      remoteProductId: "remote-1",
+      origin: "import" as const,
+      sku: null,
+      listingId: LISTING_ID,
+      specVersion: null,
+      title: "Margaux 2019",
+      listingStatus: "in_review" as const,
+      openBlockingFlagCount: 0,
+      needsReview: false,
+      needsAttention: false,
+      createdAt,
+      updatedAt: createdAt,
+      contentDigest: null,
+    },
+  ];
+  return {
+    items: items as unknown as CatalogPage["items"],
+    totalMatching: 1,
+    summary: { unlinked: 0, website: 0, workbook: 0, total: 1, linked: 1 },
+  };
+}
+
+function populatedOptions(): FakeStudioOptions {
+  return {
+    catalog: catalogOptions(),
+    snapshots: {
+      [LISTING_ID]: reviewSnapshot({
+        listingId: LISTING_ID,
+        content: reviewableContent(),
+        flags: [],
+      }),
+    },
+    pipelineRuns: [
+      {
+        id: "job-1",
+        listingId: LISTING_ID,
+        versionId: null,
+        status: "succeeded",
+        errorCode: null,
+        createdAt: NOW,
+      },
+    ],
+  };
+}
+
+type Role = "viewer" | "operator" | "reviewer" | "admin" | "owner";
+
+type Harness = {
+  service: ReturnType<typeof createStudioService>;
+  fake: FakeStudio;
+  deps: StudioServiceDeps;
+};
+
+function harness(
+  input: {
+    role?: Role;
+    options?: FakeStudioOptions;
+    settings?: Partial<StudioSettings>;
+    env?: NodeJS.ProcessEnv;
+    createModel?: (settings: StudioSettings) => StudioModel | null;
+  } = {},
+): Harness {
+  const options = input.options ?? {};
+  const fake = createFakeStudio({
+    ...options,
+    settings: {
+      workspaceId: WORKSPACE,
+      enabled: true,
+      ...(input.settings ?? {}),
+      ...(options.settings ?? {}),
+    },
+  });
+  const session = fakeSessionContext(input.role ?? "operator", {
+    workspaceId: WORKSPACE,
+  });
+  const deps: StudioServiceDeps = {
+    sessionContext: session.port,
+    getDatabase: fakeGetDatabase(fake.repos, fake.state.workspaceCalls),
+    isStudioEnabled,
+    isStudioAiEnabled,
+    env: input.env ?? STUDIO_ENV,
+    now: () => NOW,
+    ...(input.createModel ? { createModel: input.createModel } : {}),
+  };
+  return { service: createStudioService(deps), fake, deps };
+}
+
+function body(overrides: Partial<SendMessageBody> = {}): SendMessageBody {
+  return {
+    clientMessageId: "client-1",
+    text: "margaux",
+    locale: "en",
+    ...overrides,
+  };
+}
+
+async function openThread(service: Harness["service"]): Promise<string> {
+  const created = await service.createThread({ title: "Test conversation" });
+  return created.threadId;
+}
+
+function auditActions(fake: FakeStudio): string[] {
+  return fake.state.audits.map((event) => event.action);
+}
+
+function answeredModel(
+  compose: () => Promise<{
+    analysis: {
+      sections: Array<{ heading: string; body: string }>;
+      claims: Array<{ text: string; evidenceRefs: string[] }>;
+      limitations: string[];
+      followUps: string[];
+      clarification: null;
+    };
+    usage: ReturnType<typeof fakeStudioUsage>;
+  }>,
+): StudioModel {
+  return {
+    async plan() {
+      throw new Error("planner is not used by the v1 deterministic turn");
+    },
+    compose,
+  };
+}
+
+describe("studio turn service gate order", () => {
+  it("refuses a viewer before touching any thread data", async () => {
+    const { service, fake } = harness({ role: "viewer" });
+    await expect(
+      service.sendMessage(MISSING_THREAD_ID, body()),
+    ).rejects.toMatchObject({ status: 403, code: "insufficient_role" });
+    expect(fake.state.writes).not.toContain("messages.append");
+    expect(fake.state.writes).not.toContain("runs.create");
+    expect(fake.state.audits).toEqual([]);
+  });
+
+  it("returns 404 when the deployment flag is off, before any repository write", async () => {
+    const { service, fake } = harness({
+      env: {} as NodeJS.ProcessEnv,
+      options: populatedOptions(),
+    });
+    await expect(
+      service.createThread({ title: "x" }),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    await expect(service.listThreads()).rejects.toMatchObject({
+      status: 404,
+      code: "not_found",
+    });
+    await expect(
+      service.sendMessage(MISSING_THREAD_ID, body()),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    expect(fake.state.writes).toEqual([
+      "settings.get",
+      "settings.get",
+      "settings.get",
+    ]);
+    expect(fake.state.audits).toEqual([]);
+  });
+
+  it("returns 404 for a private thread of another operator", async () => {
+    const privateThread = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_other",
+      title: "Private notes",
+      visibility: "private",
+    });
+    const { service, fake } = harness({
+      options: { threads: [privateThread], ...populatedOptions() },
+    });
+    await expect(
+      service.sendMessage(privateThread.id, body()),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    await expect(service.getThread(privateThread.id)).rejects.toMatchObject({
+      status: 404,
+      code: "not_found",
+    });
+    expect(fake.state.writes).not.toContain("messages.append");
+  });
+
+  it("lets an admin read another operator's private thread", async () => {
+    const privateThread = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_other",
+      title: "Private notes",
+      visibility: "private",
+    });
+    const { service } = harness({
+      role: "admin",
+      options: { threads: [privateThread] },
+    });
+    const result = await service.getThread(privateThread.id);
+    expect(result.thread.threadId).toBe(privateThread.id);
+  });
+
+  it("returns 404 for a thread that belongs to another workspace", async () => {
+    const foreignThread = fakeStudioThread({
+      workspaceId: "ws_other",
+      createdBy: "actor_ops",
+      title: "Foreign",
+    });
+    const { service, fake } = harness({
+      options: { threads: [foreignThread] },
+    });
+    await expect(
+      service.sendMessage(foreignThread.id, body()),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    await expect(service.getThread(foreignThread.id)).rejects.toMatchObject({
+      status: 404,
+      code: "not_found",
+    });
+    expect(fake.state.writes).not.toContain("messages.append");
+  });
+});
+
+describe("studio thread and message reads", () => {
+  it("creates an operator thread with a neutral default title and an audit event", async () => {
+    const { service, fake } = harness();
+    const created = await service.createThread({});
+    const thread = fake.state.threads.find(
+      (entry) => entry.id === created.threadId,
+    );
+    expect(thread?.title).toBe("Studio conversation");
+    expect(thread?.createdBy).toBe("actor_ops");
+    expect(auditActions(fake)).toEqual(["studio.thread.created"]);
+  });
+
+  it("rejects an unknown skill and a viewer on thread creation", async () => {
+    const asOperator = harness();
+    await expect(
+      asOperator.service.createThread({ skillKey: "nope.unknown" }),
+    ).rejects.toMatchObject({ status: 400, code: "unknown_skill" });
+    expect(asOperator.fake.state.writes).not.toContain("threads.create");
+
+    const asViewer = harness({ role: "viewer" });
+    await expect(
+      asViewer.service.createThread({ title: "x" }),
+    ).rejects.toMatchObject({ status: 403, code: "insufficient_role" });
+    expect(asViewer.fake.state.writes).not.toContain("threads.create");
+  });
+
+  it("lists workspace threads but hides other operators' private ones", async () => {
+    const shared = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_other",
+      title: "Shared",
+    });
+    const privateOther = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_other",
+      title: "Their private",
+      visibility: "private",
+    });
+    const privateOwn = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_ops",
+      title: "My private",
+      visibility: "private",
+    });
+    const { service } = harness({
+      role: "viewer",
+      options: { threads: [shared, privateOther, privateOwn] },
+    });
+    const listed = await service.listThreads();
+    expect(listed.items.map((item) => item.title).sort()).toEqual([
+      "My private",
+      "Shared",
+    ]);
+    expect(listed.truncated).toBe(false);
+  });
+
+  it("returns persisted messages with decoded JSON content", async () => {
+    const thread = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_ops",
+      title: "Thread",
+    });
+    const operatorMessage = fakeMessage({
+      threadId: thread.id,
+      role: "operator",
+      content: { text: "find margaux", locale: "en" },
+      sequence: 1,
+      clientMessageId: "client-1",
+    });
+    const assistantMessage = fakeMessage({
+      threadId: thread.id,
+      role: "assistant",
+      content: { status: "answered", marker: true },
+      sequence: 2,
+    });
+    const { service } = harness({
+      role: "viewer",
+      options: {
+        threads: [thread],
+        messages: [operatorMessage, assistantMessage],
+      },
+    });
+    const result = await service.getThread(thread.id);
+    expect(result.thread.threadId).toBe(thread.id);
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0]?.content).toEqual({
+      text: "find margaux",
+      locale: "en",
+    });
+    expect(result.messages[1]?.content).toEqual({
+      status: "answered",
+      marker: true,
+    });
+  });
+
+  it("returns run status and ordered persisted events for polling", async () => {
+    const thread = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_ops",
+      title: "Thread",
+    });
+    const run = fakeStudioRun({
+      threadId: thread.id,
+      triggerMessageId: "message-1",
+      status: "succeeded",
+    });
+    const { service } = harness({
+      role: "viewer",
+      options: {
+        threads: [thread],
+        runs: [run],
+        runEvents: [
+          {
+            id: "event-1",
+            workspaceId: WORKSPACE,
+            runId: run.id,
+            sequence: 1,
+            kind: "tool",
+            toolId: "catalog.search",
+            state: "done",
+            payload: { key: "studio.trace.tool.done", values: {} },
+            durationMs: 2,
+            createdAt: NOW,
+          },
+        ],
+      },
+    });
+    const result = await service.getRun(thread.id, run.id);
+    expect(result.runId).toBe(run.id);
+    expect(result.status).toBe("succeeded");
+    expect(result.events.map((event) => event.sequence)).toEqual([1]);
+    expect(result.events[0]?.payload.key).toBe("studio.trace.tool.done");
+
+    await expect(service.getRun(thread.id, MISSING_THREAD_ID)).rejects.toMatchObject(
+      { status: 404, code: "not_found" },
+    );
+  });
+});
+
+describe("studio deterministic turns", () => {
+  it("persists a needs_input turn honestly and completes its run", async () => {
+    const { service, fake } = harness({ options: populatedOptions() });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({ text: "   " }),
+    );
+
+    expect(result.reply.status).toBe("needs_input");
+    expect(result.reply.analysis).toBeNull();
+    expect(result.trace.map((step) => step.kind)).toEqual(["notice"]);
+    expect(
+      fake.state.messages
+        .filter((message) => message.threadId === threadId)
+        .map((message) => message.role),
+    ).toEqual(["operator", "assistant"]);
+    const run = fake.state.runs[0]!;
+    expect(run.status).toBe("succeeded");
+    expect(
+      fake.state.runEvents
+        .filter((event) => event.runId === run.id)
+        .map((event) => event.sequence),
+    ).toEqual([1]);
+    expect(auditActions(fake)).toContain("studio.message.received");
+    expect(auditActions(fake)).toContain("studio.run.completed");
+  });
+
+  it("answers from records, persists the turn and records ordered tool events", async () => {
+    const { service, fake } = harness({ options: populatedOptions() });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(threadId, body());
+
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.skillKey).toBe("catalog.find");
+    expect(result.reply.analysis).toBeNull();
+    const events = fake.state.runEvents.filter(
+      (event) => event.runId === result.runId,
+    );
+    expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
+    expect(events.map((event) => event.toolId)).toEqual([
+      "catalog.search",
+      "catalog.get",
+      "quality.get_gaps",
+      "jobs.list",
+    ]);
+    expect(events.every((event) => event.kind === "tool")).toBe(true);
+
+    const persisted = fake.state.messages.find(
+      (message) => message.id === result.messageId,
+    );
+    expect(persisted?.role).toBe("assistant");
+    expect(persisted?.runId).toBe(result.runId);
+    expect(persisted?.content).toEqual(result.reply);
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+    expect(auditActions(fake)).toEqual([
+      "studio.thread.created",
+      "studio.message.received",
+      "studio.run.completed",
+    ]);
+    expect(fake.state.budgets).toEqual([]);
+  });
+
+  it("replays a duplicate clientMessageId without a second run", async () => {
+    const { service, fake } = harness({ options: populatedOptions() });
+    const threadId = await openThread(service);
+    const first = await service.sendMessage(threadId, body());
+    const second = await service.sendMessage(threadId, body());
+
+    expect(second.replayed).toBe(true);
+    expect(second.messageId).toBe(first.messageId);
+    expect(second.runId).toBe(first.runId);
+    expect(second.reply).toEqual(first.reply);
+    expect(fake.state.runs).toHaveLength(1);
+    expect(
+      fake.state.messages.filter(
+        (message) => message.threadId === threadId,
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("returns 409 while a duplicate clientMessageId is still running", async () => {
+    const thread = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_ops",
+      title: "Thread",
+    });
+    const message = fakeMessage({
+      threadId: thread.id,
+      role: "operator",
+      sequence: 1,
+      clientMessageId: "client-1",
+    });
+    const run = fakeStudioRun({
+      threadId: thread.id,
+      triggerMessageId: message.id,
+      status: "running",
+      idempotencyKey: `studio:${thread.id}:client-1`,
+    });
+    const { service } = harness({
+      options: { threads: [thread], messages: [message], runs: [run] },
+    });
+    await expect(
+      service.sendMessage(thread.id, body()),
+    ).rejects.toMatchObject({ status: 409, code: "run_in_progress" });
+  });
+
+  it("marks the run failed and rethrows when persistence fails mid-turn", async () => {
+    const { service, fake } = harness({
+      options: { ...populatedOptions(), failOnAssistantAppend: true },
+    });
+    const threadId = await openThread(service);
+    await expect(service.sendMessage(threadId, body())).rejects.toThrow(
+      "assistant append failed",
+    );
+    const run = fake.state.runs[0]!;
+    expect(run.status).toBe("failed");
+    expect(run.errorCode).toBe("studio_turn_failed");
+    expect(auditActions(fake)).toContain("studio.run.failed");
+    expect(auditActions(fake)).not.toContain("studio.run.completed");
+  });
+});
+
+describe("studio optional model analysis", () => {
+  it("reserves, grounds claims, settles the budget and records the model step", async () => {
+    const model = answeredModel(async () => ({
+      analysis: {
+        sections: [{ heading: "Summary", body: "One listing found." }],
+        claims: [
+          {
+            text: "Margaux 2019 is in review.",
+            evidenceRefs: [`catalog:${LISTING_ID}`],
+          },
+          {
+            text: "An unsupported claim.",
+            evidenceRefs: ["catalog:not-in-pack"],
+          },
+        ],
+        limitations: ["Records only."],
+        followUps: ["Open the listing."],
+        clarification: null,
+      },
+      usage: fakeStudioUsage(),
+    }));
+    const { service, fake } = harness({
+      options: populatedOptions(),
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () => model,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(threadId, body());
+
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.analysis).not.toBeNull();
+    expect(result.reply.analysis?.configured).toBe(true);
+    expect(result.reply.analysis?.droppedClaims).toBe(1);
+    expect(result.reply.analysis?.claims).toEqual([
+      {
+        text: "Margaux 2019 is in review.",
+        evidenceRefs: [`catalog:${LISTING_ID}`],
+      },
+    ]);
+
+    const budget = fake.state.budgets[0]!;
+    expect(budget.reservedUsd).toBe("0.638976");
+    expect(budget.state).toBe("settled");
+    expect(budget.settledUsd).toBe("0.010000");
+
+    const run = fake.state.runs[0]!;
+    expect(run.status).toBe("succeeded");
+    expect(run.inputTokens).toBe(100);
+    expect(run.outputTokens).toBe(50);
+    expect(run.estimatedCostUsd).toBe("0.010000");
+    expect(run.settledUsd).toBe("0.010000");
+
+    const modelEvent = fake.state.runEvents.find(
+      (event) => event.runId === run.id && event.kind === "model",
+    );
+    expect(modelEvent?.state).toBe("done");
+    expect(modelEvent?.payload.key).toBe("studio.trace.model.done");
+
+    const completed = fake.state.audits.find(
+      (event) => event.action === "studio.run.completed",
+    );
+    expect(completed?.metadata).toMatchObject({
+      modelUsed: true,
+      droppedClaims: 1,
+    });
+  });
+
+  it("falls back to the deterministic reply when the model fails", async () => {
+    const model: StudioModel = {
+      async plan() {
+        throw new Error("planner is not used");
+      },
+      async compose() {
+        const error = new Error("provider request failed");
+        error.name = "ProviderApiError";
+        throw error;
+      },
+    };
+    const { service, fake } = harness({
+      options: populatedOptions(),
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () => model,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(threadId, body());
+
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.analysis).toMatchObject({
+      configured: false,
+      claims: [],
+      sections: [],
+    });
+    const run = fake.state.runs[0]!;
+    expect(run.status).toBe("succeeded");
+    expect(run.inputTokens).toBeNull();
+    expect(fake.state.budgets[0]?.state).toBe("uncertain");
+    const modelEvent = fake.state.runEvents.find(
+      (event) => event.kind === "model",
+    );
+    expect(modelEvent?.state).toBe("failed");
+    expect(modelEvent?.payload).toMatchObject({
+      key: "studio.trace.model.failed",
+      values: { category: "provider_unavailable" },
+    });
+  });
+
+  it("does not reserve or call a model when the AI flag is off", async () => {
+    let modelCalls = 0;
+    const { service, fake } = harness({
+      options: populatedOptions(),
+      settings: AI_SETTINGS,
+      env: STUDIO_ENV,
+      createModel: () => {
+        modelCalls += 1;
+        return null;
+      },
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(threadId, body());
+    expect(result.reply.analysis).toBeNull();
+    expect(modelCalls).toBe(0);
+    expect(fake.state.budgets).toEqual([]);
+    expect(fake.state.writes).not.toContain("budget.reserve");
+  });
+});
+
+describe("studio overview", () => {
+  it("returns deterministic counts and links without reserving budget", async () => {
+    let modelCalls = 0;
+    const { service, fake } = harness({
+      role: "viewer",
+      options: {
+        counts: { in_review: 2, approved: 1, published: 4 },
+        pipelineRuns: [
+          {
+            id: "job-1",
+            listingId: LISTING_ID,
+            versionId: null,
+            status: "failed",
+            errorCode: "provider_error",
+            createdAt: NOW,
+          },
+        ],
+      },
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () => {
+        modelCalls += 1;
+        return null;
+      },
+    });
+    const overview = await service.overview();
+    expect(overview.listingCounts.total).toBe(7);
+    expect(overview.listingCounts.byStatus.in_review).toBe(2);
+    expect(overview.listingCounts.deepLink).toBe("/dashboard");
+    expect(overview.quality.totalListings).toBe(3);
+    expect(overview.quality.deepLink).toBe("/quality");
+    expect(overview.recentJobs.items).toEqual([
+      {
+        jobId: "job-1",
+        state: "failed",
+        createdAt: NOW.toISOString(),
+        deepLink: "/jobs",
+      },
+    ]);
+    expect(overview.recentJobs.deepLink).toBe("/jobs");
+    expect(modelCalls).toBe(0);
+    expect(fake.state.writes).not.toContain("budget.reserve");
+  });
+});

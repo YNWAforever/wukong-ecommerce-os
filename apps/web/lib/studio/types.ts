@@ -61,6 +61,39 @@ export const evidenceCheckSchema = z.strictObject({
 });
 export type EvidenceCheck = z.infer<typeof evidenceCheckSchema>;
 
+/**
+ * Separately labelled model analysis (spec §3.4, plan Task 8).
+ *
+ * It is never evidence: sections are prose, every claim cites pack refs the
+ * turn service re-resolved, and `droppedClaims` records how many claims were
+ * removed because at least one ref did not resolve. `configured` is true only
+ * for an analysis a live model actually produced; a failed attempt persists an
+ * empty analysis with `configured: false` so the UI can say so honestly.
+ */
+export const modelAnalysisSchema = z.strictObject({
+  sections: z
+    .array(
+      z.strictObject({
+        heading: z.string().min(1).max(200),
+        body: z.string().min(1).max(4000),
+      }),
+    )
+    .max(8),
+  claims: z
+    .array(
+      z.strictObject({
+        text: z.string().min(1).max(2000),
+        evidenceRefs: z.array(z.string().min(1).max(200)).min(1).max(10),
+      }),
+    )
+    .max(30),
+  limitations: z.array(z.string().min(1).max(500)).max(10),
+  followUps: z.array(z.string().min(1).max(200)).max(6),
+  configured: z.boolean(),
+  droppedClaims: z.number().int().min(0).max(30),
+});
+export type ModelAnalysis = z.infer<typeof modelAnalysisSchema>;
+
 export const turnReplySchema = z.strictObject({
   status: z.enum(["answered", "needs_input", "partial"]),
   skillKey: z.string().min(1).max(120),
@@ -78,6 +111,8 @@ export const turnReplySchema = z.strictObject({
       }),
     )
     .max(10),
+  /** Absent (null) when no live model analysis was attempted or configured. */
+  analysis: modelAnalysisSchema.nullable(),
   traceSummary: z.strictObject({
     stepCount: z.number().int().min(0).max(64),
   }),
@@ -88,7 +123,7 @@ export type StudioTurnReply = z.infer<typeof turnReplySchema>;
 
 /** One persisted execution-trace entry; `key`+`values` render to copy later. */
 export type StudioTraceStep = {
-  kind: "tool" | "evidence";
+  kind: "tool" | "evidence" | "model" | "notice" | "error" | "dispatch";
   toolId: string | null;
   state: "started" | "done" | "failed" | "unavailable" | "blocked" | "info";
   durationMs: number | null;

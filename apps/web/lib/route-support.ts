@@ -13,6 +13,7 @@ export type DiagnosticStage =
   | "sources"
   | "assets"
   | "activity"
+  | "studio"
   | "unknown";
 export type RouteDiagnostics = { requestId: string; stage?: DiagnosticStage };
 
