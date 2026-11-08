@@ -111,3 +111,19 @@ is still to be recorded in P6.
 
 No merge to `main`, push, Vercel/Worker deploy, production migration, live model call with a real
 provider, external MCP connection or SHOPLINE write. Every feature flag remains default-off.
+
+## Round 3 additions (Tasks 9 and 13)
+
+| Plan task | Commit | Delivered | Verification |
+| --- | --- | --- | --- |
+| P3 Task 9 — copy proposals | `3112b8e8` (core/ai), `1af0132c` (backend), `cf429c11` (UI) | `listing.copy_proposal` skill promoted to pilot v1.1.0; proposer prompt + typed `StudioModel.propose` schema with identity/allowed-field/grounding validation; evidence pack records the exact listing version and current copy as an immutable target; grounded proposal filtering with dropped-field count; versioned output artifact service with canonical digest + readback + audit; `/api/studio/outputs` list/detail and save/sign-off actions (operator save, reviewer sign-off); output/review cards, thread integration, real outputs page, review links; no canonical writes | Core/ai tests 21 + 8 ✅; backend tests (evidence 13, read-deps 14, output service 2, turn service 23, output routes 6) ✅; UI tests 27 new ✅; full `apps/web` suite 272 files / 2676 tests ✅; typechecks clean |
+| P5 Task 13 — external MCP | `1ffac55b` | Outbound MCP client (https-only, no redirects, schema-hash pinning, 12 s deadline, 64 KiB cap, content-only projection, zero-fetch when disabled); AES-256-GCM credential envelopes under a new `STUDIO_MCP_ENCRYPTION_KEY`; admin registry lifecycle with audits and fail-closed approval gates; `/api/studio/mcp-connections` routes; admin `/studio/settings` page with token panel, connection panel and tool catalogue; Settings rail link enabled; external MCP stays disabled by default and no call site instantiates the client yet | 81 task tests across 12 files ✅; `packages/ai` + `apps/web` typecheck ✅; no live network call |
+| Docs | `87cff226`, this update | Progress/verification record | — |
+
+Verification snapshot after round 3: `apps/web` 272 files / 2676 tests; `packages/core` 326; `packages/ai` 444; `packages/db` 196; typecheck clean for web/core/ai/db/shopline/assets/jobs/worker. Playwright `studio.spec.ts` runs and cleanly skips (2 skipped: flags-off needs `PLAYWRIGHT_E2E=1`, flags-on needs `STUDIO_E2E=1` plus an enabled workspace row). The Studio integration suites (20 tests across migration/repository/MCP-resolver files) were last run green after migration `0055`; a same-session rerun could not connect because the local Docker Desktop engine became unavailable (`ECONNREFUSED 127.0.0.1:54329`). No integration test or migration file changed since that green run; the rerun is recorded as BLOCKED by environment, not failed.
+
+Additional deviations from round 3:
+- Copy-proposal sign-off is only enabled for a `saved` artifact (UI-side rule; the backend also allows signing off a draft version, so this can be relaxed deliberately later).
+- No live model/provider call or external MCP transport call was made in any verification; the proposer and external client are exercised only through injected fakes.
+- The admin settings page reads workspace settings up to three times per render (gate + panel data); acceptable for an admin page, noted for the P6 performance pass.
+- Sign-off is a Studio artifact status only, not a SHOPLINE/listing approval and not a publish action.
