@@ -1155,6 +1155,55 @@ describe("studio inbox", () => {
     );
   });
 
+  it("marks only the unreadable source unavailable instead of failing the inbox", async () => {
+    const { service } = harness({
+      role: "viewer",
+      options: {
+        counts: { in_review: 2 },
+        pipelineRuns: [],
+        outputs: [],
+        threads: [],
+        failSources: ["quality"],
+      } as FakeStudioOptions,
+    });
+    const inbox = await service.inbox();
+    expect(inbox.needsAttention.items[0]).toMatchObject({
+      key: "listings_with_gaps",
+      count: null,
+    });
+    expect(inbox.needsAttention.items[3]).toMatchObject({
+      key: "listings_awaiting_review",
+      count: 2,
+    });
+    expect(inbox.needsAttention.unavailable).toBe(false);
+    expect(inbox.jobs.unavailable).toBe(false);
+    expect(inbox.outputs.unavailable).toBe(false);
+    expect(inbox.conversations.unavailable).toBe(false);
+  });
+
+  it("marks each section unavailable when its own read fails", async () => {
+    const { service } = harness({
+      role: "viewer",
+      options: {
+        counts: { received: 1 },
+        quality: {
+          hasGapsCount: 0,
+          noActiveVersion: 0,
+          unassessableActiveVersion: 0,
+        },
+        pipelineRuns: [],
+        outputs: [],
+        threads: [],
+        failSources: ["pipelineRuns", "outputs", "threads"],
+      } as FakeStudioOptions,
+    });
+    const inbox = await service.inbox();
+    expect(inbox.jobs.unavailable).toBe(true);
+    expect(inbox.outputs.unavailable).toBe(true);
+    expect(inbox.conversations.unavailable).toBe(true);
+    expect(inbox.needsAttention.unavailable).toBe(false);
+  });
+
   it("keeps other users' private conversations out of the inbox", async () => {
     const shared = fakeStudioThread({
       workspaceId: WORKSPACE,

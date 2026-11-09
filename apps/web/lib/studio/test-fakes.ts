@@ -272,6 +272,10 @@ export type FakeStudioOptions = {
   budgets?: FakeBudgetReservation[];
   /** Make the assistant message append fail, to exercise the failure path. */
   failOnAssistantAppend?: boolean;
+  /** Make an inbox/list source reject, to exercise partial-read resilience. */
+  failSources?: Array<
+    "counts" | "quality" | "pipelineRuns" | "outputs" | "threads"
+  >;
 };
 
 export type FakeStudio = {
@@ -427,6 +431,9 @@ export function fakeApiToken(
  * touch it.
  */
 export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
+  const shouldFailSource = (
+    source: NonNullable<FakeStudioOptions["failSources"]>[number],
+  ) => options.failSources?.includes(source) ?? false;
   const settings: StudioSettings = {
     ...DEFAULT_SETTINGS,
     ...options.settings,
@@ -528,6 +535,8 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           } = {},
         ) => {
           state.writes.push("threads.list");
+          if (shouldFailSource("threads"))
+            throw new Error("fake threads source unavailable");
           const limit = Math.min(Math.max(input.limit ?? 50, 1), 50);
           const offset = Math.min(Math.max(input.offset ?? 0, 0), 100_000);
           const search = input.q?.trim().toLocaleLowerCase() ?? "";
@@ -828,6 +837,8 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           } = {},
         ) => {
           state.writes.push("outputs.list");
+          if (shouldFailSource("outputs"))
+            throw new Error("fake outputs source unavailable");
           const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
           const offset = Math.min(Math.max(input.offset ?? 0, 0), 100_000);
           const search = input.q?.trim().toLocaleLowerCase() ?? "";
@@ -1198,6 +1209,8 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
       },
       countByStatus: async () => {
         state.writes.push("listings.countByStatus");
+        if (shouldFailSource("counts"))
+          throw new Error("fake counts source unavailable");
         const counts: Record<string, number> = {
           received: 0,
           processing: 0,
@@ -1217,6 +1230,8 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
     qualityProjection: {
       read: async () => {
         state.writes.push("qualityProjection.read");
+        if (shouldFailSource("quality"))
+          throw new Error("fake quality source unavailable");
         return quality;
       },
     },
@@ -1259,6 +1274,8 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
       },
       listForWorkspace: async (limit = 100) => {
         state.writes.push("pipelineRuns.listForWorkspace");
+        if (shouldFailSource("pipelineRuns"))
+          throw new Error("fake pipeline-runs source unavailable");
         return (options.pipelineRuns ?? []).slice(
           0,
           Math.min(Math.max(limit, 1), 100),
