@@ -102,4 +102,24 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
   await expect(page.locator('a[href^="/studio/t/"]').first()).toBeVisible({
     timeout: 30_000,
   });
+  // The orchestration inbox aggregates the same workspace records: the
+  // conversation we just created must appear there, and the section labels
+  // must render from real reads.
+  await page.goto("/studio/inbox");
+  await expect(
+    page.getByRole("heading", { name: "Orchestration inbox" }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Needs attention").first()).toBeVisible();
+  await expect(page.getByText("Recent pipeline jobs").first()).toBeVisible();
+  await expect(
+    page.getByText("Artifacts needing action").first(),
+  ).toBeVisible();
+  await expect(page.getByText("Recent conversations").first()).toBeVisible();
+  await expect(
+    page.locator(`a[href="${new URL(threadUrl).pathname}"]`).first(),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.screenshot({
+    path: "test-results/studio-inbox-acceptance.png",
+    fullPage: true,
+  });
 });
