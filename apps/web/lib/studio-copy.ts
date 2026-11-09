@@ -81,6 +81,10 @@ export const STUDIO_COPY = {
   "studio.composer.send": ["傳送", "Send"],
   "studio.composer.empty": ["請先輸入訊息。", "Enter a message first."],
   "studio.composer.working": ["正在處理…", "Working…"],
+  "studio.composer.progressNote": [
+    "確定性回答優先；可選分析只會在已審核預算內執行。",
+    "Deterministic answer first; optional analysis runs only within the reviewed budget.",
+  ],
   "studio.composer.retry": ["重試傳送", "Retry send"],
   "studio.composer.hint": [
     "Enter 傳送，Shift+Enter 換行。",

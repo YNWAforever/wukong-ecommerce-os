@@ -392,6 +392,22 @@ describe("StudioComposer attachments", () => {
     );
   });
 
+  it("shows an honest elapsed counter and progress note while sending", async () => {
+    vi.useFakeTimers();
+    try {
+      const container = await mount({ sending: true, initial: "hello" });
+      expect(container.textContent).toContain("Working…");
+      expect(container.textContent).toContain("Deterministic answer first");
+      expect(container.textContent).not.toContain(" · 1s");
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(container.textContent).toContain("Working… · 3s");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows the attachment limit notice", async () => {
     const container = await mount({
       onAttachFiles: vi.fn(),
