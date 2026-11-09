@@ -1,4 +1,4 @@
-﻿import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
 
 import { createDatabase, type Database } from "../client.js";
@@ -297,6 +297,157 @@ describe.skipIf(!enabled)("studio repositories", () => {
     const searchedOutputs = await outputPage({ offset: 1, q: "output page" });
     expect(searchedOutputs.items).toHaveLength(2);
     expect(searchedOutputs.truncated).toBe(true);
+  });
+
+  it("applies thread visibility in SQL before pagination", async () => {
+    const made = await studioRepositories(WORKSPACE_A, async (repos) => {
+      const create = (
+        title: string,
+        visibility: "workspace" | "private",
+        createdBy: string,
+      ) => repos.studio.threads.create({ title, visibility, createdBy });
+      const aShared = await create(
+        "Visibility A shared",
+        "workspace",
+        "actor-a",
+      );
+      const aPrivate = await create(
+        "Visibility A private",
+        "private",
+        "actor-a",
+      );
+      const bShared = await create(
+        "Visibility B shared",
+        "workspace",
+        "actor-b",
+      );
+      const bPrivateOne = await create(
+        "Visibility B private one",
+        "private",
+        "actor-b",
+      );
+      const bPrivateTwo = await create(
+        "Visibility B private two",
+        "private",
+        "actor-b",
+      );
+      const percent = await create(
+        "Visibility 100% literal",
+        "workspace",
+        "actor-b",
+      );
+      return { aShared, aPrivate, bShared, bPrivateOne, bPrivateTwo, percent };
+    });
+
+    const page = (
+      input: {
+        viewerId?: string;
+        includePrivate?: boolean;
+        offset?: number;
+        limit?: number;
+        q?: string;
+      } = {},
+    ) =>
+      studioRepositories(WORKSPACE_A, (repos) =>
+        repos.studio.threads.list({
+          q: "visibility",
+          limit: 2,
+          offset: 0,
+          ...input,
+        }),
+      );
+
+    // A plain member sees workspace threads plus only their own private ones.
+    const aFirst = await page({ viewerId: "actor-a" });
+    expect(aFirst.items).toHaveLength(2);
+    expect(aFirst.truncated).toBe(true);
+    const aSecond = await page({ viewerId: "actor-a", offset: 2 });
+    expect(aSecond.items).toHaveLength(2);
+    expect(aSecond.truncated).toBe(false);
+    const aIds = [...aFirst.items, ...aSecond.items].map((thread) => thread.id);
+    expect(new Set(aIds)).toEqual(
+      new Set([
+        made.aShared.id,
+        made.aPrivate.id,
+        made.bShared.id,
+        made.percent.id,
+      ]),
+    );
+    expect(aIds).not.toContain(made.bPrivateOne.id);
+    expect(aIds).not.toContain(made.bPrivateTwo.id);
+
+    // The other member sees the same workspace threads plus their own private
+    // ones, and still never the first member's private thread.
+    const bFirst = await page({ viewerId: "actor-b" });
+    expect(bFirst.items).toHaveLength(2);
+    expect(bFirst.truncated).toBe(true);
+    const bLast = await page({ viewerId: "actor-b", offset: 4 });
+    expect(bLast.items).toHaveLength(1);
+    expect(bLast.truncated).toBe(false);
+    const bIds = [
+      ...bFirst.items,
+      ...(await page({ viewerId: "actor-b", offset: 2 })).items,
+      ...bLast.items,
+    ].map((thread) => thread.id);
+    expect(new Set(bIds)).toEqual(
+      new Set([
+        made.aShared.id,
+        made.bShared.id,
+        made.bPrivateOne.id,
+        made.bPrivateTwo.id,
+        made.percent.id,
+      ]),
+    );
+    expect(bIds).not.toContain(made.aPrivate.id);
+
+    // Admin/owner includePrivate lifts the restriction and pages evenly.
+    const adminFirst = await page({
+      viewerId: "actor-admin",
+      includePrivate: true,
+    });
+    const adminSecond = await page({
+      viewerId: "actor-admin",
+      includePrivate: true,
+      offset: 2,
+    });
+    const adminThird = await page({
+      viewerId: "actor-admin",
+      includePrivate: true,
+      offset: 4,
+    });
+    expect(adminFirst.items).toHaveLength(2);
+    expect(adminFirst.truncated).toBe(true);
+    expect(adminSecond.items).toHaveLength(2);
+    expect(adminThird.items).toHaveLength(2);
+    expect(adminThird.truncated).toBe(false);
+    expect(
+      new Set(
+        [...adminFirst.items, ...adminSecond.items, ...adminThird.items].map(
+          (thread) => thread.id,
+        ),
+      ).size,
+    ).toBe(6);
+
+    // Omitting viewerId preserves the unfiltered internal read.
+    const unfiltered = await page();
+    expect(unfiltered.items).toHaveLength(2);
+    expect(unfiltered.truncated).toBe(true);
+
+    // Visibility composes with LIKE-escaped search: `%` is a literal.
+    const percentLiteral = await page({
+      viewerId: "actor-a",
+      q: "100% literal",
+    });
+    expect(percentLiteral.items.map((thread) => thread.id)).toEqual([
+      made.percent.id,
+    ]);
+    const wildcardLiteral = await page({
+      viewerId: "actor-a",
+      q: "% literal",
+    });
+    expect(wildcardLiteral.items.map((thread) => thread.id)).toEqual([
+      made.percent.id,
+    ]);
   });
 
   it("defaults settings and round-trips an explicit configuration", async () => {

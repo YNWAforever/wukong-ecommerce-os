@@ -305,12 +305,21 @@ export type StudioRepository = {
      * `%`, `_` and `\` in the operator's text treated literally (LIKE escaping).
      * `offset` is an integer row offset applied after ORDER BY; the repository
      * reads `limit + 1` rows so `truncated` means "more rows after this page".
+     *
+     * `viewerId`/`includePrivate` apply the thread visibility rule in SQL
+     * *before* LIMIT/OFFSET: workspace threads are visible to everyone, a
+     * private thread only to its creator, and `includePrivate` (admin/owner)
+     * lifts the private-thread restriction. Omitting `viewerId` keeps the
+     * unfiltered read used by internal/administrative callers that already
+     * enforce visibility themselves; list pages and the inbox must pass it.
      */
     list(input?: {
       limit?: number;
       before?: Date;
       q?: string;
       offset?: number;
+      viewerId?: string;
+      includePrivate?: boolean;
     }): Promise<{
       items: StudioThread[];
       truncated: boolean;
@@ -830,9 +839,16 @@ export function createStudioRepository(
         const before = input.before ?? null;
         const search = input.q?.trim();
         const pattern = search ? likePattern(search) : null;
+        const viewerId = input.viewerId ?? null;
+        const includePrivate = input.includePrivate === true;
         const rows = await transaction.execute(sql`
           select * from studio_threads
           where workspace_id=${workspaceId}
+            ${
+              viewerId
+                ? sql`and (visibility <> 'private' or created_by=${viewerId} or ${includePrivate}::boolean)`
+                : sql``
+            }
             ${before ? sql`and created_at < ${before.toISOString()}::timestamptz` : sql``}
             ${
               pattern

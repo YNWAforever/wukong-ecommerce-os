@@ -1450,13 +1450,13 @@ export function createStudioService(deps: StudioServiceDeps) {
           repos.studio.threads.list({
             limit: STUDIO_PAGE_SIZE,
             offset,
+            viewerId: session.actorId,
+            includePrivate: THREAD_ADMIN_ROLES.includes(role),
             ...(search ? { q: search } : {}),
           }),
       );
       return {
-        items: listed.items
-          .filter((thread) => isThreadVisible(thread, session.actorId, role))
-          .map(threadView),
+        items: listed.items.map(threadView),
         truncated: listed.truncated,
         offset,
       };
@@ -1754,7 +1754,7 @@ export function createStudioService(deps: StudioServiceDeps) {
      * writes, no model calls and no new repository methods.
      */
     async inbox(): Promise<StudioInboxResult> {
-      const { session } = await requireStudioSession(deps, "viewer");
+      const { session, role } = await requireStudioSession(deps, "viewer");
       const data = await database().forWorkspace(
         session.workspaceId,
         async (repos) => {
@@ -1765,7 +1765,13 @@ export function createStudioService(deps: StudioServiceDeps) {
             repos.studio.outputs
               .list({ limit: 50 })
               .then((listed) => listed.items),
-            repos.studio.threads.list({ limit: 20 }),
+            // Visibility is applied in SQL before LIMIT so another user's
+            // private thread never reaches the inbox aggregate.
+            repos.studio.threads.list({
+              limit: 20,
+              viewerId: session.actorId,
+              includePrivate: THREAD_ADMIN_ROLES.includes(role),
+            }),
           ]);
           return { counts, quality, jobs, outputs, threads: threads.items };
         },
