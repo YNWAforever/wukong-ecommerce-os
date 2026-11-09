@@ -206,9 +206,18 @@ describe("durable product shots", () => {
   it("turns expired dispatched leases into outcome_unknown, retaining budget and requiring explicit fresh attempt", async () => {
     const f = await fixture(),
       a = await f.ensure();
-    const now = new Date(Date.now() - 60 * 60 * 1000);
+    // The daily product-shot budget is keyed by the UTC date of the supplied
+    // clock. Using Date.now()-1h for the lease and real now for the retry made
+    // the fresh attempt look like the next day's allowance during the first
+    // hour after UTC midnight. Anchor both budget-bearing claims to one UTC
+    // day instead.
+    const later = new Date();
+    if (later.getUTCHours() < 1) later.setUTCHours(1, 0, 0, 0);
+    const now = new Date(later.getTime() - 60 * 60 * 1000);
     expect((await claim(f, a.attemptId, 1, now)).kind).toBe("claimed");
-    expect(await claim(f, a.attemptId, 1)).toEqual({ kind: "outcome_unknown" });
+    expect(await claim(f, a.attemptId, 1, later)).toEqual({
+      kind: "outcome_unknown",
+    });
     expect(await f.ensure()).toEqual(a);
     expect(await f.get(a.attemptId)).toMatchObject({
       state: "outcome_unknown",
@@ -217,7 +226,7 @@ describe("durable product shots", () => {
     const fresh = await f.ensure(true);
     expect(fresh.attemptId).not.toBe(a.attemptId);
     expect(await f.get(fresh.attemptId)).toMatchObject({ generation: 2 });
-    expect(await claim(f, fresh.attemptId, 1)).toEqual({
+    expect(await claim(f, fresh.attemptId, 1, later)).toEqual({
       kind: "budget_exhausted",
     });
   });
