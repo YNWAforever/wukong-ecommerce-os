@@ -320,6 +320,29 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
 4. Rollback: set flags off and/or the workspace row `enabled=false`; routes return 404 and the nav
    item disappears. Migrations are additive and stay; no data is deleted by rollback.
 
+## Workspace activation CLI
+
+`scripts/studio-activation.mjs` flips an **existing** workspace's
+`studio_workspace_settings.enabled` row after the migrations are applied. It never creates users,
+workspaces or memberships, and the database URL is read from `DATABASE_ADMIN_URL` (environment
+only). Without `--confirm` it prints a dry-run plan and touches nothing; a remote database also
+requires `--allow-remote` so production mutation is always explicit.
+
+```powershell
+# 1. Dry run: prints the exact steps and changes nothing.
+pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@example.com>
+
+# 2. Live activation (requires the reviewed DB window, DATABASE_ADMIN_URL and both flags).
+pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@example.com> --allow-remote --confirm
+
+# 3. Rollback to disabled (same guards); feature flags are deployment env vars, not settings.
+pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@example.com> --disable --allow-remote --confirm
+```
+
+The tool verifies the user, workspace and membership first and only then upserts `enabled` +
+`updated_by`; it never edits budgets, skills, AI settings or any other column. A readback mismatch
+exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same database before it.
+
 ## Verification commands
 
 ```powershell

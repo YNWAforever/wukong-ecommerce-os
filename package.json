@@ -10,7 +10,7 @@
     "dev": "turbo run dev --parallel",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/typesafe-runtime-config.test.mjs tests/runtime-doctor.test.mjs tests/runtime-env-manifest.test.mjs tests/release-gate.test.mjs tests/benchmark-opak-maintenance.test.mjs tests/real-stack-startup.test.mjs tests/next-config.test.mjs tests/workspace-development-exports.test.mjs tests/scan-runtime-logs.test.mjs && turbo run test",
+    "test": "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/typesafe-runtime-config.test.mjs tests/runtime-doctor.test.mjs tests/runtime-env-manifest.test.mjs tests/release-gate.test.mjs tests/benchmark-opak-maintenance.test.mjs tests/real-stack-startup.test.mjs tests/next-config.test.mjs tests/workspace-development-exports.test.mjs tests/scan-runtime-logs.test.mjs tests/studio-activation.test.mjs && turbo run test",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "format:runtime:check": "node scripts/check-runtime-format.mjs",
@@ -18,7 +18,8 @@
     "release-gate:check": "node scripts/check-release-gate.mjs",
     "runtime:forbidden:check": "node scripts/check-runtime-format.mjs --forbidden-runtime",
     "runtime:doctor": "node scripts/runtime-doctor.mjs",
-    "runtime:provision": "node scripts/provision-queues.mjs"
+    "runtime:provision": "node scripts/provision-queues.mjs",
+    "studio:activate": "node scripts/studio-activation.mjs"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1085.0",
