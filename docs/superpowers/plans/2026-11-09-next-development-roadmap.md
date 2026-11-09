@@ -188,3 +188,13 @@ only when its verification is recorded.
 - **Queued:** C1 first planned skill (`product_shot.prepare` / `category.map_proposal`), remaining
   P1/P2 items (merchant-audit v2 period/signed receipt, streaming/progress UX, skill authoring
   harness, connectors).
+
+### Status update — later 2026-11-09
+
+B4 (hosted MCP quotas/rotation, #152) and C1 (`category.map_proposal`, #153) are merged and deployed
+with flags off. The A2 preview activation dry run was executed end-to-end on a fresh disposable
+database (migrations through 0057, seeded workspace, production build with Studio on, authenticated
+acceptance passed, workspace-disable rollback, database dropped) and is recorded in the runbook.
+A2 production execution still needs an authorised migration window/credentials; A3 still needs the
+reviewed provider credential/budget; C3 still needs a provider/credential-ownership decision.
+B3 (merchant-audit periods + signed export receipt) is in progress.
