@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  useEffect,
   useRef,
+  useState,
   type ChangeEvent,
   type KeyboardEvent,
   type RefObject,
@@ -114,6 +116,21 @@ export function StudioComposer({
   const filesId = `${id}-files`;
   const attachmentHintId = `${id}-attachment-hint`;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Honest elapsed timer while the synchronous turn runs. It shows duration
+  // only; it never invents per-step progress the server did not report.
+  useEffect(() => {
+    if (!sending) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [sending]);
 
   const trimmed = value.trim();
   const tooLong = value.length > MAX_TEXT_LENGTH;
@@ -319,11 +336,23 @@ export function StudioComposer({
           role={sending ? "status" : undefined}
           aria-live={sending ? "polite" : undefined}
         >
-          {reasonKey
-            ? studioCopy(locale, reasonKey)
-            : studioCopy(locale, "studio.composer.hint")}
+          {sending
+            ? `${studioCopy(locale, "studio.composer.working")}${elapsedSeconds > 0 ? ` · ${elapsedSeconds}s` : ""}`
+            : reasonKey
+              ? studioCopy(locale, reasonKey)
+              : studioCopy(locale, "studio.composer.hint")}
         </p>
       </div>
+
+      {sending ? (
+        <p
+          className={styles["studio-composer-hint"]}
+          role="status"
+          aria-live="polite"
+        >
+          {studioCopy(locale, "studio.composer.progressNote")}
+        </p>
+      ) : null}
 
       <p id={attachmentHintId} className={styles["studio-composer-hint"]}>
         {studioCopy(locale, "studio.composer.attachment.hint")}
