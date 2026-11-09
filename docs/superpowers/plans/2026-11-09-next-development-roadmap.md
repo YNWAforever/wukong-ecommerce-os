@@ -198,3 +198,9 @@ acceptance passed, workspace-disable rollback, database dropped) and is recorded
 A2 production execution still needs an authorised migration window/credentials; A3 still needs the
 reviewed provider credential/budget; C3 still needs a provider/credential-ownership decision.
 B3 (merchant-audit periods + signed export receipt) is in progress.
+
+### Status update — later still (2026-11-09)
+
+B3 (merchant-audit periods + signed export receipt, #155), B5.1 (server-side search/filters, thread sharing, a11y, #156), C4 (skill manifest + authoring guide, #157), the signed-receipt read endpoint/UI (#158) and the automated readiness log scanner (#159) are merged and deployed with flags off. All six known post-release P1/P2 gaps are now closed; the full web suite is at 294 files / 2927 tests and each PR pass green CI.
+
+Remaining work is either user-gated (A2 production execution, A3 live model, C3 external MCP) or the next planned phase: P3 orchestration inbox/scheduled runs, B5.2 streaming/long-turn progress, and C2/C5 connector decisions.
