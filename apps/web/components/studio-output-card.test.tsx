@@ -441,6 +441,165 @@ describe("StudioOutputCard", () => {
     ).not.toBeNull();
   });
 
+  it("fetches and shows a server-signed receipt for a saved artifact", async () => {
+    const digest = "a".repeat(64);
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      if (String(input).includes("/receipt?digest="))
+        return Response.json({
+          schemaVersion: "wukong-studio-output-export/v1",
+          payloadSha256: digest,
+          outputId: "output-1",
+          revision: 1,
+          asOf: "2026-11-08T00:00:00.000Z",
+          keyConfigured: true,
+          signed: true,
+          receipt: {
+            alg: "HMAC-SHA256",
+            keyId: "pilot-test",
+            signedAt: "2026-11-08T11:00:00.000Z",
+            payloadSha256: digest,
+            signature: "c".repeat(64),
+          },
+        });
+      return Response.json(detailBody("saved"));
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = await mount();
+
+    expect(
+      fetcher.mock.calls.some(([input]) =>
+        String(input).includes(`/receipt?digest=${digest}`),
+      ),
+    ).toBe(true);
+    expect(container.textContent).toContain(
+      "Signed by this workspace (HMAC-SHA256, key pilot-test); signature prefix cccccccccccccccc….",
+    );
+    expect(
+      container.querySelector('[data-export-signed="true"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain(
+      "independent verification needs the workspace key",
+    );
+  });
+
+  it("states an unsigned receipt honestly when no key is configured", async () => {
+    const digest = "a".repeat(64);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        if (String(input).includes("/receipt?digest="))
+          return Response.json({
+            schemaVersion: "wukong-studio-output-export/v1",
+            payloadSha256: digest,
+            outputId: "output-1",
+            revision: 1,
+            asOf: "2026-11-08T00:00:00.000Z",
+            keyConfigured: false,
+            signed: false,
+            receipt: null,
+          });
+        return Response.json(detailBody("saved"));
+      }),
+    );
+
+    const container = await mount();
+    expect(container.textContent).toContain(
+      "No export signing key is configured; the downloaded JSON is digest-only.",
+    );
+    expect(
+      container.querySelector('[data-export-signed="false"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain("Signed by this workspace");
+  });
+
+  it("keeps the download links and reports a receipt read failure honestly", async () => {
+    const digest = "a".repeat(64);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        if (String(input).includes("/receipt?digest="))
+          return Response.json({ code: "internal_error" }, { status: 500 });
+        return Response.json(detailBody("saved"));
+      }),
+    );
+
+    const container = await mount();
+    expect(container.textContent).toContain(
+      "Could not read the export receipt; the downloaded JSON still carries it.",
+    );
+    expect(
+      container.querySelector(
+        `a[href="/api/studio/outputs/output-1/export?digest=${digest}&format=json"]`,
+      ),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain("Signed by this workspace");
+  });
+
+  it("shows a pending state while the receipt is being read", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        if (String(input).includes("/receipt?digest="))
+          return new Promise<Response>(() => undefined);
+        return Response.json(detailBody("saved"));
+      }),
+    );
+
+    const container = await mount();
+    expect(container.textContent).toContain("Reading the export receipt…");
+    expect(container.textContent).not.toContain("Signed by this workspace");
+  });
+
+  it("wires a signed receipt into the merchant audit report card", async () => {
+    const digest = "a".repeat(64);
+    const body = detailBody("saved");
+    body.output.kind = "merchant_audit";
+    body.versions[0]!.payload = {
+      schemaVersion: "wukong-merchant-audit/v2",
+      generatedAt: "2026-11-08T00:00:00.000Z",
+      asOf: "2026-11-08T00:00:00.000Z",
+      period: null,
+      attemptsInPeriod: null,
+      scope: { workspaceScoped: true },
+      listings: null,
+      quality: null,
+      exports: null,
+      checks: [],
+      coverage: {},
+      limitations: [],
+    } as never;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        if (String(input).includes("/receipt?digest="))
+          return Response.json({
+            schemaVersion: "wukong-studio-output-export/v1",
+            payloadSha256: digest,
+            outputId: "output-1",
+            revision: 1,
+            asOf: "2026-11-08T00:00:00.000Z",
+            keyConfigured: true,
+            signed: true,
+            receipt: {
+              alg: "HMAC-SHA256",
+              keyId: "pilot-test",
+              signedAt: "2026-11-08T11:00:00.000Z",
+              payloadSha256: digest,
+              signature: "c".repeat(64),
+            },
+          });
+        return Response.json(body);
+      }),
+    );
+
+    const container = await mount();
+    expect(container.textContent).toContain("Merchant audit report");
+    expect(container.textContent).toContain(
+      "Signed (HMAC-SHA256, key pilot-test); signature prefix cccccccccccccccc…",
+    );
+  });
+
   it("renders zh-Hant copy for the zh-Hant locale", async () => {
     vi.stubGlobal(
       "fetch",

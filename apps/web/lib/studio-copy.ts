@@ -973,6 +973,27 @@ export const STUDIO_COPY = {
     "狀態以伺服器回應為準；重新載入可核實儲存版本。",
     "The server response is authoritative; reload to verify the saved version.",
   ],
+  "studio.outputs.receiptTitle": ["匯出簽章收據", "Export receipt"],
+  "studio.outputs.receiptPending": [
+    "正在讀取匯出收據…",
+    "Reading the export receipt…",
+  ],
+  "studio.outputs.receiptSigned": [
+    "由本工作區簽署（HMAC-SHA256，金鑰 {keyId}）；簽章前綴 {signature}…。這不是外部驗證或核准；請用下載的 JSON 依 runbook 核實。",
+    "Signed by this workspace (HMAC-SHA256, key {keyId}); signature prefix {signature}…. This is not external verification or approval; verify the downloaded JSON with the runbook recipe.",
+  ],
+  "studio.outputs.receiptUnsigned": [
+    "未設定匯出簽署金鑰；下載的 JSON 只有內容摘要，沒有簽章。",
+    "No export signing key is configured; the downloaded JSON is digest-only.",
+  ],
+  "studio.outputs.receiptFailed": [
+    "未能讀取匯出收據；下載的 JSON 仍會帶有收據。",
+    "Could not read the export receipt; the downloaded JSON still carries it.",
+  ],
+  "studio.outputs.receiptHint": [
+    "收據由伺服器計算；獨立核實需要工作區金鑰（見 runbook）。",
+    "The receipt is server-computed; independent verification needs the workspace key (see the runbook).",
+  ],
 
   // -- review card (plan Task 9) --------------------------------------------
   "studio.review.title": [

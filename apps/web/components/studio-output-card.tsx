@@ -85,6 +85,38 @@ export const studioOutputActionResultSchema = z.object({
   version: z.number().int().min(1),
 });
 
+/**
+ * `GET /api/studio/outputs/[id]/receipt` response (B3 follow-up). The card
+ * only displays what the server computed; it never derives a signature or
+ * claims verification beyond this payload.
+ */
+const exportReceiptSchema = z.object({
+  alg: z.literal("HMAC-SHA256"),
+  keyId: z.string().min(1).max(40),
+  signedAt: z.string().min(1).max(64),
+  payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  signature: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+const studioOutputReceiptSchema = z.object({
+  schemaVersion: z.string().min(1).max(80),
+  payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  outputId: z.string().min(1).max(200),
+  revision: z.number().int().min(1),
+  asOf: z.string().min(1).max(64),
+  keyConfigured: z.boolean(),
+  signed: z.boolean(),
+  receipt: exportReceiptSchema.nullable(),
+});
+export type StudioOutputReceipt = z.infer<typeof studioOutputReceiptSchema>;
+
+type ReceiptState =
+  | { phase: "idle" }
+  | { phase: "pending" }
+  | { phase: "signed"; keyId: string; signature: string }
+  | { phase: "unsigned" }
+  | { phase: "failed" };
+
 /** A list row from `GET /api/studio/outputs`. */
 export const studioOutputListItemSchema = studioOutputViewSchema.pick({
   outputId: true,
@@ -222,6 +254,9 @@ export function StudioOutputCard({
   const [actionState, setActionState] = useState<ActionState>("idle");
   const [actionError, setActionError] = useState<StudioCopyKey | null>(null);
   const [notice, setNotice] = useState<StudioCopyKey | null>(null);
+  const [receiptState, setReceiptState] = useState<ReceiptState>({
+    phase: "idle",
+  });
   const inFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -329,6 +364,60 @@ export function StudioOutputCard({
   const version = detail?.versions ? latestVersion(detail.versions) : null;
   const threadId = detail?.output.threadId ?? null;
   const busy = actionState !== "idle";
+  const exportable =
+    detail !== null &&
+    (detail.output.status === "saved" || detail.output.status === "signed_off");
+  const receiptDigest =
+    exportable && version !== null ? version.contentDigest : null;
+
+  // Fetch the server-computed receipt once per exported version, only after the
+  // artifact is actually saved/signed off. The card reports pending, signed,
+  // unsigned or failed; it never invents a signature or claims "verified".
+  useEffect(() => {
+    if (receiptDigest === null) {
+      setReceiptState({ phase: "idle" });
+      return;
+    }
+    let cancelled = false;
+    setReceiptState({ phase: "pending" });
+    void (async () => {
+      try {
+        const result = await getJson(
+          `/api/studio/outputs/${encodeURIComponent(outputId)}/receipt?digest=${encodeURIComponent(receiptDigest)}`,
+        );
+        if (cancelled) return;
+        if (result.status !== 200) {
+          setReceiptState({ phase: "failed" });
+          return;
+        }
+        const parsed = studioOutputReceiptSchema.safeParse(result.body);
+        if (
+          !parsed.success ||
+          parsed.data.outputId !== outputId ||
+          parsed.data.payloadSha256 !== receiptDigest
+        ) {
+          setReceiptState({ phase: "failed" });
+          return;
+        }
+        if (parsed.data.signed && parsed.data.receipt)
+          setReceiptState({
+            phase: "signed",
+            keyId: parsed.data.receipt.keyId,
+            signature: parsed.data.receipt.signature,
+          });
+        else if (!parsed.data.signed && parsed.data.receipt === null)
+          setReceiptState({ phase: "unsigned" });
+        // A signed/unsigned response whose receipt object disagrees is treated
+        // as unreadable rather than displayed as a claim.
+        else setReceiptState({ phase: "failed" });
+      } catch {
+        if (!cancelled) setReceiptState({ phase: "failed" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [outputId, receiptDigest]);
 
   const header = (
     <header className={styles["studio-output-header"]}>
@@ -415,12 +504,70 @@ export function StudioOutputCard({
                   ? `/api/studio/outputs/${encodeURIComponent(outputId)}/export?digest=${version.contentDigest}`
                   : null
               }
+              exportReceipt={
+                receiptState.phase === "signed"
+                  ? {
+                      keyId: receiptState.keyId,
+                      signature: receiptState.signature,
+                    }
+                  : receiptState.phase === "unsigned"
+                    ? null
+                    : undefined
+              }
+              receiptPending={receiptState.phase === "pending"}
+              receiptFailed={receiptState.phase === "failed"}
             />
           ) : (
             <p className={styles["studio-evidence-note"]}>
               {studioCopy(locale, "studio.outputs.previewUnavailable")}
             </p>
           )}
+
+          {receiptDigest !== null &&
+          receiptState.phase !== "idle" &&
+          detail.output.kind !== "merchant_audit" ? (
+            <section
+              className={styles["studio-report-section"]}
+              aria-label={studioCopy(locale, "studio.outputs.receiptTitle")}
+            >
+              <h5 className={styles["studio-evidence-subtitle"]}>
+                {studioCopy(locale, "studio.outputs.receiptTitle")}
+              </h5>
+              {receiptState.phase === "pending" ? (
+                <p className={styles["studio-evidence-note"]} role="status">
+                  {studioCopy(locale, "studio.outputs.receiptPending")}
+                </p>
+              ) : receiptState.phase === "failed" ? (
+                <p className={styles["studio-evidence-note"]} role="alert">
+                  {studioCopy(locale, "studio.outputs.receiptFailed")}
+                </p>
+              ) : receiptState.phase === "signed" ? (
+                <p
+                  className={styles["studio-report-line"]}
+                  data-export-signed="true"
+                  role="status"
+                >
+                  {renderStudioLine(locale, {
+                    key: "studio.outputs.receiptSigned",
+                    values: {
+                      keyId: receiptState.keyId,
+                      signature: receiptState.signature.slice(0, 16),
+                    },
+                  })}
+                </p>
+              ) : (
+                <p
+                  className={styles["studio-report-line"]}
+                  data-export-signed="false"
+                >
+                  {studioCopy(locale, "studio.outputs.receiptUnsigned")}
+                </p>
+              )}
+              <p className={styles["studio-evidence-note"]}>
+                {studioCopy(locale, "studio.outputs.receiptHint")}
+              </p>
+            </section>
+          ) : null}
 
           {notice !== null ? (
             <p className={styles["studio-output-notice"]} role="status">

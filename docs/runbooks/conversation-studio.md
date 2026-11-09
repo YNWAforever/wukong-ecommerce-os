@@ -234,6 +234,14 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
   packet says `signed:false` and has no `receipt`; a configured but malformed key/id fails the export
   with `500 export_signing_misconfigured` rather than silently serving unsigned bytes. PDF exports are
   unchanged (payload digest header only, no receipt).
+- **In-app receipt preview.** `GET /api/studio/outputs/[id]/receipt?digest=<contentDigest>` (viewer+)
+  returns `{schemaVersion, payloadSha256, outputId, revision, asOf, keyConfigured, signed, receipt}`
+  under the same Studio/session/status/digest/re-hash gates as the JSON export: 400 for a missing or
+  invalid preview digest, the usual 401/403/404, 409 `output_not_saved`/`output_changed`, and 500
+  `export_signing_misconfigured` for a malformed key. It never returns the key or the payload. The
+  output/report card calls it only for `saved`/`signed_off` artifacts and shows pending, signed
+  (key id + signature prefix), unsigned, or "could not read the receipt; the JSON download still
+  carries it" — it never claims external verification beyond what the server returned.
 - **Verification recipe** (never use a production key in a shell history on a shared host):
 
   ```bash
@@ -249,8 +257,9 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
 
 - **Rotation/absence.** Rotate by replacing `STUDIO_EXPORT_SIGNING_KEY` and bumping
   `STUDIO_EXPORT_SIGNING_KEY_ID`; old receipts remain verifiable only with the old key (keep it for
-  the retention window if past exports must stay verifiable). Absence is honest: exports stay
-  unsigned and the report card labels the preview as unverified rather than claiming a signature.
+  the retention window if past exports must stay verifiable). Absence is honest: exports and receipts
+  say `signed:false`/`keyConfigured:false`, and the card shows the unsigned state instead of claiming
+  a signature.
 - The audit report is read-only: it never applies, publishes or changes canonical listing data.
 
 ## Search, filters and sharing (B5.1)

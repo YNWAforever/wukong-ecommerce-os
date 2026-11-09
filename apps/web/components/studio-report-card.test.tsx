@@ -64,6 +64,8 @@ function render(
     payload?: unknown;
     exportHref?: string | null;
     exportReceipt?: StudioExportReceiptView | null;
+    receiptPending?: boolean;
+    receiptFailed?: boolean;
   } = {},
 ) {
   return renderToStaticMarkup(
@@ -72,6 +74,8 @@ function render(
       payload={options.payload ?? payload()}
       exportHref={options.exportHref ?? null}
       exportReceipt={options.exportReceipt}
+      receiptPending={options.receiptPending}
+      receiptFailed={options.receiptFailed}
     />,
   );
 }
@@ -180,6 +184,26 @@ describe("StudioReportCard", () => {
       "Unsigned: this deployment has no export signing key configured.",
     );
     expect(unsigned).toContain('data-export-signed="false"');
+  });
+
+  it("shows pending and failed receipt reads without claiming a signature", () => {
+    const link = "/api/studio/outputs/output-1/export?digest=" + "a".repeat(64);
+
+    const pending = render("en", { exportHref: link, receiptPending: true });
+    expect(pending).toContain("Reading the export receipt…");
+    expect(pending).not.toContain("Signed (HMAC-SHA256");
+
+    const failed = render("en", { exportHref: link, receiptFailed: true });
+    expect(failed).toContain(
+      "Could not read the export receipt; the downloaded JSON still carries it.",
+    );
+    expect(failed).not.toContain("Signed (HMAC-SHA256");
+  });
+
+  it("shows no receipt section for an unsaved artifact", () => {
+    const html = render("en");
+    expect(html).not.toContain("Export receipt");
+    expect(html).not.toContain("Reading the export receipt");
   });
 
   it("renders an honest unavailable state for an invalid payload", () => {
