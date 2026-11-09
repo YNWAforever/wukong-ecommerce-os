@@ -204,3 +204,9 @@ B3 (merchant-audit periods + signed export receipt) is in progress.
 B3 (merchant-audit periods + signed export receipt, #155), B5.1 (server-side search/filters, thread sharing, a11y, #156), C4 (skill manifest + authoring guide, #157), the signed-receipt read endpoint/UI (#158) and the automated readiness log scanner (#159) are merged and deployed with flags off. All six known post-release P1/P2 gaps are now closed; the full web suite is at 294 files / 2927 tests and each PR pass green CI.
 
 Remaining work is either user-gated (A2 production execution, A3 live model, C3 external MCP) or the next planned phase: P3 orchestration inbox/scheduled runs, B5.2 streaming/long-turn progress, and C2/C5 connector decisions.
+
+### Status update — final hardening pass (2026-11-09/10)
+
+P3.1 (read-only orchestration inbox, #161 + acceptance coverage #162), B5.3 (thread/output offset pagination, #163), the query-level thread-visibility privacy fix (#164) and inbox partial-read resilience (#165) are merged and deployed with flags off. The Studio lists now paginate with filter-preserving links, visibility is enforced in SQL before pagination so private threads never leak or shorten a page, and the inbox degrades per section instead of failing whole-page. The full web suite is at **296 files / 2957 tests**, repository integration at 12/12, and every PR merged green (with occasional unrelated pre-existing e2e flakes rerun).
+
+Remaining work is user-gated (A2/A3/C3) or the next planned phase: P3.2 scheduled/triggered runs and B5.2 streaming/long-turn progress.
