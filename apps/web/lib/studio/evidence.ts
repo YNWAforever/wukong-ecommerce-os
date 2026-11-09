@@ -22,6 +22,7 @@ import {
   merchantAuditPayloadSchema,
   type MerchantAuditPayload,
 } from "./report-payload";
+import type { CategoryMapContext } from "./category-map";
 
 /**
  * Deterministic evidence assembly (plan Task 5, spec section 3.3).
@@ -465,8 +466,9 @@ function pushFollowUps(pack: EvidencePack, skillKey: string): void {
     pack.followUps.push(translatedLine("studio.followup.confirm_dispatch"));
     pack.followUps.push(translatedLine("studio.followup.open_jobs"));
   } else if (skillKey === "merchant.audit") {
-    pack.followUps.push(translatedLine("studio.followup.review_gaps"));
-    pack.followUps.push(translatedLine("studio.followup.open_jobs"));
+    pack.followUps.push(translatedLine("studio.followup.audit_export"));
+  } else if (skillKey === "category.map_proposal") {
+    pack.followUps.push(translatedLine("studio.followup.category_review"));
   } else {
     pack.followUps.push(translatedLine("studio.followup.list_attention"));
     pack.followUps.push(translatedLine("studio.followup.open_listing"));
@@ -910,6 +912,139 @@ async function buildMerchantAudit(
   pack.context.merchantAudit = payload;
 }
 
+/**
+ * Category-map proposal evidence (C1).
+ *
+ * Reads the target listing with `catalog.get`, then similar catalog rows with
+ * `catalog.search`. Nothing in canonical listing content carries a category
+ * today, so `currentCategory` stays `null` with an explicit limitation rather
+ * than an invented path. The pack context is the reviewed input the optional
+ * model suggestions are allowed to cite; it never includes a write path.
+ */
+async function buildCategoryMapProposal(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  const listingId = input.listingId;
+  if (!listingId) throw new Error("listingId required before build");
+  let listingTitle = "";
+  let listingAvailable = false;
+  const detail = await callTool(pack, {
+    toolId: "catalog.get",
+    rawInput: { listingId },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (detail.state === "done") {
+    const listing = detail.output as {
+      listingId: string;
+      title: string;
+      status: string;
+      activeVersion: { versionId: string; sequence: number } | null;
+    };
+    listingAvailable = true;
+    listingTitle = listing.title;
+    markCoverage(pack, "listing", "present");
+    pushSource(
+      pack,
+      {
+        ref: `listing:${listing.listingId}:${
+          listing.activeVersion ? `v${listing.activeVersion.sequence}` : "none"
+        }`,
+        kind: "listing",
+        label: listing.title.slice(0, 300),
+        refId: listing.listingId,
+        version: listing.activeVersion
+          ? String(listing.activeVersion.sequence)
+          : null,
+        coverage: "present",
+        deepLink: `/listings/${listing.listingId}`,
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.category_listing",
+      values: {
+        listingId: listing.listingId,
+        status: listing.status,
+        activeVersion: listing.activeVersion ? "present" : "none",
+      },
+      state: "ok",
+    });
+  } else {
+    pushLimitation(pack, "studio.limit.category_listing_unavailable", {
+      listingId,
+    });
+    markCoverage(pack, "listing", "missing");
+  }
+
+  const catalogEvidence: CategoryMapContext["catalogEvidence"] = [];
+  const search = await callTool(pack, {
+    toolId: "catalog.search",
+    rawInput: { query: listingTitle.trim() || listingId, limit: 8 },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (search.state === "done") {
+    const hits = search.output as {
+      items: Array<{ listingId: string; title: string; status: string }>;
+      truncated: boolean;
+    };
+    markCoverage(pack, "catalog", "present");
+    for (const hit of hits.items) {
+      if (hit.listingId === listingId) continue;
+      const ref = `catalog:${hit.listingId}`;
+      pushSource(
+        pack,
+        catalogSource(input.now, hit.listingId, hit.title),
+        input.now,
+      );
+      catalogEvidence.push({ ref, title: hit.title, status: hit.status });
+    }
+    pushCheck(pack, {
+      key: "studio.check.category_catalog_candidates",
+      values: {
+        candidates: catalogEvidence.length,
+        truncated: hits.truncated,
+      },
+      state: "ok",
+    });
+  } else {
+    pushLimitation(pack, "studio.limit.category_catalog_unavailable");
+    markCoverage(pack, "catalog", "missing");
+  }
+
+  // Canonical listing content has no category path field; keep it unknown.
+  const currentCategory: string | null = null;
+  pushCheck(pack, {
+    key: "studio.check.category_current",
+    values: { listingId, current: "unknown" },
+    state: "missing",
+  });
+  if (currentCategory === null)
+    pushLimitation(pack, "studio.limit.category_current_unknown");
+
+  const context: CategoryMapContext = {
+    listingId,
+    listingTitle,
+    currentCategory,
+    catalogEvidence,
+    allowedEvidenceRefs: pack.sources.map((source) => source.ref),
+  };
+  pack.context.categoryMap = context;
+  pack.trace.push({
+    kind: "evidence",
+    toolId: null,
+    state: listingAvailable ? "done" : "unavailable",
+    durationMs: null,
+    detail: translatedLine("studio.trace.category_evidence", {
+      candidates: catalogEvidence.length,
+    }),
+  });
+}
+
 export async function buildEvidencePack(
   input: BuildEvidenceInput,
 ): Promise<BuildEvidenceResult> {
@@ -939,7 +1074,11 @@ export async function buildEvidencePack(
     return {
       status: "needs_input",
       skill: input.skill,
-      question: translatedLine("studio.needs_input.copy_listing"),
+      question: translatedLine(
+        input.skill.key === "category.map_proposal"
+          ? "studio.needs_input.category_listing"
+          : "studio.needs_input.copy_listing",
+      ),
     };
   const draftAssets = draftAssetIds({
     ...(input.attachmentAssetIds
@@ -966,6 +1105,8 @@ export async function buildEvidencePack(
     await buildDraftFromSources(input, pack, draftAssets);
   else if (input.skill.key === "merchant.audit")
     await buildMerchantAudit(input, pack);
+  else if (input.skill.key === "category.map_proposal")
+    await buildCategoryMapProposal(input, pack);
   else throw new Error(`unsupported pilot skill ${input.skill.key}`);
 
   pushFollowUps(pack, input.skill.key);

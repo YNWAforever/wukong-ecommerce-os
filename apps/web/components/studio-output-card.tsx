@@ -15,6 +15,7 @@ import { renderStudioLine } from "../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import { formatHkDate } from "../lib/ui-copy";
 import { StudioReviewCard } from "./studio-review-card";
+import { StudioFindingCard } from "./studio-finding-card";
 import { StudioReportCard } from "./studio-report-card";
 import styles from "./studio.module.css";
 
@@ -402,6 +403,8 @@ export function StudioOutputCard({
                 digest: version.contentDigest,
               }}
             />
+          ) : detail.output.kind === "finding" ? (
+            <StudioFindingCard locale={locale} payload={version.payload} />
           ) : detail.output.kind === "merchant_audit" ? (
             <StudioReportCard
               locale={locale}

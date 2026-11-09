@@ -186,11 +186,16 @@ export {
   FakeStudioModel,
   fakeStudioUsage,
   studioAnalysisSchema,
+  studioCategoryProposalSchema,
+  studioCategorySuggestionSchema,
   studioPlanSchema,
   studioToolRequestSchema,
 } from "./studio-model.js";
 export type {
   StudioAnalysis,
+  StudioCategoryProposal,
+  StudioCategoryProposeInput,
+  StudioCategorySuggestion,
   StudioComposeInput,
   StudioModel,
   StudioModelConfig,

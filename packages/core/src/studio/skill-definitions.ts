@@ -290,8 +290,8 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
   },
   {
     key: "category.map_proposal",
-    version: "1.0.0",
-    status: "planned",
+    version: "1.1.0",
+    status: "pilot",
     title: {
       "zh-Hant": "建議分類對應",
       en: "Propose category mapping",
@@ -301,8 +301,9 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
       en: "Suggest platform category mappings with confidence and supporting evidence for review.",
     },
     limitation: {
-      "zh-Hant": "只提出建議；套用仍須在既有目錄流程中由人員完成。",
-      en: "Suggestions only; applying them remains a human action in the existing catalog flow.",
+      "zh-Hant":
+        "只提出建議；不會自動套用，套用仍須在既有目錄流程中由人員完成。",
+      en: "Suggestions only; nothing is applied automatically, and applying them remains a human action in the existing catalog flow.",
     },
     inputs: [
       {

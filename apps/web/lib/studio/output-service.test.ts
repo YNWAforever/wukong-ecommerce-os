@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
   canonicalJson,
   copyProposalDigest,
   createCopyProposalOutput,
+  createFindingOutput,
   createReportOutput,
   type CopyProposalPayload,
   type StudioOutputDeps,
@@ -137,3 +140,60 @@ describe("createReportOutput", () => {
     });
   });
 });
+
+describe("createFindingOutput", () => {
+  it("persists a versioned finding with canonical digest, readback and audit", async () => {
+    const { fake, deps } = fixture();
+    const findingPayload = {
+      schemaVersion: "wukong-category-map/v1",
+      listingId: "11111111-1111-4111-8111-111111111111",
+      listingTitle: "Synthetic wine",
+      currentCategory: null,
+      suggestions: [],
+      limitations: [],
+      asOf: NOW.toISOString(),
+    };
+    const created = await createFindingOutput(deps, {
+      workspaceId: WORKSPACE,
+      actorId: "actor_ops",
+      threadId: "33333333-3333-4333-8333-333333333333",
+      runId: "44444444-4444-4444-8444-444444444444",
+      title: "Category map proposal",
+      payload: findingPayload,
+      asOf: NOW,
+      scope: { listingId: findingPayload.listingId },
+    });
+    expect(created.contentDigest).toBe(canonicalJsonDigest(findingPayload));
+    expect(fake.state.outputs[0]).toMatchObject({
+      kind: "finding",
+      status: "draft",
+      currentVersion: 1,
+    });
+    expect(fake.state.outputVersions[0]).toMatchObject({
+      revision: 1,
+      contentDigest: created.contentDigest,
+      scope: { listingId: findingPayload.listingId },
+    });
+    expect(fake.state.writes).toEqual(
+      expect.arrayContaining([
+        "outputs.create",
+        "outputs.addVersion",
+        "outputs.get",
+        "outputs.versions",
+      ]),
+    );
+    const audit = fake.state.audits.find(
+      (event) => event.action === "studio.output.proposed",
+    );
+    expect(audit?.metadata).toMatchObject({
+      kind: "finding",
+      revision: 1,
+      contentDigest: created.contentDigest,
+    });
+  });
+});
+
+function canonicalJsonDigest(value: unknown): string {
+  // Same deterministic digest rule the service uses.
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}

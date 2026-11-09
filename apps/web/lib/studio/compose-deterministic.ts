@@ -153,6 +153,18 @@ export function composeDeterministicReply(input: {
         exports: numberValue(exports, "count"),
       }),
     );
+  } else if (skill.key === "category.map_proposal") {
+    const candidates = checkValues(
+      pack,
+      "studio.check.category_catalog_candidates",
+    );
+    const current = checkValues(pack, "studio.check.category_current");
+    sections.push(
+      translatedLine("studio.answer.category_map", {
+        candidates: numberValue(candidates, "candidates"),
+        current: String(current?.current ?? "unknown"),
+      }),
+    );
   }
 
   const dispatch = draftDispatchSchema.safeParse(pack.context.draftDispatch);

@@ -431,6 +431,10 @@ export const STUDIO_COPY = {
     "已讀取 {datasets} 個稽核資料集。",
     "Read {datasets} audit dataset(s).",
   ],
+  "studio.trace.category_evidence": [
+    "已讀取商品與 {candidates} 個相似目錄項目。",
+    "Read the listing and {candidates} similar catalog row(s).",
+  ],
   "studio.trace.dispatch.done": [
     "已建立商品草稿 {listingId}；佇列狀態：{queueState}。",
     "Created listing draft {listingId}; queue state: {queueState}.",
@@ -541,6 +545,14 @@ export const STUDIO_COPY = {
     "已準備 {assets} 個來源素材；缺少 {missing} 個。確認後才會建立草稿。",
     "Prepared {assets} source asset(s); {missing} missing. The draft is only created after explicit confirmation.",
   ],
+  "studio.answer.category_map": [
+    "分類對應：讀取商品後找到 {candidates} 個相似目錄項目；目前分類：{current}。",
+    "Category mapping: read the listing and found {candidates} similar catalog row(s); current category: {current}.",
+  ],
+  "studio.answer.category_map_suggestions": [
+    "分類建議 {suggestions} 個；已略過 {dropped} 個無依據、重複或等於目前分類的建議。",
+    "{suggestions} category suggestion(s); {dropped} ungrounded, duplicate or current-category suggestion(s) dropped.",
+  ],
 
   // -- evidence checks ------------------------------------------------------
   "studio.check.catalog_matches": [
@@ -586,6 +598,18 @@ export const STUDIO_COPY = {
   "studio.check.draft_assets": [
     "來源素材：{count} 個可用；缺少 {missing} 個；已附在其他商品 {attached} 個。",
     "Source assets: {count} usable; {missing} missing; {attached} already attached to another listing.",
+  ],
+  "studio.check.category_listing": [
+    "商品 {listingId}：狀態 {status}；生效版本：{activeVersion}。",
+    "Listing {listingId}: status {status}; active version: {activeVersion}.",
+  ],
+  "studio.check.category_current": [
+    "商品 {listingId} 的目前分類：{current}。",
+    "Current category for listing {listingId}: {current}.",
+  ],
+  "studio.check.category_catalog_candidates": [
+    "相似目錄項目：{candidates} 個；結果已截斷：{truncated}。",
+    "Similar catalog rows: {candidates}; truncated: {truncated}.",
   ],
 
   // -- honest read limits ---------------------------------------------------
@@ -637,6 +661,30 @@ export const STUDIO_COPY = {
     "已略過 {count} 個沒有依據的建議欄位。",
     "{count} proposed field(s) were dropped because their evidence did not resolve.",
   ],
+  "studio.limit.category_not_applied": [
+    "分類建議只供審核；不會自動套用到商品或目錄。",
+    "Category suggestions are for review only; nothing is applied to the listing or catalog automatically.",
+  ],
+  "studio.limit.category_listing_unavailable": [
+    "未能讀取商品 {listingId} 的記錄；未提供分類建議。",
+    "The record for listing {listingId} could not be read; no category suggestions are offered.",
+  ],
+  "studio.limit.category_catalog_unavailable": [
+    "未能讀取相似目錄項目；未以虛構分類代替。",
+    "Similar catalog rows could not be read; no invented categories are substituted.",
+  ],
+  "studio.limit.category_current_unknown": [
+    "正式商品內容沒有分類欄位，因此目前分類顯示為未知。",
+    "Canonical listing content has no category field, so the current category is shown as unknown.",
+  ],
+  "studio.limit.category_model_unavailable": [
+    "未設定可用的即時模型，因此只提供確定性證據與空白建議。",
+    "No usable live model is configured, so only deterministic evidence and an empty suggestion list are provided.",
+  ],
+  "studio.limit.category_suggestions_dropped": [
+    "已略過 {count} 個沒有依據或重複的分類建議。",
+    "{count} category suggestion(s) were dropped because their evidence did not resolve or they duplicated another path.",
+  ],
 
   // -- needs input and follow-ups ------------------------------------------
   "studio.needs_input.catalog_query": [
@@ -650,6 +698,10 @@ export const STUDIO_COPY = {
   "studio.needs_input.draft_assets": [
     "請附上或貼上至少一個來源素材識別碼。",
     "Attach or paste at least one source asset id.",
+  ],
+  "studio.needs_input.category_listing": [
+    "請提供要建議分類的商品（貼上商品識別碼）。",
+    "Provide the listing to propose a category for (paste its listing id).",
   ],
   "studio.followup.explain_status": [
     "解釋商品目前的狀態",
@@ -674,6 +726,10 @@ export const STUDIO_COPY = {
   "studio.followup.open_jobs": [
     "查看作業與處理狀態",
     "Check jobs and processing status",
+  ],
+  "studio.followup.category_review": [
+    "在審核畫面核對分類建議",
+    "Review the category suggestions in the review workspace",
   ],
 
   // -- records answer / evidence -------------------------------------------
@@ -878,6 +934,38 @@ export const STUDIO_COPY = {
   "studio.review.invalidPayload": [
     "此建議的內容無法顯示；沒有捏造內容。",
     "This proposal could not be displayed; nothing is invented.",
+  ],
+
+  // -- finding card (C1) ----------------------------------------------------
+  "studio.finding.title": ["分類對應建議", "Category mapping proposal"],
+  "studio.finding.listing": ["商品 {listingId}", "Listing {listingId}"],
+  "studio.finding.currentCategory": ["目前分類", "Current category"],
+  "studio.finding.unknown": ["未知", "Unknown"],
+  "studio.finding.suggestions": ["建議分類", "Suggested categories"],
+  "studio.finding.suggestionPath": ["分類路徑", "Category path"],
+  "studio.finding.confidence": ["信心", "Confidence"],
+  "studio.finding.evidence": ["依據", "Evidence"],
+  "studio.finding.rationale": ["理由", "Rationale"],
+  "studio.finding.limitations": ["限制", "Limitations"],
+  "studio.finding.emptySuggestions": [
+    "沒有可顯示的建議；證據與限制仍已保存。",
+    "No suggestions to show; the evidence and limitations are still stored.",
+  ],
+  "studio.finding.notApplied": [
+    "尚未套用 — 分類只會在既有目錄流程中由人員更改。",
+    "Not applied — a person can only change the category in the existing catalog flow.",
+  ],
+  "studio.finding.reviewNote": [
+    "須人工審核；工作室不會寫入正式商品資料。",
+    "Requires human review; Studio never writes canonical listing data.",
+  ],
+  "studio.finding.openReview": [
+    "在審核畫面開啟",
+    "Open in the review workspace",
+  ],
+  "studio.finding.invalidPayload": [
+    "此發現的內容無法顯示；沒有捏造內容。",
+    "This finding could not be displayed; nothing is invented.",
   ],
   "studio.review.copyProposed": ["複製建議值", "Copy proposed"],
   "studio.review.copyAll": ["複製全部建議值", "Copy all proposed values"],

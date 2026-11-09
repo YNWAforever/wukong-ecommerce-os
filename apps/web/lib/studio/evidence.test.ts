@@ -780,3 +780,128 @@ describe("turn budgets in the evidence engine", () => {
     ).rejects.toBeInstanceOf(StudioTurnStepBudgetError);
   });
 });
+
+describe("category.map_proposal evidence (C1)", () => {
+  const categoryMap = skill("category.map_proposal");
+
+  it("asks for a listing id with the category-specific needs-input copy", async () => {
+    const result = await buildEvidencePack({
+      skill: categoryMap,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: "map the margaux",
+    });
+    expect(result.status).toBe("needs_input");
+    if (result.status !== "needs_input")
+      throw new Error("expected needs_input");
+    expect(result.question.key).toBe("studio.needs_input.category_listing");
+  });
+
+  it("reads the target listing and similar catalog rows without inventing a current category", async () => {
+    const result = await buildEvidencePack({
+      skill: categoryMap,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: "map the margaux",
+      listingId: LISTING_A,
+    });
+    expect(result.status).toBe("complete");
+    if (result.status !== "complete") throw new Error("expected complete");
+    const pack: EvidencePack = result.pack;
+    expect(pack.coverage.get("listing")).toBe("present");
+    expect(pack.coverage.get("catalog")).toBe("present");
+    expect(
+      pack.checks.find(
+        (check) => check.key === "studio.check.category_catalog_candidates",
+      )?.values,
+    ).toMatchObject({ candidates: 1, truncated: false });
+    expect(
+      pack.checks.find((check) => check.key === "studio.check.category_current")
+        ?.values,
+    ).toMatchObject({ current: "unknown" });
+    expect(pack.limitations.map((line) => line.key)).toContain(
+      "studio.limit.category_current_unknown",
+    );
+
+    const context = pack.context.categoryMap as {
+      listingId: string;
+      listingTitle: string;
+      currentCategory: string | null;
+      catalogEvidence: Array<{ ref: string; title: string }>;
+      allowedEvidenceRefs: string[];
+    };
+    expect(context).toMatchObject({
+      listingId: LISTING_A,
+      listingTitle: "Margaux 2019",
+      currentCategory: null,
+    });
+    // The target listing is not duplicated as a "similar" candidate.
+    expect(context.catalogEvidence.map((entry) => entry.ref)).toEqual([
+      `catalog:${LISTING_B}`,
+    ]);
+    expect(context.allowedEvidenceRefs).toEqual(
+      expect.arrayContaining([
+        `listing:${LISTING_A}:v2`,
+        `catalog:${LISTING_B}`,
+      ]),
+    );
+    expect(
+      pack.trace.some(
+        (step) => step.detail.key === "studio.trace.category_evidence",
+      ),
+    ).toBe(true);
+  });
+
+  it("marks an unreadable listing honestly and still completes the pack", async () => {
+    const result = await buildEvidencePack({
+      skill: categoryMap,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: "map the missing listing",
+      listingId: "missing-listing",
+    });
+    expect(result.status).toBe("complete");
+    if (result.status !== "complete") throw new Error("expected complete");
+    expect(result.pack.coverage.get("listing")).toBe("missing");
+    expect(result.pack.limitations.map((line) => line.key)).toContain(
+      "studio.limit.category_listing_unavailable",
+    );
+    const context = result.pack.context.categoryMap as {
+      listingTitle: string;
+      currentCategory: string | null;
+    };
+    expect(context.listingTitle).toBe("");
+    expect(context.currentCategory).toBeNull();
+  });
+
+  it("composes a deterministic answer section with candidates and unknown current category", async () => {
+    const result = await buildEvidencePack({
+      skill: categoryMap,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: "map the margaux",
+      listingId: LISTING_A,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const reply = composeDeterministicReply({
+      skill: categoryMap,
+      pack: result.pack,
+    });
+    expect(reply.status).toBe("answered");
+    const section = reply.records.sections.find(
+      (line) => line.key === "studio.answer.category_map",
+    );
+    expect(section?.values).toMatchObject({
+      candidates: 1,
+      current: "unknown",
+    });
+    expect(reply.followUps.map((line) => line.key)).toContain(
+      "studio.followup.category_review",
+    );
+    expect(composeNeedsInputReply).toBeTypeOf("function");
+  });
+});

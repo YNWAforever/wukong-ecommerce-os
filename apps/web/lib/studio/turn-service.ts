@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type {
   AIUsage,
+  StudioCategoryProposeInput,
   StudioComposeInput,
   StudioModel,
   StudioProposeInput,
@@ -60,9 +61,17 @@ import {
 } from "./observability";
 import {
   createCopyProposalOutput,
+  createFindingOutput,
   createReportOutput,
   type CopyProposalPayload,
 } from "./output-service";
+import {
+  categoryMapProposalPayloadSchema,
+  deterministicCategoryLimitations,
+  sanitizeCategorySuggestions,
+  type CategoryMapContext,
+  type CategoryMapSuggestion,
+} from "./category-map";
 import { buildStudioReadDeps } from "./read-deps";
 import { merchantAuditPayloadSchema } from "./report-payload";
 import type { ListingCopySnapshot } from "./tools";
@@ -918,6 +927,169 @@ export function createStudioService(deps: StudioServiceDeps) {
     }
   }
 
+  /**
+   * Optional, budgeted category suggestions (C1).
+   *
+   * The deterministic artifact exists without this. When a reviewed model is
+   * configured, admitted under the same per-turn reservation as the copy
+   * proposer, and implements the typed `proposeCategory` capability, its
+   * suggestions are grounded against the pack refs, de-duplicated and counted;
+   * anything ungrounded is dropped before the artifact is written.
+   */
+  async function proposeCategoryTurn(input: {
+    session: SessionContext;
+    settings: StudioSettings;
+    workspaceId: string;
+    run: StudioRun;
+    skill: SkillDefinition;
+    context: CategoryMapContext;
+    body: SendMessageBody;
+    limits: StudioTurnLimits;
+  }): Promise<{
+    suggestions: CategoryMapSuggestion[];
+    droppedCount: number;
+    usage: AIUsage | null;
+    settledUsd: string | null;
+    trace: StudioTraceStep | null;
+    limitations: TranslatedLine[];
+  }> {
+    const none = {
+      suggestions: [] as CategoryMapSuggestion[],
+      droppedCount: 0,
+      usage: null,
+      settledUsd: null,
+      trace: null as StudioTraceStep | null,
+      limitations: [translatedLine("studio.limit.category_model_unavailable")],
+    };
+    const ai = input.settings.ai;
+    if (!ai) return none;
+    if (!deps.isStudioAiEnabled(environment(), input.settings)) return none;
+    const monthlyBudgetUsd = input.settings.monthlyBudgetUsd;
+    if (!monthlyBudgetUsd) return none;
+
+    let reservedUsd: string;
+    try {
+      const policy: StudioAiPolicy = {
+        provider: ai.provider,
+        model: ai.model,
+        pricingVersion: ai.pricingVersion,
+        runCeilingUsd: input.settings.runCeilingUsd ?? "",
+        budgetCapUsd: monthlyBudgetUsd,
+        maxInputTokens: ai.maxInputTokens,
+        inputUsdPerMillion: Number(ai.inputUsdPerMillion),
+        outputUsdPerMillion: Number(ai.outputUsdPerMillion),
+        maxOutputTokens: ai.maxOutputTokens,
+      };
+      reservedUsd = studioTurnReservation(policy);
+    } catch (error) {
+      return {
+        ...none,
+        trace: modelTrace("blocked", "studio.trace.model.not_admitted", {
+          reason: budgetAdmissionReason(error),
+        }),
+      };
+    }
+
+    let model: StudioModel | null;
+    try {
+      model = deps.createModel
+        ? deps.createModel(input.settings)
+        : createDefaultModel(input.settings, environment());
+    } catch {
+      model = null;
+    }
+    if (!model || typeof model.proposeCategory !== "function") return none;
+
+    const reservation = await database().forWorkspace(
+      input.workspaceId,
+      (repos) =>
+        repos.studio.budget.reserve({
+          runId: input.run.id,
+          pricingVersion: ai.pricingVersion,
+          reservedUsd,
+          workspaceCapUsd: monthlyBudgetUsd,
+        }),
+    );
+    if (!reservation.accepted) {
+      return {
+        ...none,
+        trace: modelTrace("blocked", "studio.trace.model.budget_blocked"),
+      };
+    }
+
+    try {
+      const proposeInput: StudioCategoryProposeInput = {
+        locale: input.body.locale,
+        question: input.body.text,
+        skill: skillPromptSummary(input.skill),
+        listing: {
+          listingId: input.context.listingId,
+          title: input.context.listingTitle,
+          currentCategory: input.context.currentCategory,
+        },
+        catalogEvidence: input.context.catalogEvidence,
+        allowedEvidenceRefs: input.context.allowedEvidenceRefs,
+      };
+      input.limits.beginModel();
+      const { proposal, usage } = await model.proposeCategory(proposeInput);
+      const sanitized = sanitizeCategorySuggestions({
+        proposed: proposal.suggestions,
+        allowedEvidenceRefs: input.context.allowedEvidenceRefs,
+        currentCategory: input.context.currentCategory,
+      });
+      const settledUsd = formatUsd(usage.estimatedCostUsd);
+      if (settledUsd) {
+        const settled = await database().forWorkspace(
+          input.workspaceId,
+          (repos) => repos.studio.budget.settle(input.run.id, settledUsd),
+        );
+        if (!settled)
+          await database().forWorkspace(input.workspaceId, (repos) =>
+            repos.studio.budget.markUncertain(input.run.id),
+          );
+      } else {
+        await database().forWorkspace(input.workspaceId, (repos) =>
+          repos.studio.budget.markUncertain(input.run.id),
+        );
+      }
+      const trace = modelTrace("done", "studio.trace.model.done", {
+        model: usage.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        droppedClaims: sanitized.droppedCount,
+      });
+      return {
+        suggestions: sanitized.suggestions,
+        droppedCount: sanitized.droppedCount,
+        usage,
+        settledUsd,
+        trace,
+        limitations:
+          sanitized.droppedCount > 0
+            ? [
+                translatedLine("studio.limit.category_suggestions_dropped", {
+                  count: sanitized.droppedCount,
+                }),
+              ]
+            : [],
+      };
+    } catch (error) {
+      try {
+        await database().forWorkspace(input.workspaceId, (repos) =>
+          repos.studio.budget.markUncertain(input.run.id),
+        );
+      } catch {
+        // The hold stays uncertain by omission; the deterministic answer stands.
+      }
+      return {
+        ...none,
+        trace: modelTrace("failed", "studio.trace.model.failed", {
+          category: modelFailureCategory(error),
+        }),
+      };
+    }
+  }
+
   /** Persist and return one completed deterministic (+ optional model) turn. */
   async function completeTurn(input: {
     session: SessionContext;
@@ -1050,6 +1222,82 @@ export function createStudioService(deps: StudioServiceDeps) {
             outputs: [
               { outputId: created.outputId, revision: created.revision },
             ],
+          });
+        }
+      } else if (input.skill.key === "category.map_proposal") {
+        // The deterministic slice always persists a read-only finding artifact;
+        // with a configured, admitted model its grounded suggestions are added
+        // (and ungrounded ones dropped) before the same artifact is written.
+        const context = packResult.pack.context.categoryMap as
+          CategoryMapContext | undefined;
+        if (!context) {
+          reply = turnReplySchema.parse({
+            ...deterministic,
+            status: "partial",
+          });
+        } else {
+          const proposal = await proposeCategoryTurn({
+            session: input.session,
+            settings: input.settings,
+            workspaceId: input.workspaceId,
+            run: input.run,
+            skill: input.skill,
+            context,
+            body: input.body,
+            limits: input.limits,
+          });
+          usage = proposal.usage;
+          settledUsd = proposal.settledUsd;
+          if (proposal.trace) trace.push(proposal.trace);
+          const limitations = [
+            ...deterministicCategoryLimitations({
+              catalogUnavailable:
+                packResult.pack.coverage.get("catalog") !== "present",
+              listingUnavailable:
+                packResult.pack.coverage.get("listing") !== "present",
+              currentCategory: context.currentCategory,
+            }),
+            ...proposal.limitations,
+          ].slice(0, 10);
+          const payload = categoryMapProposalPayloadSchema.parse({
+            schemaVersion: "wukong-category-map/v1",
+            listingId: context.listingId,
+            listingTitle: context.listingTitle,
+            currentCategory: context.currentCategory,
+            suggestions: proposal.suggestions,
+            limitations,
+            asOf: input.now.toISOString(),
+          });
+          const created = await createFindingOutput(
+            { getDatabase: () => deps.getDatabase() },
+            {
+              workspaceId: input.workspaceId,
+              actorId: input.session.actorId,
+              threadId: input.threadId,
+              runId: input.run.id,
+              title: `Category map proposal · ${
+                context.listingTitle || context.listingId
+              }`.slice(0, 200),
+              payload: payload as unknown as Record<string, unknown>,
+              asOf: input.now,
+              scope: { listingId: context.listingId },
+            },
+          );
+          const sections = [...deterministic.records.sections];
+          sections.push(
+            translatedLine("studio.answer.category_map_suggestions", {
+              suggestions: proposal.suggestions.length,
+              dropped: proposal.droppedCount,
+            }),
+          );
+          reply = turnReplySchema.parse({
+            ...deterministic,
+            status: proposal.suggestions.length > 0 ? "answered" : "partial",
+            records: { ...deterministic.records, sections },
+            outputs: [
+              { outputId: created.outputId, revision: created.revision },
+            ],
+            limitations: [...deterministic.limitations, ...limitations],
           });
         }
       } else {
