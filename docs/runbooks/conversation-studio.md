@@ -456,3 +456,7 @@ also rehearsed (`UPDATE studio_workspace_settings SET enabled=false`) and return
 disabled before dropping the database. The exact commands are the A2 activation commands above; only
 the **production** execution (real connection/credentials/migration window) remains gated on the
 operator decision.
+
+## Skill authoring
+
+How to add, version, review and promote a Studio skill (registry vs runtime, evidence contract, prompt pins, artifact/readback, tests, workspace allowlist and the promotion gate): see [docs/studio-skill-authoring.md](../studio-skill-authoring.md).
