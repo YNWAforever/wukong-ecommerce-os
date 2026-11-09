@@ -22,6 +22,12 @@ import {
   merchantAuditPayloadSchema,
   type MerchantAuditPayload,
 } from "./report-payload";
+import {
+  auditPeriodPayload,
+  isWithinAuditPeriod,
+  mentionsUnparseablePeriod,
+  parseAuditPeriod,
+} from "./audit-period";
 import type { CategoryMapContext } from "./category-map";
 
 /**
@@ -772,6 +778,7 @@ async function buildMerchantAudit(
   input: BuildEvidenceInput,
   pack: EvidencePack,
 ): Promise<void> {
+  const period = parseAuditPeriod(input.query, input.now);
   let listings: MerchantAuditPayload["listings"] = null;
   try {
     const counts = await input.deps.getListingCounts();
@@ -843,9 +850,18 @@ async function buildMerchantAudit(
   }
 
   let exports: MerchantAuditPayload["exports"] = null;
+  let attemptsInPeriod: MerchantAuditPayload["attemptsInPeriod"] = null;
   try {
-    const attempts = await input.deps.getExportAttempts(5);
-    exports = attempts.map((attempt) => ({
+    // A named period needs more than the five recent rows so the filter is not
+    // truncated by the display window; no period keeps the original five.
+    const attempts = await input.deps.getExportAttempts(period ? 20 : 5);
+    const scoped = period
+      ? attempts.filter((attempt) =>
+          isWithinAuditPeriod(attempt.createdAt, period),
+        )
+      : attempts;
+    attemptsInPeriod = period ? scoped.length : null;
+    exports = scoped.map((attempt) => ({
       attemptId: attempt.attemptId,
       state: attempt.state,
       rowCount: attempt.rowCount,
@@ -872,16 +888,41 @@ async function buildMerchantAudit(
         count: exports.length,
         ready: exports.filter((row) => row.state === "ready").length,
         failed: exports.filter((row) => row.state === "failed").length,
+        ...(period ? { inPeriod: exports.length } : {}),
       },
       state: "ok",
     });
+    if (period)
+      pushCheck(pack, {
+        key: "studio.check.audit_period",
+        values: {
+          from: period.from,
+          to: period.to,
+          days: period.days,
+          attempts: exports.length,
+        },
+        state: "ok",
+      });
   } catch {
     pushLimitation(pack, "studio.limit.audit_exports_unavailable");
   }
 
-  // The report's own period is not specified by this v1 UI; state that rather
-  // than implying the counts cover a chosen window.
-  pushLimitation(pack, "studio.limit.audit_period_unset");
+  // Listing counts and the quality projection are current-state snapshots, and
+  // the period (when named) only scopes the export-attempt table. Say both
+  // explicitly instead of letting a reader assume everything is period-scoped.
+  pushLimitation(pack, "studio.limit.audit_counts_current");
+  if (quality !== null)
+    pushLimitation(pack, "studio.limit.audit_quality_current");
+  if (period === null) {
+    pushLimitation(pack, "studio.limit.audit_period_unset");
+    if (mentionsUnparseablePeriod(input.query))
+      pushLimitation(pack, "studio.limit.audit_period_invalid");
+  } else {
+    pushLimitation(pack, "studio.limit.audit_period_applied", {
+      from: period.from,
+      to: period.to,
+    });
+  }
 
   pack.trace.push({
     kind: "evidence",
@@ -897,10 +938,11 @@ async function buildMerchantAudit(
   });
 
   const payload = merchantAuditPayloadSchema.parse({
-    schemaVersion: "wukong-merchant-audit/v1",
+    schemaVersion: "wukong-merchant-audit/v2",
     generatedAt: input.now.toISOString(),
     asOf: input.now.toISOString(),
-    period: { from: null, to: null },
+    period: auditPeriodPayload(period),
+    attemptsInPeriod,
     scope: { workspaceScoped: true },
     listings,
     quality,

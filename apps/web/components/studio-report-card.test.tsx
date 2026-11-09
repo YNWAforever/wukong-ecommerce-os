@@ -1,16 +1,20 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { StudioReportCard } from "./studio-report-card";
+import {
+  StudioReportCard,
+  type StudioExportReceiptView,
+} from "./studio-report-card";
 
 const AS_OF = "2026-11-08T10:00:00.000Z";
 
 function payload(overrides: Record<string, unknown> = {}) {
   return {
-    schemaVersion: "wukong-merchant-audit/v1",
+    schemaVersion: "wukong-merchant-audit/v2",
     generatedAt: AS_OF,
     asOf: AS_OF,
-    period: { from: null, to: null },
+    period: null,
+    attemptsInPeriod: null,
     scope: { workspaceScoped: true },
     listings: [
       { status: "approved", count: 3 },
@@ -45,20 +49,29 @@ function payload(overrides: Record<string, unknown> = {}) {
       quality: "present",
       export_attempt: "present",
     },
-    limitations: [{ key: "studio.limit.audit_period_unset", values: {} }],
+    limitations: [
+      { key: "studio.limit.audit_period_unset", values: {} },
+      { key: "studio.limit.audit_counts_current", values: {} },
+      { key: "studio.limit.audit_quality_current", values: {} },
+    ],
     ...overrides,
   };
 }
 
 function render(
   locale: "zh-Hant" | "en",
-  options: { payload?: unknown; exportHref?: string | null } = {},
+  options: {
+    payload?: unknown;
+    exportHref?: string | null;
+    exportReceipt?: StudioExportReceiptView | null;
+  } = {},
 ) {
   return renderToStaticMarkup(
     <StudioReportCard
       locale={locale}
       payload={options.payload ?? payload()}
       exportHref={options.exportHref ?? null}
+      exportReceipt={options.exportReceipt}
     />,
   );
 }
@@ -86,11 +99,29 @@ describe("StudioReportCard", () => {
     const html = render("en");
     expect(html).toContain("Not specified (current totals)");
     expect(html).toContain(
-      "No audit period was specified; the numbers are current totals at read time.",
+      "No report period was named; the numbers are current totals at read time, not period statistics.",
+    );
+    expect(html).toContain(
+      "Listing status counts are current snapshots, not period-scoped counts.",
     );
     expect(html).toContain(
       "The report reflects records at read time only; it never writes listing data.",
     );
+  });
+
+  it("renders a parsed period and the in-period export count", () => {
+    const html = render("en", {
+      payload: payload({
+        period: {
+          from: "2026-10-10",
+          to: "2026-11-08",
+          label: "last 30 days",
+        },
+        attemptsInPeriod: 1,
+      }),
+    });
+    expect(html).toContain("Period: 2026-10-10 – 2026-11-08 (last 30 days)");
+    expect(html).toContain("Export attempts in period: 1");
   });
 
   it("renders an unread section as unavailable instead of zero", () => {
@@ -123,6 +154,32 @@ describe("StudioReportCard", () => {
     expect(withLink).toContain("Download JSON export");
     expect(withLink).toContain('href="/api/studio/outputs/output-1/export');
     expect(withLink).toContain("download");
+  });
+
+  it("shows the receipt state honestly: not verified, signed, or unsigned", () => {
+    const link = "/api/studio/outputs/output-1/export?digest=" + "a".repeat(64);
+
+    const notVerified = render("en", { exportHref: link });
+    expect(notVerified).toContain(
+      "This preview does not verify a receipt; when a signing key is configured, the JSON export carries the HMAC receipt.",
+    );
+    expect(notVerified).not.toContain("Signed (HMAC-SHA256");
+
+    const signed = render("en", {
+      exportHref: link,
+      exportReceipt: { keyId: "pilot-1", signature: "ab".repeat(32) },
+    });
+    expect(signed).toContain(
+      "Signed (HMAC-SHA256, key pilot-1); signature prefix abababababababab…",
+    );
+    expect(signed).toContain('data-export-signed="true"');
+    expect(signed).toContain("not external verification or approval.");
+
+    const unsigned = render("en", { exportHref: link, exportReceipt: null });
+    expect(unsigned).toContain(
+      "Unsigned: this deployment has no export signing key configured.",
+    );
+    expect(unsigned).toContain('data-export-signed="false"');
   });
 
   it("renders an honest unavailable state for an invalid payload", () => {

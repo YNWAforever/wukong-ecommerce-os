@@ -559,7 +559,9 @@ describe("studio deterministic turns", () => {
       /^[a-f0-9]{64}$/,
     );
     expect(fake.state.outputVersions[0]?.payload).toMatchObject({
-      schemaVersion: "wukong-merchant-audit/v1",
+      schemaVersion: "wukong-merchant-audit/v2",
+      period: null,
+      attemptsInPeriod: null,
       listings: expect.arrayContaining([
         { status: "approved", count: 2 },
         { status: "in_review", count: 1 },
@@ -569,6 +571,61 @@ describe("studio deterministic turns", () => {
       "studio.output.proposed",
     );
     expect(fake.state.runs[0]?.status).toBe("succeeded");
+  });
+
+  it("persists the parsed period and only in-period export attempts", async () => {
+    const modelFactory = vi.fn(() => {
+      throw new Error("the audit turn must not build a model");
+    });
+    const { service, fake } = harness({
+      options: {
+        ...populatedOptions(),
+        counts: { approved: 2 },
+        exportAttempts: [
+          {
+            id: "attempt-inside",
+            artifactStatus: "ready",
+            rowCount: 2,
+            createdAt: new Date("2026-11-05T09:00:00.000Z"),
+          },
+          {
+            id: "attempt-outside",
+            artifactStatus: "ready",
+            rowCount: 1,
+            createdAt: new Date("2026-09-01T09:00:00.000Z"),
+          },
+        ],
+      },
+      createModel: modelFactory as never,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-audit-period",
+        text: "Audit last 30 days",
+        skillKey: "merchant.audit",
+      }),
+    );
+
+    expect(result.reply.status).toBe("answered");
+    expect(modelFactory).not.toHaveBeenCalled();
+    expect(fake.state.outputVersions[0]?.payload).toMatchObject({
+      schemaVersion: "wukong-merchant-audit/v2",
+      period: { from: "2026-10-10", to: "2026-11-08", label: "last 30 days" },
+      attemptsInPeriod: 1,
+      exports: [expect.objectContaining({ attemptId: "attempt-inside" })],
+    });
+    const limitationKeys = (
+      fake.state.outputVersions[0]?.payload.limitations as Array<{
+        key: string;
+      }>
+    ).map((line) => line.key);
+    expect(limitationKeys).toContain("studio.limit.audit_period_applied");
+    expect(limitationKeys).toContain("studio.limit.audit_counts_current");
+    const sections = result.reply.records.sections.map((line) => line.key);
+    expect(sections).toContain("studio.answer.audit_period");
+    expect(sections).not.toContain("studio.answer.audit_current");
   });
 
   it("answers from records, persists the turn and records ordered tool events", async () => {

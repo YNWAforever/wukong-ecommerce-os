@@ -115,7 +115,12 @@ describe("createReportOutput", () => {
       runId: "44444444-4444-4444-8444-444444444444",
       kind: "merchant_audit",
       title: "Merchant audit",
-      payload: { schemaVersion: "wukong-merchant-audit/v1", listings: [] },
+      payload: {
+        schemaVersion: "wukong-merchant-audit/v2",
+        period: null,
+        attemptsInPeriod: null,
+        listings: [],
+      },
       asOf: NOW,
     });
     expect(created.revision).toBe(1);

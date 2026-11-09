@@ -54,8 +54,10 @@ const PROPOSAL_PAYLOAD = {
 };
 
 const REPORT_PAYLOAD = {
-  schemaVersion: "wukong-merchant-audit/v1",
+  schemaVersion: "wukong-merchant-audit/v2",
   asOf: "2026-11-08T10:00:00.000Z",
+  period: null,
+  attemptsInPeriod: null,
   listings: [{ status: "approved", count: 1 }],
 };
 
