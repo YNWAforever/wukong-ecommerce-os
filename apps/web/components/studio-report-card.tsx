@@ -46,11 +46,14 @@ export type StudioReportCardProps = {
   readonly exportHref: string | null;
   /**
    * Receipt carried by the JSON export, when the caller already has it:
-   * `undefined` = this preview did not verify a receipt (the export endpoint
-   * adds one only when the deployment's signing key is configured), `null` =
-   * the export is known to be unsigned.
+   * `undefined` = the caller is still resolving the receipt (or has none),
+   * `null` = the export is known to be unsigned.
    */
   readonly exportReceipt?: StudioExportReceiptView | null;
+  /** True while the server-computed receipt is being read. */
+  readonly receiptPending?: boolean;
+  /** True when the receipt read failed (the download still carries it). */
+  readonly receiptFailed?: boolean;
 };
 
 export function StudioReportCard({
@@ -58,6 +61,8 @@ export function StudioReportCard({
   payload,
   exportHref,
   exportReceipt = undefined,
+  receiptPending = false,
+  receiptFailed = false,
 }: StudioReportCardProps) {
   const parsed = merchantAuditPayloadSchema.safeParse(payload);
   if (!parsed.success) {
@@ -264,40 +269,53 @@ export function StudioReportCard({
         </a>
       )}
 
-      <section className={styles["studio-report-section"]}>
-        <h5 className={styles["studio-evidence-subtitle"]}>
-          {studioCopy(locale, "studio.report.receiptTitle")}
-        </h5>
-        {exportReceipt ? (
-          <p
-            className={styles["studio-report-line"]}
-            data-export-signed="true"
-            role="status"
-          >
-            {renderStudioLine(locale, {
-              key: "studio.report.receiptSigned",
-              values: {
-                keyId: exportReceipt.keyId,
-                signature: exportReceipt.signature.slice(0, 16),
-              },
-            })}
-          </p>
-        ) : exportReceipt === null ? (
-          <p
-            className={styles["studio-report-line"]}
-            data-export-signed="false"
-          >
-            {studioCopy(locale, "studio.report.receiptUnsigned")}
-          </p>
-        ) : (
+      {exportHref !== null ||
+      exportReceipt !== undefined ||
+      receiptPending ||
+      receiptFailed ? (
+        <section className={styles["studio-report-section"]}>
+          <h5 className={styles["studio-evidence-subtitle"]}>
+            {studioCopy(locale, "studio.report.receiptTitle")}
+          </h5>
+          {receiptPending ? (
+            <p className={styles["studio-evidence-note"]} role="status">
+              {studioCopy(locale, "studio.outputs.receiptPending")}
+            </p>
+          ) : receiptFailed ? (
+            <p className={styles["studio-evidence-note"]} role="alert">
+              {studioCopy(locale, "studio.outputs.receiptFailed")}
+            </p>
+          ) : exportReceipt ? (
+            <p
+              className={styles["studio-report-line"]}
+              data-export-signed="true"
+              role="status"
+            >
+              {renderStudioLine(locale, {
+                key: "studio.report.receiptSigned",
+                values: {
+                  keyId: exportReceipt.keyId,
+                  signature: exportReceipt.signature.slice(0, 16),
+                },
+              })}
+            </p>
+          ) : exportReceipt === null ? (
+            <p
+              className={styles["studio-report-line"]}
+              data-export-signed="false"
+            >
+              {studioCopy(locale, "studio.report.receiptUnsigned")}
+            </p>
+          ) : (
+            <p className={styles["studio-evidence-note"]}>
+              {studioCopy(locale, "studio.report.receiptNotVerified")}
+            </p>
+          )}
           <p className={styles["studio-evidence-note"]}>
-            {studioCopy(locale, "studio.report.receiptNotVerified")}
+            {studioCopy(locale, "studio.report.receiptHint")}
           </p>
-        )}
-        <p className={styles["studio-evidence-note"]}>
-          {studioCopy(locale, "studio.report.receiptHint")}
-        </p>
-      </section>
+        </section>
+      ) : null}
     </section>
   );
 }
