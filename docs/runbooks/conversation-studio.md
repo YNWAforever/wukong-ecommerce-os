@@ -285,13 +285,18 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
   `STUDIO_PAGE_SIZE` page (50 rows) at `offset` and render Newer/Earlier links that preserve the
   active `q`/`kind`/`status` filters; `GET /api/studio/threads|outputs` accepts `offset` 0..100000
   (an out-of-range or non-integer value is `400 invalid_query`, never silently clamped).
+- **Thread visibility is applied in SQL before the page is read.** Private threads are visible
+  only to their creator and to admin/owner roles; the filter runs in `threads.list` before
+  `ORDER BY`/`LIMIT`/`OFFSET`, so a page is never silently shortened by rows the viewer cannot see
+  and the list/inbox reads never reveal another user's private conversation.
 
 ## Orchestration inbox (P3.1)
 
 - **Read-only.** `/studio/inbox` (rail "Inbox") calls `service.inbox()`, which performs **one**
   `db.forWorkspace` transaction and reads existing records only: `listings.countByStatus`,
   `qualityProjection.read`, `pipelineRuns.listForWorkspace(20)`, `studio.outputs.list({limit:50})`
-  and `studio.threads.list({limit:20})`. A pure `buildStudioInbox` classifies/bounds them. There is
+  and `studio.threads.list({limit:20, viewerId, includePrivate})` (the same SQL visibility filter, so
+  recent conversations only include threads the viewer may see). A pure `buildStudioInbox` classifies/bounds them. There is
   no new table or migration, no write, no model call and no budget reservation.
 - **Sections.** Needs attention (quality gaps, listings without an active version, unassessable
   active versions, plus the awaiting-review sum from listing statuses; links to `/quality` and

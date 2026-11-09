@@ -518,14 +518,34 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           state.threads.unshift(thread);
           return thread;
         },
-        list: async (input: { limit?: number; offset?: number } = {}) => {
+        list: async (
+          input: {
+            limit?: number;
+            offset?: number;
+            viewerId?: string;
+            includePrivate?: boolean;
+            q?: string;
+          } = {},
+        ) => {
           state.writes.push("threads.list");
           const limit = Math.min(Math.max(input.limit ?? 50, 1), 50);
           const offset = Math.min(Math.max(input.offset ?? 0, 0), 100_000);
-          const items = state.threads.slice(offset, offset + limit);
+          const search = input.q?.trim().toLocaleLowerCase() ?? "";
+          const visible = state.threads.filter((thread) => {
+            if (input.viewerId === undefined) return true;
+            if (thread.visibility !== "private") return true;
+            if (thread.createdBy === input.viewerId) return true;
+            return input.includePrivate === true;
+          });
+          const matched = visible.filter(
+            (thread) =>
+              search.length === 0 ||
+              thread.title.toLocaleLowerCase().includes(search),
+          );
+          const items = matched.slice(offset, offset + limit);
           return {
             items,
-            truncated: state.threads.length > offset + limit,
+            truncated: matched.length > offset + limit,
           };
         },
         getWithMessages: async (

@@ -346,6 +346,76 @@ describe("studio thread and message reads", () => {
     expect(listed.truncated).toBe(false);
   });
 
+  it("lets admins list every private thread via the query-level includePrivate", async () => {
+    const shared = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_other",
+      title: "Shared",
+    });
+    const privateOther = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_other",
+      title: "Their private",
+      visibility: "private",
+    });
+    const privateOwn = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_ops",
+      title: "My private",
+      visibility: "private",
+    });
+    const { service } = harness({
+      role: "admin",
+      options: { threads: [shared, privateOther, privateOwn] },
+    });
+    const listed = await service.listThreads();
+    expect(listed.items.map((item) => item.title).sort()).toEqual([
+      "My private",
+      "Shared",
+      "Their private",
+    ]);
+    expect(listed.truncated).toBe(false);
+  });
+
+  it("returns a full page of visible threads without post-read shortening", async () => {
+    const threads = [
+      ...["a", "b", "c", "d"].map((suffix) =>
+        fakeStudioThread({
+          workspaceId: WORKSPACE,
+          createdBy: "actor_other",
+          title: `Workspace ${suffix}`,
+        }),
+      ),
+      ...[1, 2, 3].map((index) =>
+        fakeStudioThread({
+          workspaceId: WORKSPACE,
+          createdBy: "actor_other",
+          title: `Hidden private ${index}`,
+          visibility: "private",
+        }),
+      ),
+      fakeStudioThread({
+        workspaceId: WORKSPACE,
+        createdBy: "actor_ops",
+        title: "Own private",
+        visibility: "private",
+      }),
+    ];
+    const { service } = harness({
+      role: "viewer",
+      options: { threads },
+    });
+    const page = await service.listThreads();
+    expect(page.items.map((item) => item.title).sort()).toEqual([
+      "Own private",
+      "Workspace a",
+      "Workspace b",
+      "Workspace c",
+      "Workspace d",
+    ]);
+    expect(page.truncated).toBe(false);
+  });
+
   it("validates list search/filter parameters before reading", async () => {
     const { service } = harness({ role: "viewer" });
     await expect(
@@ -1083,6 +1153,47 @@ describe("studio inbox", () => {
     expect(fake.state.audits.map((event) => event.action)).not.toContain(
       "studio.output.proposed",
     );
+  });
+
+  it("keeps other users' private conversations out of the inbox", async () => {
+    const shared = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_other",
+      title: "Shared conversation",
+    });
+    const hiddenPrivate = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_other",
+      title: "Their private conversation",
+      visibility: "private",
+    });
+    const ownPrivate = fakeStudioThread({
+      workspaceId: WORKSPACE,
+      createdBy: "actor_ops",
+      title: "My private conversation",
+      visibility: "private",
+    });
+    const viewer = harness({
+      role: "viewer",
+      options: { threads: [shared, hiddenPrivate, ownPrivate] },
+    });
+    const viewerInbox = await viewer.service.inbox();
+    expect(
+      viewerInbox.conversations.items.map((item) => item.title).sort(),
+    ).toEqual(["My private conversation", "Shared conversation"]);
+
+    const admin = harness({
+      role: "admin",
+      options: { threads: [shared, hiddenPrivate, ownPrivate] },
+    });
+    const adminInbox = await admin.service.inbox();
+    expect(
+      adminInbox.conversations.items.map((item) => item.title).sort(),
+    ).toEqual([
+      "My private conversation",
+      "Shared conversation",
+      "Their private conversation",
+    ]);
   });
 
   it("is readable by a viewer like the overview", async () => {
