@@ -282,6 +282,22 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
 - The forms, selects and share control are labelled, keyboard-usable and wrap at 390 px using the
   existing Studio CSS patterns (new styles are limited to `studio.module.css`).
 
+## Orchestration inbox (P3.1)
+
+- **Read-only.** `/studio/inbox` (rail "Inbox") calls `service.inbox()`, which performs **one**
+  `db.forWorkspace` transaction and reads existing records only: `listings.countByStatus`,
+  `qualityProjection.read`, `pipelineRuns.listForWorkspace(20)`, `studio.outputs.list({limit:50})`
+  and `studio.threads.list({limit:20})`. A pure `buildStudioInbox` classifies/bounds them. There is
+  no new table or migration, no write, no model call and no budget reservation.
+- **Sections.** Needs attention (quality gaps, listings without an active version, unassessable
+  active versions, plus the awaiting-review sum from listing statuses; links to `/quality` and
+  `/dashboard`), recent non-success pipeline jobs (≤5, `/jobs`), draft artifacts needing save and
+  saved artifacts awaiting sign-off (≤10, `/studio/outputs`), and recent conversations (≤5,
+  `/studio/t/<id>`). Conversations are labelled recent — no reply/sign-off status is invented.
+- **Honest bounds.** Each bounded list says when it is truncated; a source that cannot be read is
+  marked unavailable and never rendered as a zero. A failed read collapses to one failure line and
+  logs only `studio_inbox_read_failed` (no records or content). The home overview links to the inbox.
+
 ## Deploy and rollback order
 
 1. Apply migrations `0054_conversation_studio.sql` and `0055_studio_mcp_token_lookup.sql` **before**

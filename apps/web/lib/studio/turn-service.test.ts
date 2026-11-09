@@ -914,6 +914,127 @@ describe("studio overview", () => {
   });
 });
 
+describe("studio inbox", () => {
+  function outputRow(
+    id: string,
+    status: "draft" | "saved" | "signed_off" | "discarded",
+  ) {
+    return {
+      id,
+      workspaceId: WORKSPACE,
+      threadId: null,
+      runId: null,
+      kind: "copy_proposal",
+      title: `Artifact ${id}`,
+      status,
+      currentVersion: status === "draft" ? 0 : 1,
+      createdBy: "actor_ops",
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+  }
+
+  it("aggregates one read into attention, jobs, outputs and recent conversations", async () => {
+    const { service, fake } = harness({
+      role: "viewer",
+      options: {
+        counts: { in_review: 2, needs_info: 1, approved: 4 },
+        quality: {
+          hasGapsCount: 3,
+          noActiveVersion: 1,
+          unassessableActiveVersion: 2,
+        },
+        pipelineRuns: [
+          {
+            id: "job-ok",
+            listingId: LISTING_ID,
+            versionId: null,
+            status: "succeeded",
+            errorCode: null,
+            createdAt: NOW,
+          },
+          {
+            id: "job-failed",
+            listingId: LISTING_ID,
+            versionId: null,
+            status: "failed",
+            errorCode: "provider_error",
+            createdAt: NOW,
+          },
+        ],
+        outputs: [
+          outputRow("out-draft", "draft"),
+          outputRow("out-saved", "saved"),
+          outputRow("out-signed", "signed_off"),
+        ],
+        threads: [
+          fakeStudioThread({
+            workspaceId: WORKSPACE,
+            createdBy: "actor_ops",
+            title: "Recent conversation",
+          }),
+        ],
+      } as FakeStudioOptions,
+    });
+
+    const inbox = await service.inbox();
+
+    expect(inbox.asOf).toBe(NOW.toISOString());
+    expect(inbox.needsAttention.items).toEqual([
+      { key: "listings_with_gaps", count: 3, deepLink: "/quality" },
+      {
+        key: "listings_without_active_version",
+        count: 1,
+        deepLink: "/quality",
+      },
+      {
+        key: "unassessable_active_version",
+        count: 2,
+        deepLink: "/quality",
+      },
+      { key: "listings_awaiting_review", count: 3, deepLink: "/dashboard" },
+    ]);
+    expect(inbox.jobs.items).toEqual([
+      {
+        jobId: "job-failed",
+        state: "failed",
+        errorCode: "provider_error",
+        createdAt: NOW.toISOString(),
+        deepLink: "/jobs",
+      },
+    ]);
+    expect(inbox.outputs.items.map((item) => item.outputId)).toEqual([
+      "out-draft",
+      "out-saved",
+    ]);
+    expect(inbox.conversations.items).toHaveLength(1);
+    expect(inbox.conversations.items[0]).toMatchObject({
+      title: "Recent conversation",
+      deepLink: expect.stringMatching(/^\/studio\/t\//),
+    });
+    // Read-only: no write, no budget reservation and no output audit event.
+    expect(fake.state.writes).not.toContain("budget.reserve");
+    expect(
+      fake.state.writes.filter((action) =>
+        /(create|update|append|setStatus|complete|fail|archive|touch)/.test(
+          action,
+        ),
+      ),
+    ).toEqual([]);
+    expect(fake.state.budgets).toEqual([]);
+    expect(fake.state.audits.map((event) => event.action)).not.toContain(
+      "studio.output.proposed",
+    );
+  });
+
+  it("is readable by a viewer like the overview", async () => {
+    const { service } = harness({ role: "viewer" });
+    await expect(service.inbox()).resolves.toMatchObject({
+      needsAttention: expect.objectContaining({ unavailable: false }),
+    });
+  });
+});
+
 describe("studio copy-proposal turns", () => {
   const COPY_LISTING_ID = "11111111-1111-4111-8111-111111111111";
 

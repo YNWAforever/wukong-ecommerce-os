@@ -2816,3 +2816,35 @@ article.studio-output .studio-output-body {
     flex-wrap: wrap;
   }
 }
+
+/* -- P3.1: read-only orchestration inbox ---------------------------------- */
+
+.studio-inbox-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.studio-inbox-item {
+  display: grid;
+  gap: 2px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.studio-inbox-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.studio-inbox-item-meta {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .studio-inbox-grid {
+    grid-template-columns: 1fr;
+  }
+}

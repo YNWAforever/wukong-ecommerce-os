@@ -84,6 +84,7 @@ describe("StudioShell", () => {
     expect(html).toContain("page content");
     for (const href of [
       "/studio",
+      "/studio/inbox",
       "/studio/threads",
       "/studio/outputs",
       "/studio/connections",
@@ -91,6 +92,7 @@ describe("StudioShell", () => {
     ]) {
       expect(html).toContain(`href="${href}"`);
     }
+    expect(html).toContain("Inbox");
     // Settings is a real destination now; the page itself gates on admin.
     expect(html).toContain("Settings");
     expect(html).not.toContain("Settings are not available yet.");

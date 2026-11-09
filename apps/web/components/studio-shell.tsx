@@ -34,6 +34,7 @@ type RailLink = {
 
 const RAIL_LINKS: readonly RailLink[] = [
   { href: "/studio", key: "studio.rail.overview" },
+  { href: "/studio/inbox", key: "studio.rail.inbox" },
   { href: "/studio/threads", key: "studio.rail.conversations" },
   { href: "/studio/outputs", key: "studio.rail.outputs" },
   { href: "/studio/connections", key: "studio.rail.tools" },
