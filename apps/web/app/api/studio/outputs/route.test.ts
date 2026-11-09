@@ -90,22 +90,30 @@ describe("GET /api/studio/outputs", () => {
       `?q=${"x".repeat(121)}`,
       "?unknown=1",
       "?kind=finding&extra=1",
+      "?offset=-1",
+      "?offset=100001",
+      "?offset=abc",
+      "?offset=1.5",
     ]) {
       const response = await handlers(
         new Request(`http://localhost/api/studio/outputs${suffix}`),
       );
-      expect(response.status).toBe(400);
+      expect(response.status, suffix).toBe(400);
       expect(await response.json()).toMatchObject({ code: "invalid_query" });
     }
 
     const accepted = await handlers(
       new Request(
-        "http://localhost/api/studio/outputs?kind=finding&status=draft&q=pro",
+        "http://localhost/api/studio/outputs?kind=finding&status=draft&q=pro&offset=50",
       ),
     );
     expect(accepted.status).toBe(200);
-    const body = (await accepted.json()) as { items: unknown[] };
+    const body = (await accepted.json()) as {
+      items: unknown[];
+      offset: number;
+    };
     expect(Array.isArray(body.items)).toBe(true);
+    expect(body.offset).toBe(50);
   });
 
   it("returns an honest empty list and 404 when Studio is disabled", async () => {

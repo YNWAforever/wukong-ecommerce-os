@@ -118,20 +118,28 @@ describe("GET /api/studio/threads", () => {
       `?q=${"x".repeat(121)}`,
       "?unknown=1",
       "?q=a&extra=b",
+      "?offset=-1",
+      "?offset=100001",
+      "?offset=abc",
+      "?offset=1.5",
     ]) {
       const response = await handlers.GET(
         new Request(`http://localhost/api/studio/threads${suffix}`),
       );
-      expect(response.status).toBe(400);
+      expect(response.status, suffix).toBe(400);
       expect(await response.json()).toMatchObject({ code: "invalid_query" });
     }
 
     const accepted = await handlers.GET(
-      new Request("http://localhost/api/studio/threads?q=margaux"),
+      new Request("http://localhost/api/studio/threads?q=margaux&offset=50"),
     );
     expect(accepted.status).toBe(200);
-    const body = (await accepted.json()) as { items: unknown[] };
+    const body = (await accepted.json()) as {
+      items: unknown[];
+      offset: number;
+    };
     expect(Array.isArray(body.items)).toBe(true);
+    expect(body.offset).toBe(50);
   });
 
   it("returns 401 without a session and 404 when disabled", async () => {

@@ -64,6 +64,8 @@ export type CreateThreadResult = { threadId: string };
 export type ListThreadsResult = {
   items: StudioThreadResponse[];
   truncated: boolean;
+  /** Row offset this page was read at; `truncated` means a later page exists. */
+  offset: number;
 };
 
 export type GetThreadResult = {
@@ -244,6 +246,8 @@ export type StudioOutputVersionResponse = {
 export type ListOutputsResult = {
   items: StudioOutputSummary[];
   truncated: boolean;
+  /** Row offset this page was read at; `truncated` means a later page exists. */
+  offset: number;
 };
 
 export type GetOutputResult = {
@@ -283,27 +287,51 @@ export type StudioOutputStatusFilter = (typeof STUDIO_OUTPUT_STATUSES)[number];
 /** Shared bound for the operator's free-text search. */
 export const STUDIO_SEARCH_MAX_LENGTH = 120;
 
+/** Studio list pages read this many rows at a time (offset pagination). */
+export const STUDIO_PAGE_SIZE = 50;
+/** Highest accepted row offset; larger values are a 400, never silently clamped. */
+export const STUDIO_MAX_OFFSET = 100_000;
+
+const studioOffsetSchema = z.coerce
+  .number()
+  .int()
+  .min(0)
+  .max(STUDIO_MAX_OFFSET)
+  .default(0);
+
 /**
  * `GET /api/studio/threads` query contract. `q` is a server-side search over
- * title/skill; blank means "no search". Unknown or malformed parameters are a
- * 400 rather than silently ignored.
+ * title/skill; blank means "no search". `offset` is the row offset of the page
+ * (integers 0..100000, default 0). Unknown or malformed parameters are a 400
+ * rather than silently ignored or clamped.
  */
 export const studioThreadListQuerySchema = z
   .object({
     q: z.string().trim().max(STUDIO_SEARCH_MAX_LENGTH).optional(),
+    offset: studioOffsetSchema,
   })
   .strict();
-export type StudioThreadListQuery = z.infer<typeof studioThreadListQuerySchema>;
+export type StudioThreadListQuery = {
+  q?: string;
+  offset?: number;
+};
 
 /**
  * `GET /api/studio/outputs` query contract: free-text title search plus exact
- * kind/status filters. All are optional and combine with AND server-side.
+ * kind/status filters and the page offset. All are optional and combine with
+ * AND server-side; a malformed/out-of-range offset is a 400.
  */
 export const studioOutputListQuerySchema = z
   .object({
     q: z.string().trim().max(STUDIO_SEARCH_MAX_LENGTH).optional(),
     kind: z.enum(STUDIO_OUTPUT_KINDS).optional(),
     status: z.enum(STUDIO_OUTPUT_STATUSES).optional(),
+    offset: studioOffsetSchema,
   })
   .strict();
-export type StudioOutputListQuery = z.infer<typeof studioOutputListQuerySchema>;
+export type StudioOutputListQuery = {
+  q?: string;
+  kind?: StudioOutputKindFilter;
+  status?: StudioOutputStatusFilter;
+  offset?: number;
+};

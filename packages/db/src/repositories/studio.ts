@@ -303,8 +303,15 @@ export type StudioRepository = {
     /**
      * `q` is matched case-insensitively against the title and skill key, with
      * `%`, `_` and `\` in the operator's text treated literally (LIKE escaping).
+     * `offset` is an integer row offset applied after ORDER BY; the repository
+     * reads `limit + 1` rows so `truncated` means "more rows after this page".
      */
-    list(input?: { limit?: number; before?: Date; q?: string }): Promise<{
+    list(input?: {
+      limit?: number;
+      before?: Date;
+      q?: string;
+      offset?: number;
+    }): Promise<{
       items: StudioThread[];
       truncated: boolean;
     }>;
@@ -396,14 +403,17 @@ export type StudioRepository = {
     get(id: string): Promise<StudioOutput | null>;
     /**
      * `q` is a case-insensitive title search with LIKE wildcards escaped;
-     * `kind`/`status` are exact filters. All filters combine with AND.
+     * `kind`/`status` are exact filters. `offset` is applied after ORDER BY and
+     * the repository reads `limit + 1` rows, so `truncated` means "more rows
+     * after this page" and `items` never exceeds `limit`.
      */
     list(input?: {
       limit?: number;
       kind?: StudioOutputKind;
       status?: StudioOutputStatus;
       q?: string;
-    }): Promise<StudioOutput[]>;
+      offset?: number;
+    }): Promise<{ items: StudioOutput[]; truncated: boolean }>;
     versions(outputId: string): Promise<StudioOutputVersion[]>;
     setStatus(
       id: string,
@@ -816,6 +826,7 @@ export function createStudioRepository(
       async list(input = {}) {
         scope.assertOpen();
         const limit = Math.min(Math.max(input.limit ?? 50, 1), 50);
+        const offset = Math.min(Math.max(input.offset ?? 0, 0), 100_000);
         const before = input.before ?? null;
         const search = input.q?.trim();
         const pattern = search ? likePattern(search) : null;
@@ -829,12 +840,13 @@ export function createStudioRepository(
                 : sql``
             }
           order by coalesce(last_message_at,created_at) desc, created_at desc, id desc
-          limit ${limit}
+          limit ${limit + 1} offset ${offset}
         `);
-        const items = rows.map((row) =>
-          readThread(row as Record<string, unknown>),
-        );
-        return { items, truncated: items.length === limit };
+        // Read one extra row so the caller can tell whether another page exists.
+        const items = rows
+          .slice(0, limit)
+          .map((row) => readThread(row as Record<string, unknown>));
+        return { items, truncated: rows.length > limit };
       },
       async getWithMessages(id, input = {}) {
         scope.assertOpen();
@@ -1138,6 +1150,7 @@ export function createStudioRepository(
       async list(input = {}) {
         scope.assertOpen();
         const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+        const offset = Math.min(Math.max(input.offset ?? 0, 0), 100_000);
         const search = input.q?.trim();
         const pattern = search ? likePattern(search) : null;
         const kind = input.kind ?? null;
@@ -1147,9 +1160,13 @@ export function createStudioRepository(
             ${kind ? sql`and kind=${kind}` : sql``}
             ${status ? sql`and status=${status}` : sql``}
             ${pattern ? sql`and title ilike ${pattern} escape '\\'` : sql``}
-          order by created_at desc, id desc limit ${limit}
+          order by created_at desc, id desc limit ${limit + 1} offset ${offset}
         `);
-        return rows.map((row) => readOutput(row as Record<string, unknown>));
+        // See threads.list: the extra row is the has-more signal for the page.
+        const items = rows
+          .slice(0, limit)
+          .map((row) => readOutput(row as Record<string, unknown>));
+        return { items, truncated: rows.length > limit };
       },
       async versions(outputId) {
         scope.assertOpen();

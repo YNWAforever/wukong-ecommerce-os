@@ -29,7 +29,11 @@ vi.mock("../studio-service", () => ({
     listThreads: async (filters?: Record<string, unknown>) => {
       if (state.throws) throw new Error("connection string must not leak");
       state.filters = filters ?? {};
-      return { items: state.items, truncated: state.truncated };
+      return {
+        items: state.items,
+        truncated: state.truncated,
+        offset: typeof filters?.offset === "number" ? filters.offset : 0,
+      };
     },
   }),
 }));
@@ -73,7 +77,7 @@ describe("StudioThreadsPage search", () => {
   it("passes a trimmed server-side search to the service and renders matches", async () => {
     state.items = [threadItem()];
     const html = await render({ q: "  synthetic  " });
-    expect(state.filters).toEqual({ q: "synthetic" });
+    expect(state.filters).toEqual({ q: "synthetic", offset: 0 });
     expect(html).toContain("Synthetic conversation");
     expect(html).toContain(
       "Search “synthetic”: 1 conversation(s), filtered on the server.",
@@ -99,21 +103,67 @@ describe("StudioThreadsPage search", () => {
     const html = await render({ q: "x".repeat(121) });
     expect(state.filters).toEqual({});
     expect(html).toContain(
-      "A search is at most 120 characters; no filter was applied.",
+      "The search or page parameters are invalid; no filter was applied.",
     );
     expect(html).toContain("No conversations yet.");
   });
 
+  it("renders a next-page link for the first page without a newer link", async () => {
+    state.items = [threadItem()];
+    state.truncated = true;
+    const html = await render();
+    expect(html).toContain("Page 1 · 1 item(s)");
+    expect(html).toContain('href="/studio/threads?offset=50"');
+    expect(html).toContain("Earlier conversations");
+    expect(html).not.toContain("Newer conversations");
+  });
+
+  it("renders both links in the middle of a filtered list, preserving the search", async () => {
+    state.items = [threadItem()];
+    state.truncated = true;
+    const html = await render({ q: "synthetic", offset: "50" });
+    expect(state.filters).toEqual({ q: "synthetic", offset: 50 });
+    expect(html).toContain("Page 2 · 1 item(s)");
+    expect(html).toContain('href="/studio/threads?q=synthetic"');
+    expect(html).toContain('href="/studio/threads?q=synthetic&amp;offset=100"');
+    expect(html).toContain("Newer conversations");
+    expect(html).toContain("Earlier conversations");
+  });
+
+  it("renders only the newer link on the last page", async () => {
+    state.items = [threadItem()];
+    const html = await render({ offset: "100" });
+    expect(html).toContain("Page 3 · 1 item(s)");
+    expect(html).toContain('href="/studio/threads?offset=50"');
+    expect(html).not.toContain("Earlier conversations");
+  });
+
+  it("shows an honest empty page beyond the end and still offers a way back", async () => {
+    const html = await render({ offset: "50" });
+    expect(html).toContain("No items on this page; go to a newer page.");
+    expect(html).toContain('href="/studio/threads"');
+    expect(html).toContain("Newer conversations");
+  });
+
+  it("fails closed to the first page for an invalid offset and explains it", async () => {
+    const html = await render({ offset: "100001" });
+    expect(state.filters).toEqual({});
+    expect(html).toContain(
+      "The search or page parameters are invalid; no filter was applied.",
+    );
+    expect(html).toContain("Page 1 · 0 item(s)");
+  });
+
   it("takes the first value of a repeated query parameter", async () => {
     const html = await render({ q: ["first", "second"] });
-    expect(state.filters).toEqual({ q: "first" });
+    expect(state.filters).toEqual({ q: "first", offset: 0 });
     expect(html).toContain("Search “first”");
   });
 
   it("renders an unfiltered list without a search summary", async () => {
     state.items = [threadItem()];
     const html = await render();
-    expect(state.filters).toEqual({});
+    expect(state.filters).toEqual({ offset: 0 });
     expect(html).toContain("Synthetic conversation");
     expect(html).not.toContain("filtered on the server");
   });

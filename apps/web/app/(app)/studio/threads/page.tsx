@@ -2,7 +2,11 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../../lib/locale";
-import { studioThreadListQuerySchema } from "../../../../lib/studio/contracts";
+import {
+  STUDIO_PAGE_SIZE,
+  studioThreadListQuerySchema,
+} from "../../../../lib/studio/contracts";
+import { renderStudioLine } from "../../../../lib/studio-render";
 import { studioCopy } from "../../../../lib/studio-copy";
 import { formatHkDate } from "../../../../lib/ui-copy";
 import styles from "../../../../components/studio.module.css";
@@ -12,11 +16,12 @@ import { studioService } from "../studio-service";
  * All conversations (design spec §2.1), read server-side through the same
  * service the API uses so visibility rules cannot diverge from the endpoints.
  *
- * Search is a server-side filter (`GET ?q=`) over title and skill key: the page
- * asks the service for the filtered page instead of narrowing an already-read
- * first page, so a match beyond the initial 50 is still found. A failed read
- * shows the honest failure line rather than an empty list that would imply
- * "no conversations".
+ * Search is a server-side filter (`GET ?q=`) over title and skill key and the
+ * list is offset-paginated (`GET ?offset=`): the service returns one
+ * `STUDIO_PAGE_SIZE` page plus a has-more flag, so the Newer/Earlier links
+ * reach records beyond the first page without client-side fetching. The filter
+ * form starts a new search at offset 0. A failed read shows the honest failure
+ * line rather than an empty list that would imply "no conversations".
  */
 function firstParam(value: string | string[] | undefined): string | null {
   if (typeof value === "string") return value;
@@ -27,15 +32,21 @@ function firstParam(value: string | string[] | undefined): string | null {
 export default async function StudioThreadsPage({
   searchParams,
 }: {
-  readonly searchParams: Promise<{ q?: string | string[] }>;
+  readonly searchParams: Promise<{
+    q?: string | string[];
+    offset?: string | string[];
+  }>;
 }) {
   const params = await searchParams;
   const rawQuery = firstParam(params.q);
-  const parsed = studioThreadListQuerySchema.safeParse(
-    rawQuery === null ? {} : { q: rawQuery },
-  );
+  const rawOffset = firstParam(params.offset);
+  const candidate: Record<string, string> = {};
+  if (rawQuery !== null && rawQuery.length > 0) candidate.q = rawQuery;
+  if (rawOffset !== null && rawOffset.length > 0) candidate.offset = rawOffset;
+  const parsed = studioThreadListQuerySchema.safeParse(candidate);
   const search = parsed.success ? (parsed.data.q?.trim() ?? "") : "";
-  const invalidSearch = !parsed.success;
+  const offset = parsed.success ? parsed.data.offset : 0;
+  const invalidQuery = !parsed.success;
 
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE_NAME)?.value);
@@ -67,6 +78,22 @@ export default async function StudioThreadsPage({
 
   const items = listed.items;
   const filtered = search.length > 0;
+  const page = Math.floor(offset / STUDIO_PAGE_SIZE) + 1;
+
+  const pageHref = (nextOffset: number): string => {
+    const query = new URLSearchParams();
+    if (search.length > 0) query.set("q", search);
+    if (nextOffset > 0) query.set("offset", String(nextOffset));
+    const serialized = query.toString();
+    return serialized.length > 0
+      ? `/studio/threads?${serialized}`
+      : "/studio/threads";
+  };
+  const newerHref =
+    offset > 0 ? pageHref(Math.max(0, offset - STUDIO_PAGE_SIZE)) : null;
+  const earlierHref = listed.truncated
+    ? pageHref(offset + STUDIO_PAGE_SIZE)
+    : null;
 
   return (
     <div className={styles["studio-section"]}>
@@ -108,7 +135,7 @@ export default async function StudioThreadsPage({
         </button>
       </form>
 
-      {invalidSearch ? (
+      {invalidQuery ? (
         <p className={styles["studio-notice"]} role="alert">
           {studioCopy(locale, "studio.threads.searchInvalid")}
         </p>
@@ -122,17 +149,38 @@ export default async function StudioThreadsPage({
         </p>
       ) : null}
 
-      {listed.truncated ? (
-        <p className={styles["studio-notice"]}>
-          {studioCopy(locale, "studio.threads.truncated")}
-        </p>
+      <p className={styles["studio-pagination-summary"]} role="status">
+        {renderStudioLine(locale, {
+          key: "studio.pagination.summary",
+          values: { page, count: items.length },
+        })}
+      </p>
+
+      {newerHref !== null || earlierHref !== null ? (
+        <nav
+          className={styles["studio-pagination"]}
+          aria-label={studioCopy(locale, "studio.pagination.label")}
+        >
+          {newerHref !== null ? (
+            <Link className={styles["studio-evidence-link"]} href={newerHref}>
+              {studioCopy(locale, "studio.threads.newer")}
+            </Link>
+          ) : null}
+          {earlierHref !== null ? (
+            <Link className={styles["studio-evidence-link"]} href={earlierHref}>
+              {studioCopy(locale, "studio.threads.earlier")}
+            </Link>
+          ) : null}
+        </nav>
       ) : null}
 
       {items.length === 0 ? (
         <p className={styles["studio-empty"]}>
-          {filtered
-            ? studioCopy(locale, "studio.threads.searchEmpty")
-            : studioCopy(locale, "studio.threads.empty")}
+          {offset > 0
+            ? studioCopy(locale, "studio.pagination.emptyPage")
+            : filtered
+              ? studioCopy(locale, "studio.threads.searchEmpty")
+              : studioCopy(locale, "studio.threads.empty")}
         </p>
       ) : (
         <ul className={styles["studio-thread-index"]}>

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+﻿import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
 
 import { createDatabase, type Database } from "../client.js";
@@ -172,10 +172,12 @@ describe.skipIf(!enabled)("studio repositories", () => {
       q?: string;
       kind?: "copy_proposal" | "finding";
       status?: "draft" | "saved" | "signed_off";
+      offset?: number;
+      limit?: number;
     }) =>
       studioRepositories(WORKSPACE_A, (repos) =>
         repos.studio.outputs.list(input),
-      );
+      ).then((listed) => listed.items);
 
     const byTitle = await list({ q: "margaux" });
     expect(byTitle.map((row) => row.id).sort()).toEqual(
@@ -198,8 +200,103 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(
       await studioRepositories(WORKSPACE_B, (repos) =>
         repos.studio.outputs.list({ q: "margaux" }),
-      ),
+      ).then((listed) => listed.items),
     ).toEqual([]);
+  });
+
+  it("paginates threads and outputs by offset with has-more truncation", async () => {
+    const createdThreads = await studioRepositories(
+      WORKSPACE_A,
+      async (repos) => {
+        const rows = [];
+        for (let index = 0; index < 5; index += 1)
+          rows.push(
+            await repos.studio.threads.create({
+              createdBy: "actor-a",
+              title: `Page thread ${index}`,
+            }),
+          );
+        return rows;
+      },
+    );
+    const threadPage = (offset: number, extra: { q?: string } = {}) =>
+      studioRepositories(WORKSPACE_A, (repos) =>
+        repos.studio.threads.list({
+          limit: 2,
+          offset,
+          q: "page thread",
+          ...extra,
+        }),
+      );
+
+    const firstThreads = await threadPage(0);
+    expect(firstThreads.items).toHaveLength(2);
+    expect(firstThreads.truncated).toBe(true);
+    const secondThreads = await threadPage(2);
+    expect(secondThreads.items).toHaveLength(2);
+    expect(secondThreads.truncated).toBe(true);
+    const thirdThreads = await threadPage(4);
+    expect(thirdThreads.items).toHaveLength(1);
+    expect(thirdThreads.truncated).toBe(false);
+    const beyondThreads = await threadPage(10);
+    expect(beyondThreads.items).toEqual([]);
+    expect(beyondThreads.truncated).toBe(false);
+    const pagedIds = [
+      ...firstThreads.items,
+      ...secondThreads.items,
+      ...thirdThreads.items,
+    ].map((thread) => thread.id);
+    expect(new Set(pagedIds).size).toBe(5);
+    expect(new Set(pagedIds)).toEqual(
+      new Set(createdThreads.map((thread) => thread.id)),
+    );
+    // A search composes with the offset instead of resetting it.
+    const searchedThreads = await threadPage(1, { q: "page thread" });
+    expect(searchedThreads.items).toHaveLength(2);
+    expect(searchedThreads.truncated).toBe(true);
+
+    const createdOutputs = await studioRepositories(
+      WORKSPACE_A,
+      async (repos) => {
+        const rows = [];
+        for (let index = 0; index < 5; index += 1)
+          rows.push(
+            await repos.studio.outputs.create({
+              kind: index % 2 === 0 ? "copy_proposal" : "finding",
+              title: `Output page ${index}`,
+              createdBy: "actor-a",
+            }),
+          );
+        return rows;
+      },
+    );
+    expect(createdOutputs).toHaveLength(5);
+    const outputPage = (input: {
+      offset: number;
+      q?: string;
+      kind?: "copy_proposal" | "finding";
+    }) =>
+      studioRepositories(WORKSPACE_A, (repos) =>
+        repos.studio.outputs.list({ limit: 2, q: "output page", ...input }),
+      );
+
+    const firstOutputs = await outputPage({ offset: 0 });
+    expect(firstOutputs.items).toHaveLength(2);
+    expect(firstOutputs.truncated).toBe(true);
+    const secondOutputs = await outputPage({ offset: 2 });
+    expect(secondOutputs.items).toHaveLength(2);
+    expect(secondOutputs.truncated).toBe(true);
+    const thirdOutputs = await outputPage({ offset: 4 });
+    expect(thirdOutputs.items).toHaveLength(1);
+    expect(thirdOutputs.truncated).toBe(false);
+    expect((await outputPage({ offset: 10 })).items).toEqual([]);
+    // Filters compose with the offset rather than being dropped.
+    const filteredOutputs = await outputPage({ offset: 1, kind: "finding" });
+    expect(filteredOutputs.items).toHaveLength(1);
+    expect(filteredOutputs.items[0]?.kind).toBe("finding");
+    const searchedOutputs = await outputPage({ offset: 1, q: "output page" });
+    expect(searchedOutputs.items).toHaveLength(2);
+    expect(searchedOutputs.truncated).toBe(true);
   });
 
   it("defaults settings and round-trips an explicit configuration", async () => {

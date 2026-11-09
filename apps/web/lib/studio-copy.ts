@@ -476,9 +476,11 @@ export const STUDIO_COPY = {
     "Search “{query}”: {count} conversation(s), filtered on the server.",
   ],
   "studio.threads.searchInvalid": [
-    "搜尋字串最多 120 個字元；未套用篩選。",
-    "A search is at most 120 characters; no filter was applied.",
+    "搜尋或頁碼參數無效；未套用篩選。",
+    "The search or page parameters are invalid; no filter was applied.",
   ],
+  "studio.threads.newer": ["較新的對話", "Newer conversations"],
+  "studio.threads.earlier": ["較舊的對話", "Earlier conversations"],
   "studio.threads.updated": ["最近更新", "Last updated"],
   "studio.threads.open": ["開啟對話", "Open conversation"],
 
@@ -954,12 +956,23 @@ export const STUDIO_COPY = {
     "Filtered result: {count} artifact(s), filtered on the server (search: {query}).",
   ],
   "studio.outputs.filterInvalid": [
-    "篩選參數無效；未套用篩選。",
-    "The filter parameters are invalid; no filter was applied.",
+    "篩選或頁碼參數無效；未套用篩選。",
+    "The filter or page parameters are invalid; no filter was applied.",
   ],
+  "studio.outputs.newer": ["較新的成品", "Newer artifacts"],
+  "studio.outputs.earlier": ["較舊的成品", "Earlier artifacts"],
   "studio.outputs.filteredEmpty": [
     "沒有符合篩選的成品。",
     "No artifacts match these filters.",
+  ],
+  "studio.pagination.label": ["分頁", "Pagination"],
+  "studio.pagination.summary": [
+    "第 {page} 頁 · {count} 項",
+    "Page {page} · {count} item(s)",
+  ],
+  "studio.pagination.emptyPage": [
+    "此頁沒有項目；請回到較新的頁面。",
+    "No items on this page; go to a newer page.",
   ],
   "studio.signoff.draft": ["草稿", "Draft"],
   "studio.signoff.saved": ["已儲存", "Saved"],

@@ -518,11 +518,15 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           state.threads.unshift(thread);
           return thread;
         },
-        list: async (input: { limit?: number } = {}) => {
+        list: async (input: { limit?: number; offset?: number } = {}) => {
           state.writes.push("threads.list");
           const limit = Math.min(Math.max(input.limit ?? 50, 1), 50);
-          const items = state.threads.slice(0, limit);
-          return { items, truncated: state.threads.length > limit };
+          const offset = Math.min(Math.max(input.offset ?? 0, 0), 100_000);
+          const items = state.threads.slice(offset, offset + limit);
+          return {
+            items,
+            truncated: state.threads.length > offset + limit,
+          };
         },
         getWithMessages: async (
           id: string,
@@ -794,15 +798,35 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           state.writes.push("outputs.get");
           return state.outputs.find((entry) => entry.id === id) ?? null;
         },
-        list: async (input: { limit?: number } = {}) => {
+        list: async (
+          input: {
+            limit?: number;
+            offset?: number;
+            q?: string;
+            kind?: string;
+            status?: string;
+          } = {},
+        ) => {
           state.writes.push("outputs.list");
           const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
-          return [...state.outputs]
+          const offset = Math.min(Math.max(input.offset ?? 0, 0), 100_000);
+          const search = input.q?.trim().toLocaleLowerCase() ?? "";
+          const filtered = [...state.outputs]
+            .filter(
+              (output) =>
+                (search.length === 0 ||
+                  output.title.toLocaleLowerCase().includes(search)) &&
+                (input.kind === undefined || output.kind === input.kind) &&
+                (input.status === undefined || output.status === input.status),
+            )
             .sort(
               (left, right) =>
                 right.createdAt.getTime() - left.createdAt.getTime(),
-            )
-            .slice(0, limit);
+            );
+          return {
+            items: filtered.slice(offset, offset + limit),
+            truncated: filtered.length > offset + limit,
+          };
         },
         versions: async (outputId: string) => {
           state.writes.push("outputs.versions");
