@@ -99,8 +99,61 @@ and audited; `last_used_at` is informational. Clients use
 `Authorization: Bearer wuk_<prefix>.<secret>` against `POST /api/mcp` (protocol version
 `2026-07-28`, stateless JSON-RPC, JSON responses; GET is 405). Only `read`/`propose` tools are
 listed and callable; `dispatch` tools are never exposed. Every call writes a content-free
-`studio_mcp_calls` ledger row and `studio.mcp.call` audit event; arguments/outputs/tokens are never
-logged.
+`studio_mcp_calls` ledger row (now including the calling `token_id`) and `studio.mcp.call` audit
+event; arguments/outputs/tokens are never logged.
+
+### Client setup
+
+1. Admin creates a token on `/studio/settings` (optionally with quotas, see below) and copies the
+   plaintext immediately.
+2. Configure the MCP client with endpoint `https://<deployment>/api/mcp` and header
+   `Authorization: Bearer wuk_<prefix>.<secret>`. There is no SSE stream; use plain HTTP POSTs for
+   every request.
+3. Handshake and call, for example:
+
+```jsonc
+// initialize
+{ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+  "params": { "protocolVersion": "2026-07-28" } }
+
+// list the tools the token's scopes and the creator's current role allow
+{ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }
+
+// call a read tool
+{ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+  "params": { "name": "catalog.search", "arguments": { "query": "margaux" } } }
+```
+
+`read` tokens can only call read tools; `propose` tokens can only call propose tools; neither can
+reach dispatch/write/approve tools even by naming them. The creator's current workspace role is
+re-checked on every request (a removed or demoted creator fails closed). Notifications get `202`
+with no body.
+
+### Quotas
+
+Each token may carry two optional limits, editable on `/studio/settings`:
+
+- `rate_limit_per_minute` — rolling 60-second window, integer 1–600;
+- `monthly_call_quota` — UTC calendar month, integer 1–1,000,000;
+- `NULL` means unlimited (the admin form's blank input).
+
+Before executing a `tools/call`, the server counts the token's own `studio_mcp_calls` rows in the
+window/month. Over the minute limit it answers HTTP 200 with JSON-RPC error `-32029`; over the
+monthly quota it answers HTTP 200 with `-32030`. A denied call executes no tool, writes no success
+ledger row and no audit call event. The check uses a count snapshot taken when the request resolved
+the token, so two concurrent calls can both pass at the boundary — the limit is honest but
+deliberately approximate under concurrency. The panel shows each token's quotas next to its actual
+minute/month usage from the ledger.
+
+### Rotation
+
+`Rotate` (or `POST /api/studio/tokens/<id>/rotate`) creates a replacement token with the same label,
+scopes and quotas, revokes the old token in the same transaction, and returns the new plaintext
+**once**. The old plaintext is unrecoverable (only its SHA-256 hash was ever stored); clients must
+switch their `Authorization` header immediately. Quota updates audit
+`studio.mcp.token.limits_updated` (before/after values), rotation audits `studio.mcp.token.rotated`
+(old and replacement ids), and revocation stays `studio.mcp.token.revoked`. The settings panel
+shows the new plaintext in the same once-only block as creation.
 
 ## External MCP connections (disabled by default)
 
@@ -130,8 +183,9 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
   tool steps, a bounded 20 read per-listing detail fan-out and at most two model calls; exceeding a
   limit persists a failed run with a distinct error code (`studio_turn_timeout` /
   `studio_step_budget_exceeded`). No token streaming; no retention enforcement yet
-  (`retention_days` is stored only); no MCP token rate-limit ledger yet; no workspace-settings
-  admin API (SQL above).
+  (`retention_days` is stored only); no workspace-settings
+  admin API (SQL above); hosted-MCP quotas are per-token rolling-minute/monthly limits only (no
+  global per-workspace MCP concurrency cap).
 
 ## Copy-proposal handoff and artifact exports (B2)
 

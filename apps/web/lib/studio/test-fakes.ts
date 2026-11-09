@@ -400,6 +400,8 @@ export function fakeApiToken(
     scopes?: string[];
     createdBy?: string;
     revokedAt?: Date | null;
+    rateLimitPerMinute?: number | null;
+    monthlyCallQuota?: number | null;
   } = {},
 ): StudioApiToken {
   const createdAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
@@ -412,6 +414,8 @@ export function fakeApiToken(
     createdBy: input.createdBy ?? "actor_ops",
     revokedAt: input.revokedAt ?? null,
     lastUsedAt: null,
+    rateLimitPerMinute: input.rateLimitPerMinute ?? null,
+    monthlyCallQuota: input.monthlyCallQuota ?? null,
     createdAt,
     updatedAt: createdAt,
   };
@@ -902,6 +906,8 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           prefix: string;
           scopes: readonly string[];
           createdBy: string;
+          rateLimitPerMinute?: number | null;
+          monthlyCallQuota?: number | null;
         }) => {
           state.writes.push("apiTokens.create");
           const createdAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
@@ -914,11 +920,17 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
             createdBy: input.createdBy,
             revokedAt: null,
             lastUsedAt: null,
+            rateLimitPerMinute: input.rateLimitPerMinute ?? null,
+            monthlyCallQuota: input.monthlyCallQuota ?? null,
             createdAt,
             updatedAt: createdAt,
           };
           state.apiTokens.push(token);
           return token;
+        },
+        get: async (id: string) => {
+          state.writes.push("apiTokens.get");
+          return state.apiTokens.find((entry) => entry.id === id) ?? null;
         },
         findByHash: async () => null,
         revoke: async (id: string) => {
@@ -929,6 +941,23 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           if (!token) return false;
           token.revokedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
           token.updatedAt = token.revokedAt;
+          return true;
+        },
+        updateLimits: async (
+          id: string,
+          input: {
+            rateLimitPerMinute: number | null;
+            monthlyCallQuota: number | null;
+          },
+        ) => {
+          state.writes.push("apiTokens.updateLimits");
+          const token = state.apiTokens.find(
+            (entry) => entry.id === id && entry.revokedAt === null,
+          );
+          if (!token) return false;
+          token.rateLimitPerMinute = input.rateLimitPerMinute;
+          token.monthlyCallQuota = input.monthlyCallQuota;
+          token.updatedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
           return true;
         },
         touch: async (id: string) => {
@@ -947,6 +976,7 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         append: async (input: {
           runId?: string | null;
           connectionId?: string | null;
+          tokenId?: string | null;
           toolName: string;
           requestDigest: string;
           responseDigest?: string | null;
@@ -961,6 +991,7 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
             workspaceId: settings.workspaceId,
             runId: input.runId ?? null,
             connectionId: input.connectionId ?? null,
+            tokenId: input.tokenId ?? null,
             toolName: input.toolName,
             requestDigest: input.requestDigest,
             responseDigest: input.responseDigest ?? null,
@@ -977,6 +1008,14 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           state.writes.push("mcpCalls.list");
           const limit = Math.min(Math.max(input.limit ?? 100, 1), 200);
           return state.mcpCalls.slice(0, limit);
+        },
+        countForTokenSince: async (tokenId: string, since: Date) => {
+          state.writes.push("mcpCalls.countForTokenSince");
+          return state.mcpCalls.filter(
+            (call) =>
+              call.tokenId === tokenId &&
+              call.createdAt.getTime() >= since.getTime(),
+          ).length;
         },
       },
       mcpConnections: {
@@ -1216,6 +1255,8 @@ export function fakeGetDatabase(
           scopes: [...token.scopes],
           revokedAt: token.revokedAt,
           prefix: token.prefix,
+          rateLimitPerMinute: token.rateLimitPerMinute,
+          monthlyCallQuota: token.monthlyCallQuota,
         };
       },
     }) as never;

@@ -223,6 +223,8 @@ export type StudioMcpCall = {
   workspaceId: string;
   runId: string | null;
   connectionId: string | null;
+  /** Hosted-MCP token whose `tools/call` produced this row, when known. */
+  tokenId: string | null;
   toolName: string;
   requestDigest: string;
   responseDigest: string | null;
@@ -242,6 +244,10 @@ export type StudioApiToken = {
   createdBy: string;
   revokedAt: Date | null;
   lastUsedAt: Date | null;
+  /** Rolling-minute tool-call limit; NULL means unlimited. */
+  rateLimitPerMinute: number | null;
+  /** UTC-month tool-call quota; NULL means unlimited. */
+  monthlyCallQuota: number | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -417,6 +423,8 @@ export type StudioRepository = {
     append(input: {
       runId?: string | null;
       connectionId?: string | null;
+      /** Set for hosted-MCP calls so quotas can be counted per token. */
+      tokenId?: string | null;
       toolName: string;
       requestDigest: string;
       responseDigest?: string | null;
@@ -429,6 +437,12 @@ export type StudioRepository = {
       limit?: number;
       connectionId?: string;
     }): Promise<StudioMcpCall[]>;
+    /**
+     * Count this token's calls since `since` (inclusive-upper unbounded: all
+     * rows at or after the instant). Used for the rolling-minute rate limit and
+     * the UTC-month quota; rows for other tokens/workspaces never contribute.
+     */
+    countForTokenSince(tokenId: string, since: Date): Promise<number>;
   };
   apiTokens: {
     create(input: {
@@ -437,10 +451,21 @@ export type StudioRepository = {
       prefix: string;
       scopes: readonly string[];
       createdBy: string;
+      rateLimitPerMinute?: number | null;
+      monthlyCallQuota?: number | null;
     }): Promise<StudioApiToken>;
+    get(id: string): Promise<StudioApiToken | null>;
     findByHash(tokenHash: string): Promise<StudioApiToken | null>;
     revoke(id: string): Promise<boolean>;
     touch(id: string): Promise<void>;
+    /** Update both quota limits; false when the row is absent/revoked. */
+    updateLimits(
+      id: string,
+      input: {
+        rateLimitPerMinute: number | null;
+        monthlyCallQuota: number | null;
+      },
+    ): Promise<boolean>;
     list(input?: { limit?: number }): Promise<StudioApiToken[]>;
   };
 };
@@ -638,6 +663,7 @@ function readMcpCall(row: Record<string, unknown>): StudioMcpCall {
     workspaceId: text(row.workspace_id),
     runId: nullableText(row.run_id),
     connectionId: nullableText(row.connection_id),
+    tokenId: nullableText(row.token_id),
     toolName: text(row.tool_name),
     requestDigest: text(row.request_digest),
     responseDigest: nullableText(row.response_digest),
@@ -659,6 +685,12 @@ function readApiToken(row: Record<string, unknown>): StudioApiToken {
     createdBy: text(row.created_by),
     revokedAt: nullableDate(row.revoked_at),
     lastUsedAt: nullableDate(row.last_used_at),
+    rateLimitPerMinute:
+      row.rate_limit_per_minute == null
+        ? null
+        : Number(row.rate_limit_per_minute),
+    monthlyCallQuota:
+      row.monthly_call_quota == null ? null : Number(row.monthly_call_quota),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -1256,11 +1288,12 @@ export function createStudioRepository(
             : digest(input.responseDigest, "responseDigest");
         const rows = await transaction.execute(sql`
           insert into studio_mcp_calls(
-            workspace_id,run_id,connection_id,tool_name,request_digest,response_digest,
-            status,error_code,latency_ms,caller
+            workspace_id,run_id,connection_id,token_id,tool_name,request_digest,
+            response_digest,status,error_code,latency_ms,caller
           ) values (
             ${workspaceId},${input.runId ?? null}::uuid,
-            ${input.connectionId ?? null}::uuid,${input.toolName},${requestDigest},
+            ${input.connectionId ?? null}::uuid,${input.tokenId ?? null}::uuid,
+            ${input.toolName},${requestDigest},
             ${responseDigest},${input.status},${input.errorCode ?? null},
             ${input.latencyMs ?? null},${input.caller}
           )
@@ -1279,6 +1312,18 @@ export function createStudioRepository(
         `);
         return rows.map((row) => readMcpCall(row as Record<string, unknown>));
       },
+      async countForTokenSince(tokenId, since) {
+        scope.assertOpen();
+        // Serialize the instant explicitly: a raw Date reaches the prepared
+        // statement binder as a JS object rather than a timestamptz literal.
+        const rows = await transaction.execute(sql`
+          select count(*)::int as count from studio_mcp_calls
+          where workspace_id=${workspaceId}
+            and token_id=${tokenId}::uuid
+            and created_at >= ${since.toISOString()}::timestamptz
+        `);
+        return Number(rows[0]?.count ?? 0);
+      },
     },
 
     apiTokens: {
@@ -1287,14 +1332,27 @@ export function createStudioRepository(
         const tokenHash = digest(input.tokenHash, "tokenHash");
         const rows = await transaction.execute(sql`
           insert into studio_api_tokens(
-            workspace_id,label,token_hash,prefix,scopes,created_by
+            workspace_id,label,token_hash,prefix,scopes,created_by,
+            rate_limit_per_minute,monthly_call_quota
           ) values (
             ${workspaceId},${input.label},${tokenHash},${input.prefix},
-            ${textArray(input.scopes)},${input.createdBy}
+            ${textArray(input.scopes)},${input.createdBy},
+            ${input.rateLimitPerMinute ?? null},
+            ${input.monthlyCallQuota ?? null}
           )
           returning *
         `);
         return readApiToken(rows[0] as Record<string, unknown>);
+      },
+      async get(id) {
+        scope.assertOpen();
+        const rows = await transaction.execute(sql`
+          select * from studio_api_tokens
+          where workspace_id=${workspaceId} and id=${id}::uuid
+        `);
+        return rows[0]
+          ? readApiToken(rows[0] as Record<string, unknown>)
+          : null;
       },
       async findByHash(tokenHash) {
         scope.assertOpen();
@@ -1312,6 +1370,19 @@ export function createStudioRepository(
         const rows = await transaction.execute(sql`
           update studio_api_tokens set revoked_at=now(),updated_at=now()
           where workspace_id=${workspaceId} and id=${id}::uuid and revoked_at is null
+          returning id
+        `);
+        return rows.length > 0;
+      },
+      async updateLimits(id, input) {
+        scope.assertOpen();
+        const rows = await transaction.execute(sql`
+          update studio_api_tokens
+          set rate_limit_per_minute=${input.rateLimitPerMinute},
+            monthly_call_quota=${input.monthlyCallQuota},
+            updated_at=now()
+          where workspace_id=${workspaceId} and id=${id}::uuid
+            and revoked_at is null
           returning id
         `);
         return rows.length > 0;

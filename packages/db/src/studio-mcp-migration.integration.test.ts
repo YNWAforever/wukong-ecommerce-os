@@ -101,11 +101,12 @@ describe.skipIf(!enabled)("studio MCP token resolver migration 0055", () => {
     `;
     await admin!`
       insert into studio_api_tokens(
-        workspace_id, label, token_hash, prefix, scopes, created_by
+        workspace_id, label, token_hash, prefix, scopes, created_by,
+        rate_limit_per_minute, monthly_call_quota
       ) values
-        ('mcp-ws-a', 'A read token', ${HASH_A}, 'prefix-a', '{read}', 'actor-a'),
-        ('mcp-ws-b', 'B propose token', ${HASH_B}, 'prefix-b', '{read,propose}', 'actor-b'),
-        ('mcp-ws-a', 'A revoked token', ${HASH_REVOKED}, 'prefix-r', '{read}', 'actor-a')
+        ('mcp-ws-a', 'A read token', ${HASH_A}, 'prefix-a', '{read}', 'actor-a', 60, 1000),
+        ('mcp-ws-b', 'B propose token', ${HASH_B}, 'prefix-b', '{read,propose}', 'actor-b', null, null),
+        ('mcp-ws-a', 'A revoked token', ${HASH_REVOKED}, 'prefix-r', '{read}', 'actor-a', 10, 100)
     `;
     await admin!`
       update studio_api_tokens
@@ -224,6 +225,8 @@ describe.skipIf(!enabled)("studio MCP token resolver migration 0055", () => {
       createdBy: "actor-b",
       prefix: "prefix-b",
       revokedAt: null,
+      rateLimitPerMinute: null,
+      monthlyCallQuota: null,
     });
     expect(resolved!.scopes).toEqual(["read", "propose"]);
     expect(resolved!.tokenId).toEqual(expect.any(String));
@@ -234,6 +237,118 @@ describe.skipIf(!enabled)("studio MCP token resolver migration 0055", () => {
 
     expect(await database!.lookupStudioApiToken(HASH_ABSENT)).toBeNull();
     expect(await database!.lookupStudioApiToken("not-a-digest")).toBeNull();
+  });
+
+  it("adds nullable quota columns with the reviewed CHECK ranges", async () => {
+    const columns = await admin!`
+      select column_name, data_type, is_nullable
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'studio_api_tokens'
+        and column_name in ('rate_limit_per_minute', 'monthly_call_quota')
+      order by column_name
+    `;
+    expect(columns).toEqual([
+      {
+        column_name: "monthly_call_quota",
+        data_type: "integer",
+        is_nullable: "YES",
+      },
+      {
+        column_name: "rate_limit_per_minute",
+        data_type: "integer",
+        is_nullable: "YES",
+      },
+    ]);
+
+    for (const [column, bad] of [
+      ["rate_limit_per_minute", 0],
+      ["rate_limit_per_minute", 601],
+      ["monthly_call_quota", 0],
+      ["monthly_call_quota", 1_000_001],
+    ] as const) {
+      await expect(
+        admin!.unsafe(
+          `update studio_api_tokens set ${column} = ${bad} where token_hash = '${HASH_B}'`,
+        ),
+      ).rejects.toMatchObject({ code: "23514" });
+    }
+    // NULL is still allowed and means unlimited.
+    await admin!`
+      update studio_api_tokens
+      set rate_limit_per_minute = null, monthly_call_quota = null
+      where token_hash = ${HASH_B}
+    `;
+  });
+
+  it("attributes ledger rows to a token with a nullable column, FK and partial index", async () => {
+    const columns = await admin!`
+      select column_name, data_type, is_nullable
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'studio_mcp_calls'
+        and column_name = 'token_id'
+    `;
+    expect(columns).toEqual([
+      { column_name: "token_id", data_type: "uuid", is_nullable: "YES" },
+    ]);
+    const [constraint] = await admin!`
+      select pg_get_constraintdef(oid) as definition
+      from pg_constraint
+      where conname = 'studio_mcp_calls_token_id_fkey'
+    `;
+    expect(constraint?.definition).toContain("FOREIGN KEY (token_id)");
+    expect(constraint?.definition).toContain("ON DELETE SET NULL");
+    const [index] = await admin!`
+      select indexdef from pg_indexes
+      where schemaname = 'public' and indexname = 'studio_mcp_calls_token_recent_idx'
+    `;
+    expect(index?.indexdef).toContain("token_id");
+  });
+
+  it("resolves quota columns through the dedicated 0057 resolver for the runtime role", async () => {
+    const rows =
+      await app!`select * from public.studio_resolve_api_token_limits(${HASH_A})`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      workspace_id: "mcp-ws-a",
+      prefix: "prefix-a",
+      revoked_at: null,
+      rate_limit_per_minute: 60,
+      monthly_call_quota: 1000,
+    });
+    const revoked =
+      await app!`select * from public.studio_resolve_api_token_limits(${HASH_REVOKED})`;
+    expect(revoked[0]!.revoked_at).not.toBeNull();
+    expect(revoked[0]!.monthly_call_quota).toBe(100);
+
+    const [fn] = await admin!`
+      select p.prosecdef, pg_get_userbyid(p.proowner) as owner
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'studio_resolve_api_token_limits'
+    `;
+    expect(fn).toMatchObject({
+      prosecdef: true,
+      owner: "wukong_mcp_token_lookup",
+    });
+    const [privileges] = await admin!`
+      select
+        has_function_privilege('wukong_app', 'public.studio_resolve_api_token_limits(text)', 'EXECUTE') as app_can_execute,
+        (
+          select count(*)::int
+          from pg_proc p,
+            lateral aclexplode(coalesce(p.proacl, '{}'::aclitem[])) acl
+          where p.proname = 'studio_resolve_api_token_limits'
+            and acl.grantee = 0
+        ) as public_grants
+    `;
+    expect(privileges!.app_can_execute).toBe(true);
+    expect(privileges!.public_grants).toBe(0);
+
+    const resolved = await database!.lookupStudioApiToken(HASH_A);
+    expect(resolved).toMatchObject({
+      rateLimitPerMinute: 60,
+      monthlyCallQuota: 1000,
+    });
   });
 
   it("replays the migration set without changing the resolver contract", async () => {

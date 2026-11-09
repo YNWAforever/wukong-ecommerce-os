@@ -48,6 +48,12 @@ function fixture(
     deadlineMs?: number;
     now?: () => number;
     settingsEnabled?: boolean;
+    rateLimitPerMinute?: number | null;
+    monthlyCallQuota?: number | null;
+    /** Ledger rows for this token, one second before NOW. */
+    priorCalls?: number;
+    /** Ledger rows for a different token in the same workspace. */
+    priorForeignCalls?: number;
   } = {},
 ) {
   const token = fakeApiToken({
@@ -56,8 +62,39 @@ function fixture(
     scopes: input.scopes ?? ["read", "propose"],
     createdBy: "actor_ops",
     revokedAt: input.revokedAt ?? null,
+    rateLimitPerMinute: input.rateLimitPerMinute ?? null,
+    monthlyCallQuota: input.monthlyCallQuota ?? null,
   });
   const options = input.options ?? {};
+  const ledgerRow = (
+    tokenId: string,
+    index: number,
+  ): NonNullable<FakeStudioOptions["mcpCalls"]>[number] => ({
+    id: `00000000-0000-4000-8000-${String(900000 + index).padStart(12, "0")}`,
+    workspaceId: WORKSPACE,
+    runId: null,
+    connectionId: null,
+    tokenId,
+    toolName: "catalog.search",
+    requestDigest: "a".repeat(64),
+    responseDigest: null,
+    status: "ok",
+    errorCode: null,
+    latencyMs: 5,
+    caller: "external_mcp",
+    createdAt: new Date(NOW_MS - 1_000),
+  });
+  const priorLedger = [
+    ...Array.from({ length: input.priorCalls ?? 0 }, (_, index) =>
+      ledgerRow(token.id, index),
+    ),
+    ...Array.from({ length: input.priorForeignCalls ?? 0 }, (_, index) =>
+      ledgerRow(
+        `00000000-0000-4000-8000-${String(800000 + index).padStart(12, "0")}`,
+        index,
+      ),
+    ),
+  ];
   const fake = createFakeStudio({
     ...options,
     settings: {
@@ -67,6 +104,7 @@ function fixture(
     },
     memberships: [{ userId: "actor_ops", role: input.role ?? "admin" }],
     apiTokens: [token, ...(options.apiTokens ?? [])],
+    mcpCalls: [...priorLedger, ...(options.mcpCalls ?? [])],
   });
   const deps: McpServerDeps = {
     getDatabase: fakeGetDatabase(fake.repos, fake.state.workspaceCalls, [
@@ -499,5 +537,117 @@ describe("MCP methods", () => {
     const ledger = fake.state.mcpCalls[0]!;
     expect(ledger.status).toBe("error");
     expect(ledger.errorCode).toBe("deadline_exceeded");
+  });
+
+  it("attributes recorded ledger rows to the calling token", async () => {
+    const { server, fake, token } = fixture({ options: answeredTurnOptions() });
+    const called = await call(
+      server,
+      rpc(15, "tools/call", {
+        name: "catalog.search",
+        arguments: { query: "margaux" },
+      }),
+    );
+    expect(called.response.status).toBe(200);
+    expect(fake.state.mcpCalls[0]?.tokenId).toBe(token.id);
+  });
+
+  it("rejects a call over the rolling-minute limit without executing or recording", async () => {
+    const { server, fake } = fixture({
+      options: answeredTurnOptions(),
+      rateLimitPerMinute: 1,
+      priorCalls: 1,
+    });
+    const called = await call(
+      server,
+      rpc(16, "tools/call", {
+        name: "catalog.search",
+        arguments: { query: "margaux" },
+      }),
+    );
+    expect(called.response.status).toBe(200);
+    expect(errorCode(called.body)).toBe(-32029);
+    expect(fake.state.mcpCalls).toHaveLength(1);
+    expect(fake.state.audits).toHaveLength(0);
+    expect(fake.state.mcpCalls[0]?.tokenId).not.toBeNull();
+  });
+
+  it("rejects a call over the UTC-month quota without executing or recording", async () => {
+    const { server, fake } = fixture({
+      options: answeredTurnOptions(),
+      monthlyCallQuota: 2,
+      priorCalls: 2,
+    });
+    const called = await call(
+      server,
+      rpc(17, "tools/call", {
+        name: "catalog.search",
+        arguments: { query: "margaux" },
+      }),
+    );
+    expect(called.response.status).toBe(200);
+    expect(errorCode(called.body)).toBe(-32030);
+    expect(fake.state.mcpCalls).toHaveLength(2);
+    expect(fake.state.audits).toHaveLength(0);
+  });
+
+  it("executes under the configured quotas and counts are per token", async () => {
+    const { server, fake } = fixture({
+      options: answeredTurnOptions(),
+      rateLimitPerMinute: 1,
+      monthlyCallQuota: 10,
+      priorCalls: 0,
+      priorForeignCalls: 50,
+    });
+    const called = await call(
+      server,
+      rpc(18, "tools/call", {
+        name: "catalog.search",
+        arguments: { query: "margaux" },
+      }),
+    );
+    expect(called.response.status).toBe(200);
+    expect(called.body?.error).toBeUndefined();
+    // The tool result plus its ledger/audit: quota counts for another token
+    // never block this one.
+    expect(fake.state.mcpCalls).toHaveLength(51);
+    expect(fake.state.mcpCalls.at(-1)?.status).toBe("ok");
+    expect(fake.state.audits).toHaveLength(1);
+  });
+
+  it("keeps scope enforcement independent of quotas", async () => {
+    // A read-scope token cannot call a propose tool.
+    const readOnly = fixture({ scopes: ["read"] });
+    const proposeDenied = await call(
+      readOnly.server,
+      rpc(19, "tools/call", {
+        name: "listing.copy_proposal",
+        arguments: { listingId: "listing-1" },
+      }),
+    );
+    expect(errorCode(proposeDenied.body)).toBe(-32602);
+
+    // A propose-scope token cannot reach dispatch/write tools either.
+    const proposeOnly = fixture({ scopes: ["propose"] });
+    for (const name of ["listing.dispatch", "listing.approve"]) {
+      const denied = await call(
+        proposeOnly.server,
+        rpc(20, "tools/call", { name, arguments: {} }),
+      );
+      expect(
+        errorCode(denied.body),
+        `${name} must not be callable over MCP`,
+      ).toBe(-32602);
+    }
+    const toolsList = await call(proposeOnly.server, rpc(21, "tools/list"));
+    const tools =
+      (
+        (toolsList.body ?? {}) as {
+          result?: { tools?: { name: string }[] };
+        }
+      ).result?.tools ?? [];
+    expect(
+      tools.every((tool) => !tool.name.startsWith("listing.dispatch")),
+    ).toBe(true);
   });
 });
