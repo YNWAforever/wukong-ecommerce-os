@@ -191,6 +191,9 @@ export function StudioHomeOverview({
         <p className={styles["studio-section-lede"]}>
           {studioCopy(locale, "studio.overview.rule")}
         </p>
+        <Link className={styles["studio-overview-link"]} href="/studio/inbox">
+          {studioCopy(locale, "studio.inbox.homeLink")}
+        </Link>
       </div>
 
       {overview === null ? (

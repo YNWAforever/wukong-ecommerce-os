@@ -147,6 +147,78 @@ export type StudioOverviewResult = {
   };
 };
 
+/** One actionable count in the orchestration inbox (P3.1). */
+export type StudioInboxAttentionItem = {
+  key:
+    | "listings_with_gaps"
+    | "listings_without_active_version"
+    | "unassessable_active_version"
+    | "listings_awaiting_review";
+  /** `null` means the source read was unavailable, never a fabricated zero. */
+  count: number | null;
+  deepLink: "/quality" | "/dashboard";
+};
+
+/** A recent non-success pipeline job in the inbox (already bounded by the builder). */
+export type StudioInboxJobItem = {
+  jobId: string;
+  state: string;
+  errorCode: string | null;
+  createdAt: string;
+  deepLink: "/jobs";
+};
+
+/** A draft (needs save) or saved (awaits sign-off) Studio artifact. */
+export type StudioInboxOutputItem = {
+  outputId: string;
+  kind: string;
+  title: string;
+  status: "draft" | "saved";
+  deepLink: "/studio/outputs";
+};
+
+/** A recent conversation; labelled as recent, with no fabricated reply status. */
+export type StudioInboxConversationItem = {
+  threadId: string;
+  title: string;
+  updatedAt: string;
+  deepLink: string;
+};
+
+/**
+ * Read-only orchestration inbox aggregate (`/studio/inbox`, P3.1).
+ *
+ * Every section is built from existing workspace-scoped reads; a section whose
+ * source could not be read says `unavailable` instead of showing zeros, and the
+ * bounded lists carry `truncated` so a partial view never implies completeness.
+ */
+export type StudioInboxResult = {
+  asOf: string;
+  needsAttention: {
+    items: StudioInboxAttentionItem[];
+    unavailable: boolean;
+    deepLink: "/quality";
+  };
+  jobs: {
+    items: StudioInboxJobItem[];
+    truncated: boolean;
+    unavailable: boolean;
+    deepLink: "/jobs";
+  };
+  outputs: {
+    items: StudioInboxOutputItem[];
+    truncated: boolean;
+    unavailable: boolean;
+    deepLink: "/studio/outputs";
+  };
+  conversations: {
+    items: StudioInboxConversationItem[];
+    truncated: boolean;
+    unavailable: boolean;
+    deepLink: "/studio/threads";
+  };
+};
+
 /** Versioned Studio artifacts (plan Task 9). */
 export type StudioOutputSummary = {
   outputId: string;

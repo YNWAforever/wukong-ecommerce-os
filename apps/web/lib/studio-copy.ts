@@ -36,6 +36,7 @@ export const STUDIO_COPY = {
   ],
   "studio.rail.navigation": ["工作室導覽", "Studio navigation"],
   "studio.rail.overview": ["總覽", "Overview"],
+  "studio.rail.inbox": ["收件匣", "Inbox"],
   "studio.rail.conversations": ["對話", "Conversations"],
   "studio.rail.outputs": ["輸出", "Outputs"],
   "studio.rail.tools": ["工具", "Tools"],
@@ -162,6 +163,74 @@ export const STUDIO_COPY = {
     "未能讀取工作區概況；未顯示推算或虛構數字。",
     "The workspace overview could not be read; no estimated or invented numbers are shown.",
   ],
+
+  // -- orchestration inbox (P3.1) ------------------------------------------
+  "studio.inbox.title": ["編排收件匣", "Orchestration inbox"],
+  "studio.inbox.lede": [
+    "彙整需要處理的工作區事項；唯讀，不會寫入、發佈或呼叫 AI。",
+    "Workspace items that need attention, in one read-only view; it never writes, publishes or calls AI.",
+  ],
+  "studio.inbox.rule": [
+    "來自工作區記錄；不會呼叫 AI。",
+    "From workspace records; no AI call.",
+  ],
+  "studio.inbox.asOf": ["資料截至 {asOf}", "As of {asOf}"],
+  "studio.inbox.failure": [
+    "未能讀取收件匣；未顯示估算或虛構數字。",
+    "The inbox could not be read; no estimated or invented numbers are shown.",
+  ],
+  "studio.inbox.unavailable": [
+    "此區塊目前無法讀取；未以零代替。",
+    "This section could not be read; it is not replaced with zero.",
+  ],
+  "studio.inbox.truncated": [
+    "只顯示部分項目；請開啟完整清單。",
+    "Only some items are shown; open the full list.",
+  ],
+  "studio.inbox.attentionTitle": ["需要處理", "Needs attention"],
+  "studio.inbox.attention.hasGaps": [
+    "{count} 個商品有缺口",
+    "{count} listing(s) with gaps",
+  ],
+  "studio.inbox.attention.withoutActiveVersion": [
+    "{count} 個商品沒有生效版本",
+    "{count} listing(s) without an active version",
+  ],
+  "studio.inbox.attention.unassessableVersion": [
+    "{count} 個生效版本無法評估",
+    "{count} unassessable active version(s)",
+  ],
+  "studio.inbox.attention.awaitingReview": [
+    "{count} 個商品待審核",
+    "{count} listing(s) awaiting review",
+  ],
+  "studio.inbox.attention.allClear": [
+    "目前沒有需要處理的項目。",
+    "Nothing needs attention right now.",
+  ],
+  "studio.inbox.attention.openQuality": ["開啟品質頁", "Open quality"],
+  "studio.inbox.jobsTitle": ["近期管線工作", "Recent pipeline jobs"],
+  "studio.inbox.jobs.empty": [
+    "沒有失敗或未完成的工作。",
+    "No failed or unfinished jobs.",
+  ],
+  "studio.inbox.jobs.state": ["狀態：{state}", "State: {state}"],
+  "studio.inbox.jobs.open": ["開啟工作頁", "Open jobs"],
+  "studio.inbox.outputsTitle": ["待處理成品", "Artifacts needing action"],
+  "studio.inbox.outputs.empty": [
+    "沒有待儲存或待簽核的成品。",
+    "No drafts awaiting save or artifacts awaiting sign-off.",
+  ],
+  "studio.inbox.outputs.draft": ["草稿（需儲存）", "Draft (needs save)"],
+  "studio.inbox.outputs.saved": [
+    "已儲存（待簽核）",
+    "Saved (awaiting sign-off)",
+  ],
+  "studio.inbox.outputs.open": ["開啟輸出頁", "Open outputs"],
+  "studio.inbox.conversationsTitle": ["近期對話", "Recent conversations"],
+  "studio.inbox.conversations.empty": ["還沒有對話。", "No conversations yet."],
+  "studio.inbox.conversations.open": ["開啟對話", "Open conversation"],
+  "studio.inbox.homeLink": ["開啟收件匣", "Open the inbox"],
   "studio.overview.openBlockingFlags": [
     "未解決的阻塞標記",
     "Open blocking flags",

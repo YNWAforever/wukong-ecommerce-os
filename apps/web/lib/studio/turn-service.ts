@@ -38,6 +38,7 @@ import type {
   ListThreadsResult,
   OutputActionResult,
   SendMessageBody,
+  StudioInboxResult,
   StudioMessageResponse,
   StudioOverviewResult,
   StudioOutputSummary,
@@ -59,6 +60,7 @@ import {
   composeNeedsInputReply,
 } from "./compose-deterministic";
 import { buildEvidencePack } from "./evidence";
+import { buildStudioInbox } from "./inbox";
 import {
   budgetAlertEvent,
   budgetAlertLevel,
@@ -1739,6 +1741,41 @@ export function createStudioService(deps: StudioServiceDeps) {
           deepLink: "/jobs",
         },
       };
+    },
+
+    /**
+     * Read-only orchestration inbox (P3.1): one `forWorkspace` transaction reads
+     * the same canonical records the overview/list pages use, then
+     * `buildStudioInbox` classifies and bounds them. Viewer+ like overview; no
+     * writes, no model calls and no new repository methods.
+     */
+    async inbox(): Promise<StudioInboxResult> {
+      const { session } = await requireStudioSession(deps, "viewer");
+      const data = await database().forWorkspace(
+        session.workspaceId,
+        async (repos) => {
+          const [counts, quality, jobs, outputs, threads] = await Promise.all([
+            repos.listings.countByStatus(),
+            repos.qualityProjection.read(),
+            repos.pipelineRuns.listForWorkspace(20),
+            repos.studio.outputs.list({ limit: 50 }),
+            repos.studio.threads.list({ limit: 20 }),
+          ]);
+          return { counts, quality, jobs, outputs, threads: threads.items };
+        },
+      );
+      return buildStudioInbox({
+        now: clock(),
+        listingCounts: data.counts,
+        quality: {
+          hasGapsCount: data.quality.hasGapsCount,
+          noActiveVersion: data.quality.noActiveVersion,
+          unassessableActiveVersion: data.quality.unassessableActiveVersion,
+        },
+        jobs: data.jobs,
+        outputs: data.outputs,
+        threads: data.threads,
+      });
     },
 
     async listOutputs(
