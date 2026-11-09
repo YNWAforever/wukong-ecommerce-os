@@ -16,7 +16,7 @@ const EXPECTED_STATUS = {
   "listing.draft_from_sources": "pilot",
   "merchant.audit": "pilot",
   "product_shot.prepare": "planned",
-  "category.map_proposal": "planned",
+  "category.map_proposal": "pilot",
   "supplier.intel_proposal": "planned",
   "customer.reply_draft": "blocked",
   "logistics.followup": "blocked",
@@ -25,6 +25,7 @@ const EXPECTED_STATUS = {
 const EXECUTABLE_KEYS = [
   "catalog.find",
   "catalog.gap_review",
+  "category.map_proposal",
   "listing.copy_proposal",
   "listing.draft_from_sources",
   "merchant.audit",
@@ -145,6 +146,8 @@ describe("SKILL_DEFINITIONS", () => {
   it("resolves skills by key and returns undefined for unknown keys", () => {
     expect(getSkill("catalog.find")?.version).toBe("1.0.0");
     expect(getSkill("listing.draft_from_sources")?.version).toBe("1.1.0");
+    expect(getSkill("category.map_proposal")?.version).toBe("1.1.0");
+    expect(getSkill("category.map_proposal")?.status).toBe("pilot");
     expect(getSkill("catalog.missing")).toBeUndefined();
     expect(getSkill("")).toBeUndefined();
   });

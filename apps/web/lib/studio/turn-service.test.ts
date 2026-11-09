@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  FakeStudioModel,
   fakeStudioUsage,
   type StudioCopyProposalField,
   type StudioModel,
@@ -1171,5 +1172,217 @@ describe("studio turn metrics and budget alerts", () => {
       utilizationPercent: 82,
     });
     expect(JSON.stringify(alerts[0])).not.toContain("ws_test");
+  });
+});
+
+describe("category.map_proposal turns (C1)", () => {
+  const CATEGORY_LISTING_ID = "11111111-1111-4111-8111-111111111111";
+
+  function categoryOptions(): FakeStudioOptions {
+    return {
+      catalog: catalogOptions(),
+      snapshots: {
+        [CATEGORY_LISTING_ID]: reviewSnapshot({
+          listingId: CATEGORY_LISTING_ID,
+          content: reviewableContent(),
+          flags: [],
+        }),
+      },
+    };
+  }
+
+  it("asks for a listing id without touching a model", async () => {
+    const modelFactory = vi.fn(() => {
+      throw new Error("needs_input must not build a model");
+    });
+    const { service, fake } = harness({
+      options: categoryOptions(),
+      createModel: modelFactory as never,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-category-input",
+        text: "map this listing to a category",
+        skillKey: "category.map_proposal",
+      }),
+    );
+    expect(result.reply.status).toBe("needs_input");
+    expect(result.reply.followUps[0]?.key).toBe(
+      "studio.needs_input.category_listing",
+    );
+    expect(modelFactory).not.toHaveBeenCalled();
+    expect(fake.state.outputs).toEqual([]);
+  });
+
+  it("persists a deterministic finding artifact even without a model", async () => {
+    const modelFactory = vi.fn(() => {
+      throw new Error("no AI settings means no model");
+    });
+    const { service, fake } = harness({
+      options: categoryOptions(),
+      createModel: modelFactory as never,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-category-deterministic",
+        text: `map listing ${CATEGORY_LISTING_ID} to a category`,
+        skillKey: "category.map_proposal",
+      }),
+    );
+    expect(result.reply.skillKey).toBe("category.map_proposal");
+    expect(result.reply.skillVersion).toBe("1.1.0");
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.outputs).toHaveLength(1);
+    expect(modelFactory).not.toHaveBeenCalled();
+    expect(fake.state.outputs[0]).toMatchObject({
+      kind: "finding",
+      status: "draft",
+      currentVersion: 1,
+      threadId,
+      runId: result.runId,
+    });
+    const payload = fake.state.outputVersions[0]?.payload as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toMatchObject({
+      schemaVersion: "wukong-category-map/v1",
+      listingId: CATEGORY_LISTING_ID,
+      currentCategory: null,
+      suggestions: [],
+    });
+    const limitationKeys = (payload.limitations as Array<{ key: string }>).map(
+      (line) => line.key,
+    );
+    expect(limitationKeys).toContain("studio.limit.category_not_applied");
+    expect(limitationKeys).toContain("studio.limit.category_current_unknown");
+    expect(limitationKeys).toContain("studio.limit.category_model_unavailable");
+    expect(fake.state.audits.map((event) => event.action)).toContain(
+      "studio.output.proposed",
+    );
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+  });
+
+  it("adds grounded model suggestions when a reviewed model is configured", async () => {
+    const model = new FakeStudioModel({
+      categoryProposals: [
+        {
+          listingId: CATEGORY_LISTING_ID,
+          suggestions: [
+            {
+              path: "Beverages > Wine > Red",
+              confidence: 0.75,
+              rationale: "Similar catalog rows are red wines.",
+              evidenceRefs: ["catalog:listing-1"],
+            },
+          ],
+          limitations: [],
+        },
+      ],
+    });
+    const { service, fake } = harness({
+      options: categoryOptions(),
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () => model,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-category-model",
+        text: `map listing ${CATEGORY_LISTING_ID} to a category`,
+        skillKey: "category.map_proposal",
+      }),
+    );
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.outputs).toHaveLength(1);
+    const payload = fake.state.outputVersions[0]?.payload as Record<
+      string,
+      unknown
+    >;
+    expect(payload.suggestions).toEqual([
+      {
+        path: "Beverages > Wine > Red",
+        confidence: 0.75,
+        rationale: "Similar catalog rows are red wines.",
+        evidenceRefs: ["catalog:listing-1"],
+      },
+    ]);
+    expect(fake.state.outputs[0]).toMatchObject({ kind: "finding" });
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+  });
+
+  it("drops ungrounded model suggestions and counts them in the artifact", async () => {
+    const ungroundedModel: StudioModel = {
+      async plan() {
+        throw new Error("planner is not used");
+      },
+      async compose() {
+        throw new Error("composer is not used");
+      },
+      async propose() {
+        throw new Error("copy proposer is not used");
+      },
+      async proposeCategory() {
+        return {
+          proposal: {
+            listingId: CATEGORY_LISTING_ID,
+            suggestions: [
+              {
+                path: "Beverages > Wine > Red",
+                confidence: 0.8,
+                rationale: null,
+                evidenceRefs: ["catalog:listing-1"],
+              },
+              {
+                path: "Invented > Path",
+                confidence: 0.9,
+                rationale: null,
+                evidenceRefs: ["catalog:missing"],
+              },
+            ],
+            limitations: [],
+          },
+          usage: fakeStudioUsage(),
+        };
+      },
+    };
+    const { service, fake } = harness({
+      options: categoryOptions(),
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () => ungroundedModel,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-category-drop",
+        text: `map listing ${CATEGORY_LISTING_ID} to a category`,
+        skillKey: "category.map_proposal",
+      }),
+    );
+    expect(result.reply.status).toBe("answered");
+    const payload = fake.state.outputVersions[0]?.payload as Record<
+      string,
+      unknown
+    >;
+    expect(payload.suggestions).toEqual([
+      expect.objectContaining({ path: "Beverages > Wine > Red" }),
+    ]);
+    const limitationKeys = (payload.limitations as Array<{ key: string }>).map(
+      (line) => line.key,
+    );
+    expect(limitationKeys).toContain(
+      "studio.limit.category_suggestions_dropped",
+    );
+    expect(result.reply.limitations.map((line) => line.key)).toContain(
+      "studio.limit.category_suggestions_dropped",
+    );
   });
 });

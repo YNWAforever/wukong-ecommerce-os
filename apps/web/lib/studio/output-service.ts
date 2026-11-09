@@ -198,3 +198,26 @@ export async function createReportOutput(
     };
   });
 }
+
+/**
+ * Persist a generic finding artifact (C1).
+ *
+ * A finding is a read-only, versioned observation (the first is the category
+ * mapping proposal). It uses exactly the same digest/readback/audit invariants
+ * as the report creator and never writes canonical data.
+ */
+export async function createFindingOutput(
+  deps: StudioOutputDeps,
+  input: {
+    workspaceId: string;
+    actorId: string;
+    threadId?: string | null;
+    runId?: string | null;
+    title: string;
+    payload: Record<string, unknown>;
+    asOf: Date;
+    scope?: Record<string, unknown>;
+  },
+): Promise<CreatedOutput> {
+  return createReportOutput(deps, { ...input, kind: "finding" });
+}

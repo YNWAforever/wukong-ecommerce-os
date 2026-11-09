@@ -382,6 +382,65 @@ describe("StudioOutputCard", () => {
     expect(container.textContent).toContain("Saved");
   });
 
+  it("renders a finding artifact with the read-only category card", async () => {
+    const findingPayload = {
+      schemaVersion: "wukong-category-map/v1",
+      listingId: "11111111-1111-4111-8111-111111111111",
+      listingTitle: "Synthetic wine",
+      currentCategory: null,
+      suggestions: [
+        {
+          path: "Beverages > Wine > Red",
+          confidence: 0.8,
+          rationale: null,
+          evidenceRefs: ["catalog:listing-1"],
+        },
+      ],
+      limitations: [],
+      asOf: "2026-11-08T00:00:00.000Z",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async () =>
+        Response.json({
+          output: {
+            outputId: "output-finding",
+            kind: "finding",
+            title: "Category map proposal",
+            status: "draft",
+            currentVersion: 1,
+            threadId: null,
+            createdAt: "2026-11-08T00:00:00.000Z",
+            updatedAt: "2026-11-08T00:00:00.000Z",
+          },
+          versions: [
+            {
+              revision: 1,
+              payload: findingPayload,
+              contentDigest: "b".repeat(64),
+              asOf: "2026-11-08T00:00:00.000Z",
+              scope: { listingId: findingPayload.listingId },
+              createdBy: "studio",
+              createdAt: "2026-11-08T00:00:00.000Z",
+            },
+          ],
+        }),
+      ),
+    );
+
+    const container = await mount({ outputId: "output-finding" });
+    expect(container.textContent).toContain("Category mapping proposal");
+    expect(container.textContent).toContain("Beverages > Wine > Red");
+    expect(container.textContent).toContain(
+      "Not applied — a person can only change the category in the existing catalog flow.",
+    );
+    expect(
+      container.querySelector(
+        'a[href="/listings/11111111-1111-4111-8111-111111111111"]',
+      ),
+    ).not.toBeNull();
+  });
+
   it("renders zh-Hant copy for the zh-Hant locale", async () => {
     vi.stubGlobal(
       "fetch",
