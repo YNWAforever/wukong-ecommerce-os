@@ -359,3 +359,13 @@ line below the rates:
 - Recommended alerting: forward `studio.turn.metrics` and `studio.budget.alert` to the log drain and
   alert on `errorCode` rates and `level` events. The readiness-gate log scan remains a human sign-off
   item; these lines are designed to pass it.
+
+## Skill: `category.map_proposal` (pilot v1.1.0)
+
+Reads the target listing (`catalog.get`) plus similar catalog rows (`catalog.search`). The current
+category is shown as **unknown** because canonical listing content carries no category field; the
+turn never invents one. Without a configured model the turn still persists a versioned finding
+artifact with explicit empty suggestions and limitations; with a model enabled, only
+evidence-ref-grounded, de-duplicated suggestions with confidence 0–1 are kept (dropped suggestions
+are counted in the reply limitation). Nothing is ever applied — a person must change the category in
+the existing catalog flow. Findings render as read-only cards linked to the listing review screen.
