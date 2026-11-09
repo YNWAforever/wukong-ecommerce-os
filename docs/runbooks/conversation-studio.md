@@ -469,3 +469,18 @@ operator decision.
 ## Skill authoring
 
 How to add, version, review and promote a Studio skill (registry vs runtime, evidence contract, prompt pins, artifact/readback, tests, workspace allowlist and the promotion gate): see [docs/studio-skill-authoring.md](../studio-skill-authoring.md).
+
+## Automated log scan
+
+The readiness gate's log review has an automated first pass:
+
+```powershell
+vercel logs --environment production --limit 1000 --json > production-logs.jsonl
+node scripts/scan-runtime-logs.mjs production-logs.jsonl
+```
+
+The scanner looks for OpenAI-style keys, AWS access key ids/signatures, bearer tokens, Postgres URLs,
+signed query parameters, SHOPLINE token prefixes, unmasked password/API-key JSON fields and prompt
+injection markers. It reports pattern names with line/column positions only — never the matched
+value — and exits non-zero when anything is found. This is a best-effort sample; a person must still
+review deployment-specific logs for the release gate.
