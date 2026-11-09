@@ -210,3 +210,14 @@ Remaining work is either user-gated (A2 production execution, A3 live model, C3 
 P3.1 (read-only orchestration inbox, #161 + acceptance coverage #162), B5.3 (thread/output offset pagination, #163), the query-level thread-visibility privacy fix (#164) and inbox partial-read resilience (#165) are merged and deployed with flags off. The Studio lists now paginate with filter-preserving links, visibility is enforced in SQL before pagination so private threads never leak or shorten a page, and the inbox degrades per section instead of failing whole-page. The full web suite is at **296 files / 2957 tests**, repository integration at 12/12, and every PR merged green (with occasional unrelated pre-existing e2e flakes rerun).
 
 Remaining work is user-gated (A2/A3/C3) or the next planned phase: P3.2 scheduled/triggered runs and B5.2 streaming/long-turn progress.
+
+### P3.2 design proposal
+
+The next phase (scheduled/triggered Studio runs) now has a reviewed design
+proposal: [`2026-11-10-studio-scheduled-runs-design.md`](../specs/2026-11-10-studio-scheduled-runs-design.md).
+It compares cron-to-web vs queue/worker execution, proposes a durable
+`studio_schedules` + `studio_run_requests` model (migration 0058) with the same
+budget/audit/RLS guarantees, and lists the operator decisions required before
+implementation (skills, cadences, notifications, cron host, activation window).
+No code or schema change accompanies it; implementation starts only after those
+decisions.
