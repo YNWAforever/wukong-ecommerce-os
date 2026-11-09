@@ -2848,3 +2848,20 @@ article.studio-output .studio-output-body {
     grid-template-columns: 1fr;
   }
 }
+
+/* -- B5.3: offset pagination controls ------------------------------------- */
+
+.studio-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 12px;
+}
+
+.studio-pagination-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

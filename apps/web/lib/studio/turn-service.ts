@@ -52,6 +52,7 @@ import type {
 } from "./contracts";
 import { STUDIO_DEFAULT_THREAD_TITLE } from "./contracts";
 import {
+  STUDIO_PAGE_SIZE,
   studioOutputListQuerySchema,
   studioThreadListQuerySchema,
 } from "./contracts";
@@ -1442,11 +1443,13 @@ export function createStudioService(deps: StudioServiceDeps) {
       if (!parsed.success)
         throw new ApiError(400, "invalid_query", "Invalid query parameters.");
       const search = parsed.data.q?.trim();
+      const offset = parsed.data.offset;
       const listed = await database().forWorkspace(
         session.workspaceId,
         (repos) =>
           repos.studio.threads.list({
-            limit: 50,
+            limit: STUDIO_PAGE_SIZE,
+            offset,
             ...(search ? { q: search } : {}),
           }),
       );
@@ -1455,6 +1458,7 @@ export function createStudioService(deps: StudioServiceDeps) {
           .filter((thread) => isThreadVisible(thread, session.actorId, role))
           .map(threadView),
         truncated: listed.truncated,
+        offset,
       };
     },
 
@@ -1758,7 +1762,9 @@ export function createStudioService(deps: StudioServiceDeps) {
             repos.listings.countByStatus(),
             repos.qualityProjection.read(),
             repos.pipelineRuns.listForWorkspace(20),
-            repos.studio.outputs.list({ limit: 50 }),
+            repos.studio.outputs
+              .list({ limit: 50 })
+              .then((listed) => listed.items),
             repos.studio.threads.list({ limit: 20 }),
           ]);
           return { counts, quality, jobs, outputs, threads: threads.items };
@@ -1786,17 +1792,19 @@ export function createStudioService(deps: StudioServiceDeps) {
       if (!parsed.success)
         throw new ApiError(400, "invalid_query", "Invalid query parameters.");
       const search = parsed.data.q?.trim();
+      const offset = parsed.data.offset;
       const listed = await database().forWorkspace(
         session.workspaceId,
         (repos) =>
           repos.studio.outputs.list({
-            limit: 50,
+            limit: STUDIO_PAGE_SIZE,
+            offset,
             ...(search ? { q: search } : {}),
             ...(parsed.data.kind ? { kind: parsed.data.kind } : {}),
             ...(parsed.data.status ? { status: parsed.data.status } : {}),
           }),
       );
-      const items: StudioOutputSummary[] = listed.map((output) => ({
+      const items: StudioOutputSummary[] = listed.items.map((output) => ({
         outputId: output.id,
         kind: output.kind,
         title: output.title,
@@ -1806,7 +1814,7 @@ export function createStudioService(deps: StudioServiceDeps) {
         createdAt: output.createdAt.toISOString(),
         updatedAt: output.updatedAt.toISOString(),
       }));
-      return { items, truncated: items.length === 50 };
+      return { items, truncated: listed.truncated, offset };
     },
 
     async getOutput(outputId: string): Promise<GetOutputResult> {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cookies } from "next/headers";
 
 import {
@@ -12,8 +13,11 @@ import {
 import {
   STUDIO_OUTPUT_KINDS,
   STUDIO_OUTPUT_STATUSES,
+  STUDIO_PAGE_SIZE,
   studioOutputListQuerySchema,
+  type StudioOutputListQuery,
 } from "../../../../lib/studio/contracts";
+import { renderStudioLine } from "../../../../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../../../../lib/studio-copy";
 import styles from "../../../../components/studio.module.css";
 import { studioService } from "../studio-service";
@@ -56,17 +60,19 @@ export default async function StudioOutputsPage({
     q?: string | string[];
     kind?: string | string[];
     status?: string | string[];
+    offset?: string | string[];
   }>;
 }) {
   const params = await searchParams;
   const candidate: Record<string, string> = {};
-  for (const key of ["q", "kind", "status"] as const) {
+  for (const key of ["q", "kind", "status", "offset"] as const) {
     const value = firstParam(params[key]);
     if (value !== null && value.length > 0) candidate[key] = value;
   }
   const parsed = studioOutputListQuerySchema.safeParse(candidate);
-  const filters = parsed.success ? parsed.data : {};
+  const filters: StudioOutputListQuery = parsed.success ? parsed.data : {};
   const search = filters.q?.trim() ?? "";
+  const offset = filters.offset ?? 0;
   const filtered =
     !parsed.success ||
     search.length > 0 ||
@@ -103,6 +109,26 @@ export default async function StudioOutputsPage({
       </div>
     );
   }
+
+  const items = listed.items;
+  const page = Math.floor(offset / STUDIO_PAGE_SIZE) + 1;
+
+  const pageHref = (nextOffset: number): string => {
+    const query = new URLSearchParams();
+    if (search.length > 0) query.set("q", search);
+    if (filters.kind !== undefined) query.set("kind", filters.kind);
+    if (filters.status !== undefined) query.set("status", filters.status);
+    if (nextOffset > 0) query.set("offset", String(nextOffset));
+    const serialized = query.toString();
+    return serialized.length > 0
+      ? `/studio/outputs?${serialized}`
+      : "/studio/outputs";
+  };
+  const newerHref =
+    offset > 0 ? pageHref(Math.max(0, offset - STUDIO_PAGE_SIZE)) : null;
+  const earlierHref = listed.truncated
+    ? pageHref(offset + STUDIO_PAGE_SIZE)
+    : null;
 
   return (
     <div className={styles["studio-section"]}>
@@ -201,23 +227,44 @@ export default async function StudioOutputsPage({
       {filtered && parsed.success ? (
         <p className={styles["studio-output-filter-summary"]} role="status">
           {studioCopy(locale, "studio.outputs.filterSummary")
-            .replace("{count}", String(listed.items.length))
+            .replace("{count}", String(items.length))
             .replace("{query}", search)}
         </p>
       ) : null}
 
-      {listed.truncated ? (
-        <p className={styles["studio-notice"]}>
-          {studioCopy(locale, "studio.outputs.truncated")}
-        </p>
+      <p className={styles["studio-pagination-summary"]} role="status">
+        {renderStudioLine(locale, {
+          key: "studio.pagination.summary",
+          values: { page, count: items.length },
+        })}
+      </p>
+
+      {newerHref !== null || earlierHref !== null ? (
+        <nav
+          className={styles["studio-pagination"]}
+          aria-label={studioCopy(locale, "studio.pagination.label")}
+        >
+          {newerHref !== null ? (
+            <Link className={styles["studio-evidence-link"]} href={newerHref}>
+              {studioCopy(locale, "studio.outputs.newer")}
+            </Link>
+          ) : null}
+          {earlierHref !== null ? (
+            <Link className={styles["studio-evidence-link"]} href={earlierHref}>
+              {studioCopy(locale, "studio.outputs.earlier")}
+            </Link>
+          ) : null}
+        </nav>
       ) : null}
 
-      {listed.items.length === 0 ? (
+      {items.length === 0 ? (
         <>
           <p className={styles["studio-empty"]}>
-            {filtered
-              ? studioCopy(locale, "studio.outputs.filteredEmpty")
-              : studioCopy(locale, "studio.outputs.empty")}
+            {offset > 0
+              ? studioCopy(locale, "studio.pagination.emptyPage")
+              : filtered
+                ? studioCopy(locale, "studio.outputs.filteredEmpty")
+                : studioCopy(locale, "studio.outputs.empty")}
           </p>
           <p className={styles["studio-notice"]}>
             {studioCopy(locale, "studio.outputs.emptyHint")}
@@ -225,7 +272,7 @@ export default async function StudioOutputsPage({
         </>
       ) : (
         <ul className={styles["studio-output-index"]}>
-          {listed.items.map((item) => (
+          {items.map((item) => (
             <li key={item.outputId}>
               <StudioOutputCard
                 locale={locale}

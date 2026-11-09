@@ -360,6 +360,64 @@ describe("studio thread and message reads", () => {
     await expect(
       service.listOutputs({ status: "nope" as never }),
     ).rejects.toMatchObject({ status: 400, code: "invalid_query" });
+    await expect(
+      service.listThreads({ offset: 100_001 }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_query" });
+    await expect(service.listThreads({ offset: -1 })).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_query",
+    });
+    await expect(
+      service.listOutputs({ offset: 100_001 }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_query" });
+    await expect(service.listOutputs({ offset: 1.5 })).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_query",
+    });
+  });
+
+  it("passes offset through both list services and returns it", async () => {
+    const threads = [1, 2, 3].map((index) =>
+      fakeStudioThread({
+        workspaceId: WORKSPACE,
+        createdBy: "actor_ops",
+        title: `Thread ${index}`,
+      }),
+    );
+    const outputs = [1, 2, 3].map((index) => ({
+      id: `output-${index}`,
+      workspaceId: WORKSPACE,
+      threadId: null,
+      runId: null,
+      kind: "copy_proposal" as const,
+      title: `Output ${index}`,
+      status: "draft" as const,
+      currentVersion: 0,
+      createdBy: "actor_ops",
+      createdAt: new Date(NOW.getTime() + index * 1_000),
+      updatedAt: new Date(NOW.getTime() + index * 1_000),
+    }));
+    const { service } = harness({
+      role: "viewer",
+      options: { threads, outputs },
+    });
+
+    const threadPage = await service.listThreads({ offset: 1 });
+    expect(threadPage.offset).toBe(1);
+    expect(threadPage.items.map((item) => item.title)).toEqual([
+      "Thread 2",
+      "Thread 3",
+    ]);
+    expect(threadPage.truncated).toBe(false);
+
+    const outputPage = await service.listOutputs({ offset: 2 });
+    expect(outputPage.offset).toBe(2);
+    // The fake sorts newest-first; offset 2 is the oldest row.
+    expect(outputPage.items.map((item) => item.title)).toEqual(["Output 1"]);
+    expect(outputPage.truncated).toBe(false);
+
+    await expect(service.listThreads()).resolves.toMatchObject({ offset: 0 });
+    await expect(service.listOutputs()).resolves.toMatchObject({ offset: 0 });
   });
 
   it("returns persisted messages with decoded JSON content", async () => {

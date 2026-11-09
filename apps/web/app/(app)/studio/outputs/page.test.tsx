@@ -41,7 +41,11 @@ vi.mock("../studio-service", () => ({
     listOutputs: async (filters?: Record<string, unknown>) => {
       if (state.throws) throw new Error("connection string must not leak");
       state.filters = filters ?? {};
-      return { items: state.items, truncated: state.truncated };
+      return {
+        items: state.items,
+        truncated: state.truncated,
+        offset: typeof filters?.offset === "number" ? filters.offset : 0,
+      };
     },
   }),
 }));
@@ -127,12 +131,15 @@ describe("StudioOutputsPage", () => {
     expect(html).toContain("Artifacts appear here after a skill saves one.");
   });
 
-  it("states when the list is truncated instead of implying a complete list", async () => {
+  it("renders a next-page link when more artifacts exist", async () => {
     state.items = [listItem()];
     state.truncated = true;
 
     const html = await render();
-    expect(html).toContain("Only the most recent artifacts are shown.");
+    expect(html).toContain("Page 1 · 1 item(s)");
+    expect(html).toContain('href="/studio/outputs?offset=50"');
+    expect(html).toContain("Earlier artifacts");
+    expect(html).not.toContain("Newer artifacts");
   });
 
   it("fails closed to an honest error line and logs no content when the read throws", async () => {
@@ -163,6 +170,7 @@ describe("StudioOutputsPage", () => {
       q: "proposal",
       kind: "copy_proposal",
       status: "saved",
+      offset: 0,
     });
     expect(html).toContain(
       "Filtered result: 1 artifact(s), filtered on the server (search: proposal).",
@@ -188,15 +196,65 @@ describe("StudioOutputsPage", () => {
     const html = await render({ kind: "bogus", status: "nope" });
     expect(state.filters).toEqual({});
     expect(html).toContain(
-      "The filter parameters are invalid; no filter was applied.",
+      "The filter or page parameters are invalid; no filter was applied.",
     );
     expect(html).toContain("No artifacts match these filters.");
+  });
+
+  it("preserves every filter in both pagination links mid-list", async () => {
+    state.items = [listItem()];
+    state.truncated = true;
+    const html = await render({
+      q: "proposal",
+      kind: "copy_proposal",
+      status: "saved",
+      offset: "50",
+    });
+    expect(state.filters).toEqual({
+      q: "proposal",
+      kind: "copy_proposal",
+      status: "saved",
+      offset: 50,
+    });
+    expect(html).toContain("Page 2 · 1 item(s)");
+    expect(html).toContain(
+      'href="/studio/outputs?q=proposal&amp;kind=copy_proposal&amp;status=saved"',
+    );
+    expect(html).toContain(
+      'href="/studio/outputs?q=proposal&amp;kind=copy_proposal&amp;status=saved&amp;offset=100"',
+    );
+    expect(html).toContain("Newer artifacts");
+    expect(html).toContain("Earlier artifacts");
+  });
+
+  it("renders only the newer link on the last page", async () => {
+    state.items = [listItem()];
+    const html = await render({ offset: "100" });
+    expect(html).toContain("Page 3 · 1 item(s)");
+    expect(html).toContain('href="/studio/outputs?offset=50"');
+    expect(html).not.toContain("Earlier artifacts");
+  });
+
+  it("shows an honest empty page beyond the end", async () => {
+    const html = await render({ offset: "50" });
+    expect(html).toContain("No items on this page; go to a newer page.");
+    expect(html).toContain('href="/studio/outputs"');
+    expect(html).toContain("Newer artifacts");
+  });
+
+  it("fails closed to the first page for an out-of-range offset", async () => {
+    const html = await render({ offset: "-1" });
+    expect(state.filters).toEqual({});
+    expect(html).toContain(
+      "The filter or page parameters are invalid; no filter was applied.",
+    );
+    expect(html).toContain("Page 1 · 0 item(s)");
   });
 
   it("omits the clear/filtered summary for an unfiltered list", async () => {
     state.items = [listItem()];
     const html = await render();
-    expect(state.filters).toEqual({});
+    expect(state.filters).toEqual({ offset: 0 });
     expect(html).not.toContain("Clear filters");
     expect(html).not.toContain("Filtered result:");
   });

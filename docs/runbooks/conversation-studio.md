@@ -281,6 +281,10 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
   visibility; a private thread shows "only you and admins can open this link" beside the action.
 - The forms, selects and share control are labelled, keyboard-usable and wrap at 390 px using the
   existing Studio CSS patterns (new styles are limited to `studio.module.css`).
+- **Lists are offset-paginated pages.** `/studio/threads` and `/studio/outputs` read one
+  `STUDIO_PAGE_SIZE` page (50 rows) at `offset` and render Newer/Earlier links that preserve the
+  active `q`/`kind`/`status` filters; `GET /api/studio/threads|outputs` accepts `offset` 0..100000
+  (an out-of-range or non-integer value is `400 invalid_query`, never silently clamped).
 
 ## Orchestration inbox (P3.1)
 
