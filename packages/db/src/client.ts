@@ -257,6 +257,10 @@ export type Database = {
     scopes: string[];
     revokedAt: Date | null;
     prefix: string;
+    /** Rolling-minute limit; NULL means unlimited (migration 0057). */
+    rateLimitPerMinute: number | null;
+    /** UTC-month quota; NULL means unlimited (migration 0057). */
+    monthlyCallQuota: number | null;
   } | null>;
   migrate(): Promise<void>;
   ping(): Promise<void>;
@@ -572,9 +576,11 @@ export function createDatabase(
     async lookupStudioApiToken(tokenHash) {
       if (!/^[a-f0-9]{64}$/.test(tokenHash)) return null;
       // The function validates the digest format again; the early return keeps
-      // an obviously malformed caller value out of SQL altogether.
+      // an obviously malformed caller value out of SQL altogether. Migration
+      // 0057 adds the quota columns through a new resolver function so the
+      // original 0055 signature stays replay-safe.
       const rows = await client.unsafe(
-        "select * from public.studio_resolve_api_token($1)",
+        "select * from public.studio_resolve_api_token_limits($1)",
         [tokenHash],
       );
       const [row] = rows;
@@ -587,6 +593,14 @@ export function createDatabase(
         revokedAt:
           row.revoked_at == null ? null : new Date(String(row.revoked_at)),
         prefix: String(row.prefix),
+        rateLimitPerMinute:
+          row.rate_limit_per_minute == null
+            ? null
+            : Number(row.rate_limit_per_minute),
+        monthlyCallQuota:
+          row.monthly_call_quota == null
+            ? null
+            : Number(row.monthly_call_quota),
       };
     },
     async migrate() {

@@ -195,3 +195,183 @@ describe("createMcpTokenService", () => {
     expect(disabled.fake.state.apiTokens).toEqual([]);
   });
 });
+
+describe("MCP token quotas (B4)", () => {
+  it("accepts nullable quotas only within the database CHECK ranges", () => {
+    const valid = [
+      { ...createBody },
+      { ...createBody, rateLimitPerMinute: 1, monthlyCallQuota: 1 },
+      { ...createBody, rateLimitPerMinute: 600, monthlyCallQuota: 1_000_000 },
+      { ...createBody, rateLimitPerMinute: null, monthlyCallQuota: null },
+    ];
+    for (const body of valid) {
+      expect(createMcpTokenBodySchema.safeParse(body).success).toBe(true);
+    }
+    for (const body of [
+      { ...createBody, rateLimitPerMinute: 0 },
+      { ...createBody, rateLimitPerMinute: 601 },
+      { ...createBody, rateLimitPerMinute: 1.5 },
+      { ...createBody, monthlyCallQuota: 0 },
+      { ...createBody, monthlyCallQuota: 1_000_001 },
+      { ...createBody, monthlyCallQuota: "10" },
+      { ...createBody, unexpected: true },
+    ]) {
+      expect(createMcpTokenBodySchema.safeParse(body).success).toBe(false);
+    }
+  });
+
+  it("stores quotas, audits them and returns usage counters", async () => {
+    const { service, fake } = fixture();
+    const created = await service.createToken({
+      ...createBody,
+      rateLimitPerMinute: 60,
+      monthlyCallQuota: 1000,
+    });
+    expect(created.rateLimitPerMinute).toBe(60);
+    expect(created.monthlyCallQuota).toBe(1000);
+    expect(created.usage).toEqual({ minuteCalls: 0, monthCalls: 0 });
+    expect(fake.state.apiTokens[0]?.rateLimitPerMinute).toBe(60);
+    expect(fake.state.apiTokens[0]?.monthlyCallQuota).toBe(1000);
+    expect(fake.state.audits[0]?.metadata).toMatchObject({
+      rateLimitPerMinute: 60,
+      monthlyCallQuota: 1000,
+    });
+
+    const unlimited = await service.createToken(createBody);
+    expect(unlimited.rateLimitPerMinute).toBeNull();
+    expect(unlimited.monthlyCallQuota).toBeNull();
+  });
+
+  it("lists actual minute/month usage per token from the ledger", async () => {
+    const token = fakeApiToken({
+      workspaceId: WORKSPACE,
+      rateLimitPerMinute: 5,
+      monthlyCallQuota: 100,
+    });
+    const other = fakeApiToken({ workspaceId: WORKSPACE });
+    const now = new Date("2026-11-08T10:30:00.000Z");
+    const ledger = (tokenId: string, minutesAgo: number, index: number) => ({
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      workspaceId: WORKSPACE,
+      runId: null,
+      connectionId: null,
+      tokenId,
+      toolName: "catalog.search",
+      requestDigest: "a".repeat(64),
+      responseDigest: null,
+      status: "ok" as const,
+      errorCode: null,
+      latencyMs: 5,
+      caller: "external_mcp" as const,
+      createdAt: new Date(now.getTime() - minutesAgo * 60_000),
+    });
+    const { service } = fixture({
+      now,
+      options: {
+        apiTokens: [token, other],
+        mcpCalls: [
+          ledger(token.id, 0, 1),
+          ledger(token.id, 0, 2),
+          ledger(token.id, 5, 3),
+          ledger(other.id, 0, 4),
+        ],
+      },
+    });
+    const listed = await service.listTokens();
+    const listedToken = listed.items.find((item) => item.tokenId === token.id);
+    expect(listedToken?.usage).toEqual({ minuteCalls: 2, monthCalls: 3 });
+    expect(listedToken).toMatchObject({
+      rateLimitPerMinute: 5,
+      monthlyCallQuota: 100,
+    });
+    const listedOther = listed.items.find((item) => item.tokenId === other.id);
+    expect(listedOther?.usage).toEqual({ minuteCalls: 1, monthCalls: 1 });
+  });
+
+  it("updates both limits, audits before/after and 404/409s invalid targets", async () => {
+    const token = fakeApiToken({ workspaceId: WORKSPACE });
+    const { service, fake } = fixture({ options: { apiTokens: [token] } });
+    const updated = await service.updateLimits(token.id, {
+      rateLimitPerMinute: 120,
+      monthlyCallQuota: null,
+    });
+    expect(updated.rateLimitPerMinute).toBe(120);
+    expect(updated.monthlyCallQuota).toBeNull();
+    expect(fake.state.apiTokens[0]?.rateLimitPerMinute).toBe(120);
+    expect(fake.state.audits[0]).toMatchObject({
+      action: "studio.mcp.token.limits_updated",
+      metadata: {
+        tokenId: token.id,
+        rateLimitPerMinute: 120,
+        monthlyCallQuota: null,
+        previousRateLimitPerMinute: null,
+        previousMonthlyCallQuota: null,
+      },
+    });
+    await expect(
+      service.updateLimits("00000000-0000-4000-8000-000000000000", {
+        rateLimitPerMinute: 10,
+        monthlyCallQuota: 10,
+      }),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    await expect(
+      service.updateLimits("not-a-uuid", {
+        rateLimitPerMinute: 10,
+        monthlyCallQuota: 10,
+      }),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+
+    const revoked = fakeApiToken({
+      workspaceId: WORKSPACE,
+      revokedAt: new Date(),
+    });
+    const revokedFixture = fixture({ options: { apiTokens: [revoked] } });
+    await expect(
+      revokedFixture.service.updateLimits(revoked.id, {
+        rateLimitPerMinute: 10,
+        monthlyCallQuota: 10,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "token_revoked" });
+  });
+
+  it("rotates a token, keeps its configuration, revokes the old one and audits once", async () => {
+    const token = fakeApiToken({
+      workspaceId: WORKSPACE,
+      label: "Claude Desktop",
+      scopes: ["read", "propose"],
+      rateLimitPerMinute: 60,
+      monthlyCallQuota: 1000,
+    });
+    const { service, fake } = fixture({
+      options: { apiTokens: [token] },
+      now: new Date("2026-11-08T10:30:00.000Z"),
+    });
+    const rotated = await service.rotateToken(token.id);
+    expect(rotated.token).toMatch(/^wuk_[A-Za-z0-9_-]{12}\.[A-Za-z0-9_-]{43}$/);
+    expect(rotated.tokenId).not.toBe(token.id);
+    expect(rotated).toMatchObject({
+      label: "Claude Desktop",
+      scopes: ["read", "propose"],
+      rateLimitPerMinute: 60,
+      monthlyCallQuota: 1000,
+    });
+    expect(fake.state.apiTokens).toHaveLength(2);
+    expect(fake.state.audits[0]).toMatchObject({
+      action: "studio.mcp.token.rotated",
+      metadata: {
+        tokenId: token.id,
+        replacementTokenId: rotated.tokenId,
+      },
+    });
+    // The old plaintext was never stored; only sha256 hashes exist.
+    expect(JSON.stringify(fake.state.apiTokens)).not.toContain("wuk_");
+
+    await expect(service.rotateToken(token.id)).rejects.toMatchObject({
+      status: 409,
+      code: "token_revoked",
+    });
+    await expect(
+      service.rotateToken("00000000-0000-4000-8000-000000000000"),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+  });
+});

@@ -261,6 +261,46 @@ describe.skipIf(!enabled)("conversation studio migration 0054", () => {
     ).rejects.toMatchObject({ code: "23514" });
   });
 
+  it("adds the 0057 quota columns and per-token call attribution", async () => {
+    const tokenColumns = await admin!`
+      select column_name, data_type, is_nullable
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'studio_api_tokens'
+        and column_name in ('rate_limit_per_minute', 'monthly_call_quota')
+      order by column_name
+    `;
+    expect(tokenColumns).toEqual([
+      {
+        column_name: "monthly_call_quota",
+        data_type: "integer",
+        is_nullable: "YES",
+      },
+      {
+        column_name: "rate_limit_per_minute",
+        data_type: "integer",
+        is_nullable: "YES",
+      },
+    ]);
+    const callColumns = await admin!`
+      select column_name, data_type, is_nullable
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'studio_mcp_calls'
+        and column_name = 'token_id'
+    `;
+    expect(callColumns).toEqual([
+      { column_name: "token_id", data_type: "uuid", is_nullable: "YES" },
+    ]);
+
+    // Append-only still holds after the additive ALTER: the ledger trigger is
+    // unchanged and the runtime role still cannot UPDATE/DELETE the row.
+    const [grant] = await admin!`
+      select
+        has_table_privilege('wukong_app', 'studio_mcp_calls', 'UPDATE') as can_update,
+        has_table_privilege('wukong_app', 'studio_mcp_calls', 'DELETE') as can_delete
+    `;
+    expect(grant).toMatchObject({ can_update: false, can_delete: false });
+  });
+
   it("replays the migration set without changing installed state", async () => {
     const before = await admin!`
       select count(*)::int as count from information_schema.tables

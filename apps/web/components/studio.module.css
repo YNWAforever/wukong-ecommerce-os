@@ -2672,3 +2672,48 @@ article.studio-output .studio-output-body {
   outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* -- B4: token quotas, usage and rotation --------------------------------- */
+
+.studio-token-quota-fields {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.studio-token-quotas,
+.studio-token-usage {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.studio-token-edit-form {
+  display: grid;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.studio-token-edit-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.studio-token-edit-form input {
+  min-height: 32px;
+  padding: 4px 8px;
+  font: inherit;
+  border: 1px solid var(--line-input);
+  border-radius: 6px;
+}
+
+.studio-token-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.studio-token-actions .studio-evidence-note {
+  flex-basis: 100%;
+}
