@@ -112,6 +112,28 @@ describe("GET /api/studio/threads", () => {
     ]);
   });
 
+  it("validates the server-side search query parameters", async () => {
+    const { handlers } = fixture({ role: "operator" });
+    for (const suffix of [
+      `?q=${"x".repeat(121)}`,
+      "?unknown=1",
+      "?q=a&extra=b",
+    ]) {
+      const response = await handlers.GET(
+        new Request(`http://localhost/api/studio/threads${suffix}`),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "invalid_query" });
+    }
+
+    const accepted = await handlers.GET(
+      new Request("http://localhost/api/studio/threads?q=margaux"),
+    );
+    expect(accepted.status).toBe(200);
+    const body = (await accepted.json()) as { items: unknown[] };
+    expect(Array.isArray(body.items)).toBe(true);
+  });
+
   it("returns 401 without a session and 404 when disabled", async () => {
     const anonymous = createStudioThreadsHandlers({
       sessionContext: {

@@ -189,3 +189,49 @@ export const outputActionBodySchema = z
   .object({ action: z.enum(["save", "sign_off"]) })
   .strict();
 export type OutputActionBody = z.infer<typeof outputActionBodySchema>;
+
+/** Exact artifact kinds a filtered outputs list may request. */
+export const STUDIO_OUTPUT_KINDS = [
+  "copy_proposal",
+  "gap_report",
+  "merchant_audit",
+  "finding",
+] as const;
+export type StudioOutputKindFilter = (typeof STUDIO_OUTPUT_KINDS)[number];
+
+/** Exact artifact statuses a filtered outputs list may request. */
+export const STUDIO_OUTPUT_STATUSES = [
+  "draft",
+  "saved",
+  "signed_off",
+  "discarded",
+] as const;
+export type StudioOutputStatusFilter = (typeof STUDIO_OUTPUT_STATUSES)[number];
+
+/** Shared bound for the operator's free-text search. */
+export const STUDIO_SEARCH_MAX_LENGTH = 120;
+
+/**
+ * `GET /api/studio/threads` query contract. `q` is a server-side search over
+ * title/skill; blank means "no search". Unknown or malformed parameters are a
+ * 400 rather than silently ignored.
+ */
+export const studioThreadListQuerySchema = z
+  .object({
+    q: z.string().trim().max(STUDIO_SEARCH_MAX_LENGTH).optional(),
+  })
+  .strict();
+export type StudioThreadListQuery = z.infer<typeof studioThreadListQuerySchema>;
+
+/**
+ * `GET /api/studio/outputs` query contract: free-text title search plus exact
+ * kind/status filters. All are optional and combine with AND server-side.
+ */
+export const studioOutputListQuerySchema = z
+  .object({
+    q: z.string().trim().max(STUDIO_SEARCH_MAX_LENGTH).optional(),
+    kind: z.enum(STUDIO_OUTPUT_KINDS).optional(),
+    status: z.enum(STUDIO_OUTPUT_STATUSES).optional(),
+  })
+  .strict();
+export type StudioOutputListQuery = z.infer<typeof studioOutputListQuerySchema>;

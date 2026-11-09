@@ -253,6 +253,26 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
   unsigned and the report card labels the preview as unverified rather than claiming a signature.
 - The audit report is read-only: it never applies, publishes or changes canonical listing data.
 
+## Search, filters and sharing (B5.1)
+
+- **Search/filter happens on the server.** `/studio/threads?q=` searches the workspace's thread
+  titles and skill keys case-insensitively, and `/studio/outputs?q=&kind=&status=` searches artifact
+  titles and filters by exact kind/status. Both pages are plain `GET` forms (no client JavaScript
+  required) and the query is applied before the page limit, so a match beyond the first 50 rows is
+  still found. `GET /api/studio/threads` and `GET /api/studio/outputs` validate the same parameters
+  strictly: an over-120-character `q`, an unknown key, or an unsupported kind/status is a
+  `400 invalid_query` rather than being silently ignored. `%`, `_` and `\` in `q` are treated as
+  literal characters (LIKE escaping), never as wildcards.
+- **Visible rows stay scope-limited.** Thread search still applies the existing visibility rules
+  (workspace threads, or private threads for the creator/admin/owner only); artifact reads still go
+  through `forWorkspace`. A foreign workspace's rows cannot appear in a search result.
+- **Share links copy the current address only.** The thread page's "Copy link to conversation"
+  button copies the absolute (or, without a browser origin, relative) `/studio/t/<threadId>` address
+  with honest copied/failed states. It performs no server call, publishes nothing and changes no
+  visibility; a private thread shows "only you and admins can open this link" beside the action.
+- The forms, selects and share control are labelled, keyboard-usable and wrap at 390 px using the
+  existing Studio CSS patterns (new styles are limited to `studio.module.css`).
+
 ## Deploy and rollback order
 
 1. Apply migrations `0054_conversation_studio.sql` and `0055_studio_mcp_token_lookup.sql` **before**

@@ -93,6 +93,115 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(foreign.output).toBeNull();
   });
 
+  it("searches threads server-side with LIKE escaping and workspace isolation", async () => {
+    const ids = await studioRepositories(WORKSPACE_A, async (repos) => {
+      const make = (title: string, skillKey: string) =>
+        repos.studio.threads.create({
+          createdBy: "actor-a",
+          title,
+          skillKey,
+        });
+      const margaux = await make("Margaux tasting", "catalog.find");
+      const audit = await make("Workspace audit", "merchant.audit");
+      const percent = await make("100% coverage", "catalog.find");
+      const score = await make("100x coverage", "catalog.find");
+      await repos.studio.threads.create({
+        createdBy: "actor-a",
+        title: "Percent only",
+        skillKey: null,
+      });
+      return { margaux, audit, percent, score };
+    });
+
+    const search = (q: string) =>
+      studioRepositories(WORKSPACE_A, (repos) =>
+        repos.studio.threads.list({ q }),
+      );
+
+    // Case-insensitive title match.
+    expect((await search("MARGAUX")).items.map((thread) => thread.id)).toEqual([
+      ids.margaux.id,
+    ]);
+    // Skill-key match is included.
+    expect(
+      (await search("merchant.audit")).items.map((thread) => thread.id),
+    ).toEqual([ids.audit.id]);
+    // `%` is a literal, so "100%" matches only the title that really has it.
+    const percentHits = (await search("100%")).items.map((thread) => thread.id);
+    expect(percentHits).toEqual([ids.percent.id]);
+    expect(percentHits).not.toContain(ids.score.id);
+    // The same query from the other workspace sees nothing.
+    expect(
+      await studioRepositories(WORKSPACE_B, (repos) =>
+        repos.studio.threads.list({ q: "margaux" }),
+      ),
+    ).toMatchObject({ items: [] });
+  });
+
+  it("filters outputs server-side by title search, kind and status with isolation", async () => {
+    const made = await studioRepositories(WORKSPACE_A, async (repos) => {
+      const create = async (
+        kind: "copy_proposal" | "finding",
+        title: string,
+      ) => {
+        const output = await repos.studio.outputs.create({
+          kind,
+          title,
+          createdBy: "actor-a",
+        });
+        // A real artifact has a persisted version before it can be saved;
+        // `setStatus` refuses outputs whose current_version is still 0.
+        await repos.studio.outputs.addVersion({
+          outputId: output.id,
+          payload: { schemaVersion: "test/v1", title },
+          contentDigest: "a".repeat(64),
+          asOf: new Date("2026-11-08T00:00:00.000Z"),
+          createdBy: "actor-a",
+        });
+        return output;
+      };
+      const proposal = await create("copy_proposal", "Proposal Margaux");
+      const finding = await create("finding", "Finding Margaux");
+      const draft = await create("copy_proposal", "Proposal Rioja");
+      await repos.studio.outputs.setStatus(proposal.id, "saved");
+      await repos.studio.outputs.setStatus(finding.id, "signed_off");
+      return { proposal, finding, draft };
+    });
+
+    const list = (input: {
+      q?: string;
+      kind?: "copy_proposal" | "finding";
+      status?: "draft" | "saved" | "signed_off";
+    }) =>
+      studioRepositories(WORKSPACE_A, (repos) =>
+        repos.studio.outputs.list(input),
+      );
+
+    const byTitle = await list({ q: "margaux" });
+    expect(byTitle.map((row) => row.id).sort()).toEqual(
+      [made.proposal.id, made.finding.id].sort(),
+    );
+    const byKind = await list({ kind: "finding" });
+    expect(byKind.map((row) => row.id)).toEqual([made.finding.id]);
+    const byStatus = await list({ status: "saved" });
+    expect(byStatus.map((row) => row.id)).toEqual([made.proposal.id]);
+    const combined = await list({
+      q: "proposal",
+      kind: "copy_proposal",
+      status: "draft",
+    });
+    expect(combined.map((row) => row.id)).toEqual([made.draft.id]);
+    // `%`/`_` are literals rather than wildcards.
+    expect(await list({ q: "%" })).toEqual([]);
+    expect(await list({ q: "_" })).toEqual([]);
+    // Workspace isolation holds for filtered reads too.
+    expect(
+      await studioRepositories(WORKSPACE_B, (repos) =>
+        repos.studio.outputs.list({ q: "margaux" }),
+      ),
+    ).toEqual([]);
+  });
+
   it("defaults settings and round-trips an explicit configuration", async () => {
     const defaults = await db!.forWorkspace(WORKSPACE_A, (repos) =>
       repos.studio.settings.get(),

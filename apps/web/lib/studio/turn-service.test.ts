@@ -346,6 +346,22 @@ describe("studio thread and message reads", () => {
     expect(listed.truncated).toBe(false);
   });
 
+  it("validates list search/filter parameters before reading", async () => {
+    const { service } = harness({ role: "viewer" });
+    await expect(
+      service.listThreads({ q: "x".repeat(121) }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_query" });
+    await expect(
+      service.listOutputs({ q: "x".repeat(121) }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_query" });
+    await expect(
+      service.listOutputs({ kind: "nope" as never }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_query" });
+    await expect(
+      service.listOutputs({ status: "nope" as never }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_query" });
+  });
+
   it("returns persisted messages with decoded JSON content", async () => {
     const thread = fakeStudioThread({
       workspaceId: WORKSPACE,
