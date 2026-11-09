@@ -73,6 +73,8 @@ The transport disables SDK automatic retries and checks every physical request, 
 
 A private live report records model/prompt/adapter/policy/pricing versions, input and output digests, revisions, frozen source IDs/digests, latency, physical request count, cost certainty and deterministic failure codes. `--include-private-content` additionally retains source text and candidate output in that private artifact for human review. It is rejected in dry mode. Console output is restricted to controlled run metadata; provider errors and source/output content are never logged. A metadata-only live artifact is insufficient for human copy review unless the reviewer separately has the exact private sources/output matching its digests.
 
+`pnpm eval:live --budget-usd <authorized-positive-budget> --confirm-authorized-data --include-private-content --output <new-private-file>` is the same live mode under a shorter name. Every gate above still applies: without `OPAK_EVAL_LIVE_AUTHORIZED=1`, a dated model pin, pricing, a positive budget and `--confirm-authorized-data`, it reports `blocked` and makes no provider call. The deterministic fake-provider regression stays in `pnpm test` (`packages/ai/scripts/opak-maintenance-fixtures.test.ts`).
+
 ## Human verdict and acceptance
 
 Every item starts with `humanVerdict: null`. The CLI never fills or generates a human verdict. A human reviewer must inspect the exact private sources, output and deterministic failures, then fill the following dimensions independently for each item:
