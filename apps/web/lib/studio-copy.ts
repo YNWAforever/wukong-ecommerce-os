@@ -538,8 +538,16 @@ export const STUDIO_COPY = {
     "Copy proposal: {fields} field(s); {dropped} ungrounded suggestion(s) dropped.",
   ],
   "studio.answer.audit_report": [
-    "稽核報告：商品 {listings} 個，無缺口 {clean} 個，有缺口 {gaps} 個，最近匯出 {exports} 筆。",
-    "Audit report: {listings} listings, {clean} clean, {gaps} with gaps, {exports} recent export attempt(s).",
+    "稽核報告：商品 {listings} 個，無缺口 {clean} 個，有缺口 {gaps} 個，匯出紀錄 {exports} 筆。",
+    "Audit report: {listings} listings, {clean} clean, {gaps} with gaps, {exports} export attempt(s).",
+  ],
+  "studio.answer.audit_period": [
+    "期間 {from} 至 {to}（{days} 天）：期內匯出 {attempts} 筆；商品數量與品質為目前快照。",
+    "Period {from} to {to} ({days} days): {attempts} export attempt(s) in period; listing counts and quality are current snapshots.",
+  ],
+  "studio.answer.audit_current": [
+    "未指定期間：顯示目前總計與最近 {attempts} 筆匯出紀錄。",
+    "No period was named: current totals and the latest {attempts} export attempt(s) are shown.",
   ],
   "studio.answer.draft_ready": [
     "已準備 {assets} 個來源素材；缺少 {missing} 個。確認後才會建立草稿。",
@@ -592,8 +600,12 @@ export const STUDIO_COPY = {
     "Quality: {totalListings} listings; {cleanCount} clean; {hasGapsCount} with gaps.",
   ],
   "studio.check.audit_exports": [
-    "最近匯出：{count} 筆；就緒 {ready} 筆；失敗 {failed} 筆。",
-    "Recent exports: {count}; ready {ready}; failed {failed}.",
+    "匯出紀錄 {count} 筆（就緒 {ready}、失敗 {failed}）；期內 {inPeriod} 筆。",
+    "Export attempts {count} (ready {ready}, failed {failed}); {inPeriod} in period.",
+  ],
+  "studio.check.audit_period": [
+    "期間 {from} 至 {to}（{days} 天）；期內匯出 {attempts} 筆。",
+    "Period {from} to {to} ({days} days); {attempts} export attempt(s) in period.",
   ],
   "studio.check.draft_assets": [
     "來源素材：{count} 個可用；缺少 {missing} 個；已附在其他商品 {attached} 個。",
@@ -646,8 +658,24 @@ export const STUDIO_COPY = {
     "The current copy could not be read, so no proposal was made.",
   ],
   "studio.limit.audit_period_unset": [
-    "未指定稽核期間；數字是讀取時的目前總計。",
-    "No audit period was specified; the numbers are current totals at read time.",
+    "未指定報告期間；數字是讀取時的目前總計，不是期間統計。",
+    "No report period was named; the numbers are current totals at read time, not period statistics.",
+  ],
+  "studio.limit.audit_period_invalid": [
+    "無法解析期間；已改用目前總計，並未猜測期間。",
+    "The period could not be parsed; current totals are shown and no period was guessed.",
+  ],
+  "studio.limit.audit_period_applied": [
+    "只有匯出紀錄依期間 {from} 至 {to} 篩選；其他區段仍為目前快照。",
+    "Only export attempts are filtered to {from} to {to}; other sections remain current snapshots.",
+  ],
+  "studio.limit.audit_counts_current": [
+    "商品狀態數量是目前的快照，並非期間內的統計。",
+    "Listing status counts are current snapshots, not period-scoped counts.",
+  ],
+  "studio.limit.audit_quality_current": [
+    "品質概況是目前的快照，並非期間內的統計。",
+    "The quality summary is a current snapshot, not a period-scoped statistic.",
   ],
   "studio.limit.audit_exports_unavailable": [
     "未能讀取匯出紀錄；不以零代替。",
@@ -1193,6 +1221,10 @@ export const STUDIO_COPY = {
     "未指定（目前總計）",
     "Not specified (current totals)",
   ],
+  "studio.report.attemptsInPeriod": [
+    "期內匯出：{attempts} 筆",
+    "Export attempts in period: {attempts}",
+  ],
   "studio.report.asOf": ["資料截至 {asOf}", "As of {asOf}"],
   "studio.report.scope": ["範圍：工作區", "Scope: workspace"],
   "studio.report.listingsTitle": ["商品狀態", "Listing status"],
@@ -1224,6 +1256,23 @@ export const STUDIO_COPY = {
   "studio.report.invalidPayload": [
     "此報告的內容無法顯示；沒有捏造內容。",
     "This report could not be displayed; nothing is invented.",
+  ],
+  "studio.report.receiptTitle": ["匯出簽章收據", "Export receipt"],
+  "studio.report.receiptSigned": [
+    "已簽署（HMAC-SHA256，金鑰 {keyId}）；簽章前綴 {signature}…",
+    "Signed (HMAC-SHA256, key {keyId}); signature prefix {signature}…",
+  ],
+  "studio.report.receiptUnsigned": [
+    "未簽署：此部署未設定匯出簽署金鑰。",
+    "Unsigned: this deployment has no export signing key configured.",
+  ],
+  "studio.report.receiptNotVerified": [
+    "此檢視未驗證簽章；設定簽署金鑰時，JSON 匯出會附上 HMAC 收據。",
+    "This preview does not verify a receipt; when a signing key is configured, the JSON export carries the HMAC receipt.",
+  ],
+  "studio.report.receiptHint": [
+    "收據只證明匯出檔由本部署的簽署金鑰產生；不代表外部驗證或核准。",
+    "The receipt only shows the export was produced by this deployment's signing key; it is not external verification or approval.",
   ],
   // -- renderer fallbacks ---------------------------------------------------
   "studio.render.fallback": [

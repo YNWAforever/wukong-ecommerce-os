@@ -33,18 +33,31 @@ function countRows(
   );
 }
 
+export type StudioExportReceiptView = {
+  readonly keyId: string;
+  readonly signature: string;
+};
+
 export type StudioReportCardProps = {
   readonly locale: Locale;
   /** A persisted `merchant_audit` payload; parsed defensively here. */
   readonly payload: unknown;
   /** Canonical JSON export link, or `null` while the artifact is not saved. */
   readonly exportHref: string | null;
+  /**
+   * Receipt carried by the JSON export, when the caller already has it:
+   * `undefined` = this preview did not verify a receipt (the export endpoint
+   * adds one only when the deployment's signing key is configured), `null` =
+   * the export is known to be unsigned.
+   */
+  readonly exportReceipt?: StudioExportReceiptView | null;
 };
 
 export function StudioReportCard({
   locale,
   payload,
   exportHref,
+  exportReceipt = undefined,
 }: StudioReportCardProps) {
   const parsed = merchantAuditPayloadSchema.safeParse(payload);
   if (!parsed.success) {
@@ -61,10 +74,9 @@ export function StudioReportCard({
     );
   }
   const report = parsed.data;
-  const period =
-    report.period.from || report.period.to
-      ? `${report.period.from ?? "…"} – ${report.period.to ?? "…"}`
-      : studioCopy(locale, "studio.report.periodUnset");
+  const period = report.period
+    ? `${report.period.from} – ${report.period.to}`
+    : studioCopy(locale, "studio.report.periodUnset");
 
   return (
     <section
@@ -85,7 +97,11 @@ export function StudioReportCard({
         <span>
           {renderStudioLine(locale, {
             key: "studio.report.period",
-            values: { period },
+            values: {
+              period: report.period
+                ? `${period} (${report.period.label})`
+                : period,
+            },
           })}
         </span>
         <span>
@@ -94,6 +110,14 @@ export function StudioReportCard({
             values: { asOf: formatHkDate(report.asOf, locale) },
           })}
         </span>
+        {report.period && report.attemptsInPeriod !== null ? (
+          <span>
+            {renderStudioLine(locale, {
+              key: "studio.report.attemptsInPeriod",
+              values: { attempts: report.attemptsInPeriod },
+            })}
+          </span>
+        ) : null}
       </p>
 
       <section className={styles["studio-report-section"]}>
@@ -239,6 +263,41 @@ export function StudioReportCard({
           {studioCopy(locale, "studio.report.export")}
         </a>
       )}
+
+      <section className={styles["studio-report-section"]}>
+        <h5 className={styles["studio-evidence-subtitle"]}>
+          {studioCopy(locale, "studio.report.receiptTitle")}
+        </h5>
+        {exportReceipt ? (
+          <p
+            className={styles["studio-report-line"]}
+            data-export-signed="true"
+            role="status"
+          >
+            {renderStudioLine(locale, {
+              key: "studio.report.receiptSigned",
+              values: {
+                keyId: exportReceipt.keyId,
+                signature: exportReceipt.signature.slice(0, 16),
+              },
+            })}
+          </p>
+        ) : exportReceipt === null ? (
+          <p
+            className={styles["studio-report-line"]}
+            data-export-signed="false"
+          >
+            {studioCopy(locale, "studio.report.receiptUnsigned")}
+          </p>
+        ) : (
+          <p className={styles["studio-evidence-note"]}>
+            {studioCopy(locale, "studio.report.receiptNotVerified")}
+          </p>
+        )}
+        <p className={styles["studio-evidence-note"]}>
+          {studioCopy(locale, "studio.report.receiptHint")}
+        </p>
+      </section>
     </section>
   );
 }

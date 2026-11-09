@@ -1112,9 +1112,17 @@ export function createStudioService(deps: StudioServiceDeps) {
           role: input.session.role,
           now: input.now,
           limits: input.limits,
-          query: input.skill.inputs.some((field) => field.name === "query")
-            ? input.body.text
-            : null,
+          query: (() => {
+            // The audit report parses its period from the operator's text, so
+            // it receives the turn text even though it declares no `query`
+            // input; every other skill only gets it when it declares one.
+            if (
+              input.skill.key === "merchant.audit" ||
+              input.skill.inputs.some((field) => field.name === "query")
+            )
+              return input.body.text;
+            return null;
+          })(),
           listingId: input.skill.inputs.some(
             (field) => field.name === "listingId",
           )

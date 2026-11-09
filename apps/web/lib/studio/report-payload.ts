@@ -28,14 +28,31 @@ export const merchantAuditExportRowSchema = z.strictObject({
   createdAt: z.string().min(1).max(64),
 });
 
+export const merchantAuditPeriodSchema = z.strictObject({
+  /** First included UTC day, `YYYY-MM-DD`. */
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Last included UTC day, `YYYY-MM-DD`. */
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Locale-independent description of the parsed phrase. */
+  label: z.string().min(1).max(120),
+});
+export type MerchantAuditPeriod = z.infer<typeof merchantAuditPeriodSchema>;
+
 export const merchantAuditPayloadSchema = z.strictObject({
-  schemaVersion: z.literal("wukong-merchant-audit/v1"),
+  schemaVersion: z.literal("wukong-merchant-audit/v2"),
   generatedAt: z.string().min(1).max(64),
   asOf: z.string().min(1).max(64),
-  period: z.strictObject({
-    from: z.string().max(64).nullable(),
-    to: z.string().max(64).nullable(),
-  }),
+  /**
+   * The reporting period parsed from the turn text. `null` means no period was
+   * named: the export table then lists recent attempts and the totals are
+   * explicitly current snapshots (see limitations).
+   */
+  period: merchantAuditPeriodSchema.nullable(),
+  /**
+   * Export attempts whose `createdAt` falls inside `period`. `null` when no
+   * period was set or the export source could not be read.
+   */
+  attemptsInPeriod: z.number().int().min(0).nullable(),
   scope: z.strictObject({ workspaceScoped: z.literal(true) }),
   /**
    * `null` means that source could not be read at all. It is never an empty

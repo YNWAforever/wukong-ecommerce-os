@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { z } from "zod";
 
 import { getDatabase } from "../../../../../../lib/intake-runtime";
@@ -43,6 +43,102 @@ type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 const EXPORTABLE_STATUSES = new Set(["saved", "signed_off"]);
 const SCHEMA_VERSION = "wukong-studio-output-export/v1";
+
+/**
+ * Optional HMAC-SHA256 export receipt (B3).
+ *
+ * When `STUDIO_EXPORT_SIGNING_KEY` is configured, the canonical JSON packet
+ * carries a `receipt` over a small, fixed message. The key is read from the
+ * server environment only, never returned; `STUDIO_EXPORT_SIGNING_KEY_ID` is
+ * the only key identity that appears in the packet. Without the key the packet
+ * says `signed: false` and has no `receipt` object — no fake signature is ever
+ * emitted. PDF exports are unchanged: they rely on the payload digest header.
+ */
+export type StudioExportReceipt = {
+  alg: "HMAC-SHA256";
+  keyId: string;
+  signedAt: string;
+  payloadSha256: string;
+  signature: string;
+};
+
+export type StudioExportReceiptInput = {
+  schemaVersion: string;
+  payloadSha256: string;
+  outputId: string;
+  revision: number;
+  asOf: string;
+  keyId: string;
+};
+
+/** The exact bytes a verifier must feed to HMAC. Exported for tests/docs. */
+export function exportReceiptMessage(input: StudioExportReceiptInput): string {
+  return canonicalJson({
+    schemaVersion: input.schemaVersion,
+    payloadSha256: input.payloadSha256,
+    outputId: input.outputId,
+    revision: input.revision,
+    asOf: input.asOf,
+    keyId: input.keyId,
+  });
+}
+
+export function signStudioExportReceipt(
+  key: Buffer,
+  input: StudioExportReceiptInput & { signedAt: string },
+): StudioExportReceipt {
+  return {
+    alg: "HMAC-SHA256",
+    keyId: input.keyId,
+    signedAt: input.signedAt,
+    payloadSha256: input.payloadSha256,
+    signature: createHmac("sha256", key)
+      .update(exportReceiptMessage(input))
+      .digest("hex"),
+  };
+}
+
+/** Decode a hex or base64 signing key; `null` when absent, `false` invalid. */
+export function decodeExportSigningKey(
+  raw: string | undefined,
+): Buffer | false | null {
+  const trimmed = raw?.trim() ?? "";
+  if (trimmed.length === 0) return null;
+  let key: Buffer;
+  if (/^[a-f0-9]{64}$/i.test(trimmed)) {
+    key = Buffer.from(trimmed, "hex");
+  } else if (/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)) {
+    key = Buffer.from(trimmed, "base64");
+  } else {
+    return false;
+  }
+  // 16 bytes is the shortest key that can be considered a secret rather than a
+  // typo; HMAC-SHA256 itself accepts any length, so this is a config guard.
+  return key.length >= 16 ? key : false;
+}
+
+function signingConfig(env: NodeJS.ProcessEnv): {
+  key: Buffer;
+  keyId: string;
+} | null {
+  const key = decodeExportSigningKey(env.STUDIO_EXPORT_SIGNING_KEY);
+  if (key === null) return null;
+  if (key === false)
+    throw new ApiError(
+      500,
+      "export_signing_misconfigured",
+      "The export signing key is not available.",
+    );
+  const rawKeyId = (env.STUDIO_EXPORT_SIGNING_KEY_ID ?? "").trim();
+  const keyId = rawKeyId.length === 0 ? "v1" : rawKeyId;
+  if (!/^[A-Za-z0-9._-]{1,40}$/.test(keyId))
+    throw new ApiError(
+      500,
+      "export_signing_misconfigured",
+      "The export signing key id is not available.",
+    );
+  return { key, keyId };
+}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -149,7 +245,24 @@ export function createStudioOutputExportHandler(deps: StudioRouteDeps) {
         });
       }
 
-      const json = canonicalJson(packet);
+      // A signing problem is reported before any export bytes are served and
+      // never falls back to an unsigned packet while a key is configured.
+      const signing = signingConfig(deps.env ?? process.env);
+      const receipt = signing
+        ? signStudioExportReceipt(signing.key, {
+            schemaVersion: SCHEMA_VERSION,
+            payloadSha256: packet.payloadSha256,
+            outputId: packet.output.outputId,
+            revision: latest.revision,
+            asOf: packet.output.asOf,
+            keyId: signing.keyId,
+            signedAt: (deps.now?.() ?? new Date()).toISOString(),
+          })
+        : null;
+      const jsonPacket = receipt
+        ? { ...packet, signed: true as const, receipt }
+        : { ...packet, signed: false as const };
+      const json = canonicalJson(jsonPacket);
       return new Response(json, {
         status: 200,
         headers: {

@@ -209,6 +209,50 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
   not-applied state, and JSON/PDF links only when the artifact is saved/signed off (with the latest
   digest). Unsaved artifacts show "save before exporting" instead of a disabled claim of success.
 
+## Merchant audit periods and signed exports (B3)
+
+- **Period parsing is deterministic.** The audit turn reads the operator's text and accepts
+  `last|past|previous N day(s)/week(s)/month(s)/year(s)` bounded to 1–365 days (a month is 30 days,
+  a year 365) or one explicit ISO range `YYYY-MM-DD to YYYY-MM-DD` (ordered, inclusive, at most 365
+  days). The artifact stores `period: {from, to, label}` in UTC days. No match, an unbounded value or
+  an invalid/reversed range stores `period: null` and the report says it is showing current totals —
+  it never guesses a silent window. The turn text itself is forwarded to the audit evidence only.
+- **Only export attempts are period-scoped.** `exports` lists attempts whose `createdAt` falls inside
+  the period (up to 20 read), `attemptsInPeriod` counts them, and the payload limitations explicitly
+  say listing-status counts (`listings`) and the quality summary (`quality`) are **current snapshots**,
+  not period statistics. When no period is named, `exports` are the latest five attempts and
+  `attemptsInPeriod` is `null`.
+- **Payload schema is `wukong-merchant-audit/v2`** (B2 exports keep the same digest/status/foreign-id
+  checks; only the packet gains the optional receipt below).
+- **Signed export receipt.** When `STUDIO_EXPORT_SIGNING_KEY` (64-char hex or base64, ≥16 bytes) is
+  set, `format=json` exports add `signed: true` and a `receipt`:
+  `{alg:"HMAC-SHA256", keyId, signedAt, payloadSha256, signature}` where `keyId` is
+  `STUDIO_EXPORT_SIGNING_KEY_ID` (default `v1`) and `signature` is the hex HMAC-SHA256 of the exact
+  canonical JSON
+  `{"asOf":…,"keyId":…,"outputId":…,"payloadSha256":…,"revision":…,"schemaVersion":"wukong-studio-output-export/v1"}`
+  (sorted keys, no whitespace; `payloadSha256` is the persisted version digest). Without the key the
+  packet says `signed:false` and has no `receipt`; a configured but malformed key/id fails the export
+  with `500 export_signing_misconfigured` rather than silently serving unsigned bytes. PDF exports are
+  unchanged (payload digest header only, no receipt).
+- **Verification recipe** (never use a production key in a shell history on a shared host):
+
+  ```bash
+  # Copy message+receipt fields out of the downloaded JSON, then:
+  MESSAGE='{"asOf":"2026-11-08T10:00:00.000Z","keyId":"v1","outputId":"<id>","payloadSha256":"<digest>","revision":1,"schemaVersion":"wukong-studio-output-export/v1"}'
+  printf '%s' "$MESSAGE" | openssl dgst -sha256 -mac HMAC \
+    -macopt hexkey:"$STUDIO_EXPORT_SIGNING_KEY" -hex
+  # The printed HMAC must equal receipt.signature.
+  ```
+
+  The receipt only proves the file was produced by this deployment's signing key; it is not external
+  verification, approval or proof of correctness.
+
+- **Rotation/absence.** Rotate by replacing `STUDIO_EXPORT_SIGNING_KEY` and bumping
+  `STUDIO_EXPORT_SIGNING_KEY_ID`; old receipts remain verifiable only with the old key (keep it for
+  the retention window if past exports must stay verifiable). Absence is honest: exports stay
+  unsigned and the report card labels the preview as unverified rather than claiming a signature.
+- The audit report is read-only: it never applies, publishes or changes canonical listing data.
+
 ## Deploy and rollback order
 
 1. Apply migrations `0054_conversation_studio.sql` and `0055_studio_mcp_token_lookup.sql` **before**

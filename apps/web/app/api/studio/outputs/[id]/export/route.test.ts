@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import type { StudioOutput, StudioOutputVersion } from "@wukong/db";
@@ -11,7 +11,11 @@ import {
   fakeSessionContext,
   type FakeStudioOptions,
 } from "../../../../../../lib/studio/test-fakes";
-import { createStudioOutputExportHandler } from "./route";
+import {
+  createStudioOutputExportHandler,
+  exportReceiptMessage,
+  signStudioExportReceipt,
+} from "./route";
 
 /**
  * Route-contract tests for `GET /api/studio/outputs/[id]/export` (plan
@@ -27,8 +31,10 @@ const OUTPUT_ID = "55555555-5555-4555-8555-555555555555";
 const CREATED_AT = new Date("2026-11-08T10:00:00.000Z");
 
 const REPORT_PAYLOAD = {
-  schemaVersion: "wukong-merchant-audit/v1",
+  schemaVersion: "wukong-merchant-audit/v2",
   asOf: "2026-11-08T10:00:00.000Z",
+  period: null,
+  attemptsInPeriod: null,
   listings: [{ status: "approved", count: 1 }],
 };
 const PAYLOAD_DIGEST = createHash("sha256")
@@ -74,6 +80,7 @@ function fixture(
   input: {
     options?: FakeStudioOptions;
     env?: NodeJS.ProcessEnv;
+    now?: () => Date;
   } = {},
 ) {
   const fake = createFakeStudio({
@@ -87,6 +94,7 @@ function fixture(
     sessionContext: session.port,
     getDatabase: fakeGetDatabase(fake.repos, fake.state.workspaceCalls),
     env: input.env ?? ON_ENV,
+    ...(input.now ? { now: input.now } : {}),
   };
   return { fake, handler: createStudioOutputExportHandler(deps) };
 }
@@ -193,5 +201,113 @@ describe("GET /api/studio/outputs/[id]/export", () => {
     expect(
       (await disabled.handler(request(PAYLOAD_DIGEST), context())).status,
     ).toBe(404);
+  });
+
+  it("marks an unsigned export explicitly and omits any receipt", async () => {
+    const { handler } = fixture();
+    const response = await handler(request(PAYLOAD_DIGEST), context());
+    expect(response.status).toBe(200);
+    const packet = JSON.parse(await response.text()) as Record<string, unknown>;
+    expect(packet.signed).toBe(false);
+    expect(packet.receipt).toBeUndefined();
+    expect(packet.payloadSha256).toBe(PAYLOAD_DIGEST);
+  });
+
+  it("signs the JSON packet with the configured HMAC key and verifies with node:crypto", async () => {
+    // Local test key only; never a real secret.
+    const keyHex = "a".repeat(64);
+    const key = Buffer.from(keyHex, "hex");
+    const signedAt = new Date("2026-11-08T11:00:00.000Z");
+    const { handler } = fixture({
+      env: {
+        ...ON_ENV,
+        STUDIO_EXPORT_SIGNING_KEY: keyHex,
+        STUDIO_EXPORT_SIGNING_KEY_ID: "pilot-test",
+      } as unknown as NodeJS.ProcessEnv,
+      now: () => signedAt,
+    });
+    const response = await handler(request(PAYLOAD_DIGEST), context());
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    const packet = JSON.parse(text) as {
+      signed: boolean;
+      receipt: {
+        alg: string;
+        keyId: string;
+        signedAt: string;
+        payloadSha256: string;
+        signature: string;
+      };
+      output: { outputId: string; revision: number; asOf: string };
+    };
+    expect(packet.signed).toBe(true);
+    expect(packet.receipt).toMatchObject({
+      alg: "HMAC-SHA256",
+      keyId: "pilot-test",
+      signedAt: signedAt.toISOString(),
+      payloadSha256: PAYLOAD_DIGEST,
+    });
+    expect(packet.receipt.signature).toMatch(/^[a-f0-9]{64}$/);
+
+    const expected = createHmac("sha256", key)
+      .update(
+        exportReceiptMessage({
+          schemaVersion: "wukong-studio-output-export/v1",
+          payloadSha256: PAYLOAD_DIGEST,
+          outputId: OUTPUT_ID,
+          revision: 1,
+          asOf: "2026-11-08T10:00:00.000Z",
+          keyId: "pilot-test",
+        }),
+      )
+      .digest("hex");
+    expect(packet.receipt.signature).toBe(expected);
+    // The helper and the route agree, and key material never appears.
+    expect(
+      signStudioExportReceipt(key, {
+        schemaVersion: "wukong-studio-output-export/v1",
+        payloadSha256: PAYLOAD_DIGEST,
+        outputId: OUTPUT_ID,
+        revision: 1,
+        asOf: "2026-11-08T10:00:00.000Z",
+        keyId: "pilot-test",
+        signedAt: signedAt.toISOString(),
+      }).signature,
+    ).toBe(expected);
+    expect(text).not.toContain(keyHex);
+
+    // A different key produces a different signature.
+    const other = fixture({
+      env: {
+        ...ON_ENV,
+        STUDIO_EXPORT_SIGNING_KEY: "b".repeat(64),
+        STUDIO_EXPORT_SIGNING_KEY_ID: "pilot-test",
+      } as unknown as NodeJS.ProcessEnv,
+      now: () => signedAt,
+    });
+    const otherPacket = JSON.parse(
+      await (await other.handler(request(PAYLOAD_DIGEST), context())).text(),
+    ) as { receipt: { signature: string } };
+    expect(otherPacket.receipt.signature).not.toBe(expected);
+  });
+
+  it("fails closed when a signing key is configured but malformed", async () => {
+    for (const env of [
+      { STUDIO_EXPORT_SIGNING_KEY: "too-short" },
+      { STUDIO_EXPORT_SIGNING_KEY: "x".repeat(20) },
+      {
+        STUDIO_EXPORT_SIGNING_KEY: "c".repeat(64),
+        STUDIO_EXPORT_SIGNING_KEY_ID: "bad key id with spaces",
+      },
+    ]) {
+      const { handler } = fixture({
+        env: { ...ON_ENV, ...env } as unknown as NodeJS.ProcessEnv,
+      });
+      const response = await handler(request(PAYLOAD_DIGEST), context());
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({
+        code: "export_signing_misconfigured",
+      });
+    }
   });
 });

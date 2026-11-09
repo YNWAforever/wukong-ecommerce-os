@@ -658,13 +658,17 @@ describe("studio merchant-audit evidence (plan Task 11)", () => {
     expect(pack.coverage.get("export_attempt")).toBe("present");
     const payload = pack.context.merchantAudit as {
       schemaVersion: string;
+      period: { from: string; to: string; label: string } | null;
+      attemptsInPeriod: number | null;
       listings: Array<{ status: string; count: number }>;
       quality: { totalListings: number; cleanCount: number } | null;
       exports: Array<{ attemptId: string; state: string }> | null;
       checks: Array<{ key: string }>;
       limitations: Array<{ key: string }>;
     };
-    expect(payload.schemaVersion).toBe("wukong-merchant-audit/v1");
+    expect(payload.schemaVersion).toBe("wukong-merchant-audit/v2");
+    expect(payload.period).toBeNull();
+    expect(payload.attemptsInPeriod).toBeNull();
     expect(payload.listings).toEqual([
       { status: "approved", count: 2 },
       { status: "in_review", count: 1 },
@@ -679,8 +683,12 @@ describe("studio merchant-audit evidence (plan Task 11)", () => {
       "studio.check.audit_quality",
       "studio.check.audit_exports",
     ]);
-    expect(payload.limitations.map((line) => line.key)).toContain(
-      "studio.limit.audit_period_unset",
+    expect(payload.limitations.map((line) => line.key)).toEqual(
+      expect.arrayContaining([
+        "studio.limit.audit_period_unset",
+        "studio.limit.audit_counts_current",
+        "studio.limit.audit_quality_current",
+      ]),
     );
 
     const reply = composeDeterministicReply({ skill: auditSkill, pack });
@@ -690,7 +698,109 @@ describe("studio merchant-audit evidence (plan Task 11)", () => {
         (section) => section.key === "studio.answer.audit_report",
       ),
     ).toBe(true);
+    expect(
+      reply.records.sections.some(
+        (section) => section.key === "studio.answer.audit_current",
+      ),
+    ).toBe(true);
     expect(reply.dispatch).toBeNull();
+  });
+
+  it("filters export attempts by a parsed period and labels current snapshots", async () => {
+    const result = await buildEvidencePack({
+      skill: auditSkill,
+      deps: baseDeps({
+        async getExportAttempts() {
+          return [
+            {
+              attemptId: "inside-period",
+              state: "ready",
+              rowCount: 1,
+              createdAt: "2026-11-05T09:00:00.000Z",
+            },
+            {
+              attemptId: "outside-period",
+              state: "ready",
+              rowCount: 1,
+              createdAt: "2026-09-01T09:00:00.000Z",
+            },
+          ];
+        },
+      }),
+      role: "operator",
+      now,
+      query: "last 30 days",
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const payload = result.pack.context.merchantAudit as {
+      period: { from: string; to: string; label: string } | null;
+      attemptsInPeriod: number | null;
+      exports: Array<{ attemptId: string }> | null;
+      checks: Array<{ key: string; values: Record<string, unknown> }>;
+      limitations: Array<{ key: string }>;
+    };
+    expect(payload.period).toMatchObject({
+      from: "2026-10-10",
+      to: "2026-11-08",
+      label: "last 30 days",
+    });
+    expect(payload.attemptsInPeriod).toBe(1);
+    expect(payload.exports?.map((row) => row.attemptId)).toEqual([
+      "inside-period",
+    ]);
+    expect(
+      payload.checks.find((check) => check.key === "studio.check.audit_period")
+        ?.values,
+    ).toMatchObject({
+      from: "2026-10-10",
+      to: "2026-11-08",
+      days: 30,
+      attempts: 1,
+    });
+    expect(payload.limitations.map((line) => line.key)).toContain(
+      "studio.limit.audit_period_applied",
+    );
+    expect(payload.limitations.map((line) => line.key)).toContain(
+      "studio.limit.audit_counts_current",
+    );
+    expect(payload.limitations.map((line) => line.key)).not.toContain(
+      "studio.limit.audit_period_unset",
+    );
+
+    const reply = composeDeterministicReply({
+      skill: auditSkill,
+      pack: result.pack,
+    });
+    const periodSection = reply.records.sections.find(
+      (section) => section.key === "studio.answer.audit_period",
+    );
+    expect(periodSection?.values).toMatchObject({
+      from: "2026-10-10",
+      to: "2026-11-08",
+      days: 30,
+      attempts: 1,
+    });
+  });
+
+  it("keeps an unparsed period explicit instead of guessing a window", async () => {
+    const result = await buildEvidencePack({
+      skill: auditSkill,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: "audit the last few fortnights maybe",
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const payload = result.pack.context.merchantAudit as {
+      period: unknown;
+      attemptsInPeriod: unknown;
+      limitations: Array<{ key: string }>;
+    };
+    expect(payload.period).toBeNull();
+    expect(payload.attemptsInPeriod).toBeNull();
+    expect(payload.limitations.map((line) => line.key)).toContain(
+      "studio.limit.audit_period_invalid",
+    );
   });
 
   it("keeps an unread source null and marks the reply partial", async () => {

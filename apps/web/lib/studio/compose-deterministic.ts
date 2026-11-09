@@ -145,6 +145,7 @@ export function composeDeterministicReply(input: {
     );
     const quality = checkValues(pack, "studio.check.audit_quality");
     const exports = checkValues(pack, "studio.check.audit_exports");
+    const period = checkValues(pack, "studio.check.audit_period");
     sections.push(
       translatedLine("studio.answer.audit_report", {
         listings: numberValue(listingCounts, "total"),
@@ -153,6 +154,21 @@ export function composeDeterministicReply(input: {
         exports: numberValue(exports, "count"),
       }),
     );
+    if (period)
+      sections.push(
+        translatedLine("studio.answer.audit_period", {
+          from: String(period.from ?? ""),
+          to: String(period.to ?? ""),
+          days: numberValue(period, "days"),
+          attempts: numberValue(period, "attempts"),
+        }),
+      );
+    else
+      sections.push(
+        translatedLine("studio.answer.audit_current", {
+          attempts: numberValue(exports, "count"),
+        }),
+      );
   } else if (skill.key === "category.map_proposal") {
     const candidates = checkValues(
       pack,
