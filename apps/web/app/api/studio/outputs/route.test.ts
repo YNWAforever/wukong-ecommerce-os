@@ -82,6 +82,32 @@ describe("GET /api/studio/outputs", () => {
     expect(body.truncated).toBe(false);
   });
 
+  it("validates kind/status/search query parameters", async () => {
+    const { handlers } = fixture({});
+    for (const suffix of [
+      "?kind=other",
+      "?status=other",
+      `?q=${"x".repeat(121)}`,
+      "?unknown=1",
+      "?kind=finding&extra=1",
+    ]) {
+      const response = await handlers(
+        new Request(`http://localhost/api/studio/outputs${suffix}`),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "invalid_query" });
+    }
+
+    const accepted = await handlers(
+      new Request(
+        "http://localhost/api/studio/outputs?kind=finding&status=draft&q=pro",
+      ),
+    );
+    expect(accepted.status).toBe(200);
+    const body = (await accepted.json()) as { items: unknown[] };
+    expect(Array.isArray(body.items)).toBe(true);
+  });
+
   it("returns an honest empty list and 404 when Studio is disabled", async () => {
     const empty = fixture({});
     const body = (await (

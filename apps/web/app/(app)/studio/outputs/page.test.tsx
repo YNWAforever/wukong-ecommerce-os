@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   throws: false,
   canSignOff: true,
   locale: "en" as string,
+  filters: null as Record<string, unknown> | null,
 }));
 
 vi.mock("next/headers", () => ({
@@ -37,8 +38,9 @@ vi.mock("../../../../lib/session-context", () => ({
 
 vi.mock("../studio-service", () => ({
   studioService: () => ({
-    listOutputs: async () => {
+    listOutputs: async (filters?: Record<string, unknown>) => {
       if (state.throws) throw new Error("connection string must not leak");
+      state.filters = filters ?? {};
       return { items: state.items, truncated: state.truncated };
     },
   }),
@@ -60,8 +62,10 @@ function listItem(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function render() {
-  return renderToStaticMarkup(await StudioOutputsPage());
+async function render(search: Record<string, string> = {}) {
+  return renderToStaticMarkup(
+    await StudioOutputsPage({ searchParams: Promise.resolve(search) }),
+  );
 }
 
 beforeEach(() => {
@@ -70,6 +74,7 @@ beforeEach(() => {
   state.throws = false;
   state.canSignOff = true;
   state.locale = "en";
+  state.filters = null;
 });
 
 afterEach(() => {
@@ -99,6 +104,20 @@ describe("StudioOutputsPage", () => {
     expect(html).toContain("Draft");
     expect((html.match(/data-expandable="true"/g) ?? []).length).toBe(2);
     expect(html).toContain("View artifact");
+  });
+
+  it("renders labelled filter controls in a native GET form", async () => {
+    const html = await render();
+    expect(html).toContain('role="search"');
+    expect(html).toContain("Filter artifacts");
+    expect(html).toContain("Search titles");
+    expect(html).toContain("Kind");
+    expect(html).toContain("Status");
+    expect(html).toContain("All kinds");
+    expect(html).toContain("All statuses");
+    expect(html).toContain("Apply filters");
+    expect(html).toContain('type="submit"');
+    expect(html).toContain('<select id="studio-outputs-kind" name="kind"');
   });
 
   it("shows the honest empty state with what will fill it", async () => {
@@ -131,6 +150,55 @@ describe("StudioOutputsPage", () => {
         String(call[0]).includes("studio_outputs_read_failed"),
       ),
     ).toBe(true);
+  });
+
+  it("passes the validated filters to the server list and shows a filtered summary", async () => {
+    state.items = [listItem()];
+    const html = await render({
+      q: "  proposal  ",
+      kind: "copy_proposal",
+      status: "saved",
+    });
+    expect(state.filters).toEqual({
+      q: "proposal",
+      kind: "copy_proposal",
+      status: "saved",
+    });
+    expect(html).toContain(
+      "Filtered result: 1 artifact(s), filtered on the server (search: proposal).",
+    );
+    expect(html).toContain("Clear filters");
+    expect(html).toContain('action="/studio/outputs"');
+    expect(html).toContain('name="q"');
+    expect(html).toContain('name="kind"');
+    expect(html).toContain('name="status"');
+    // The selected values survive a server round-trip.
+    expect(html).toContain('value="copy_proposal" selected=""');
+    expect(html).toContain('value="saved" selected=""');
+  });
+
+  it("renders the honest filtered-empty state instead of the unfiltered one", async () => {
+    const html = await render({ kind: "finding" });
+    expect(html).toContain("No artifacts match these filters.");
+    expect(html).not.toContain("No saved outputs.");
+    expect(html).toContain("0 artifact(s)");
+  });
+
+  it("fails closed to an honest notice for invalid filter values", async () => {
+    const html = await render({ kind: "bogus", status: "nope" });
+    expect(state.filters).toEqual({});
+    expect(html).toContain(
+      "The filter parameters are invalid; no filter was applied.",
+    );
+    expect(html).toContain("No artifacts match these filters.");
+  });
+
+  it("omits the clear/filtered summary for an unfiltered list", async () => {
+    state.items = [listItem()];
+    const html = await render();
+    expect(state.filters).toEqual({});
+    expect(html).not.toContain("Clear filters");
+    expect(html).not.toContain("Filtered result:");
   });
 
   it("renders zh-Hant labels for the zh-Hant locale", async () => {

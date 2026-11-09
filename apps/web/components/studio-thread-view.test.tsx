@@ -524,3 +524,74 @@ describe("StudioThreadView", () => {
     );
   });
 });
+
+describe("StudioThreadView share control", () => {
+  function shareButton(container: HTMLElement): HTMLButtonElement {
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Copy link to conversation",
+    );
+    if (!button) throw new Error("share button not found");
+    return button as HTMLButtonElement;
+  }
+
+  function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+  }
+
+  it("copies the thread link and reports real success", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    const container = await mount();
+
+    await act(async () => {
+      shareButton(container).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const copied = String(writeText.mock.calls[0]?.[0] ?? "");
+    expect(copied.endsWith("/studio/t/thread-1")).toBe(true);
+    expect(container.textContent).toContain("Link copied to the clipboard.");
+    expect(container.textContent).toContain(
+      "Shares the current address only; nothing is published or made more visible.",
+    );
+  });
+
+  it("reports a clipboard refusal honestly instead of claiming a share", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    stubClipboard(writeText);
+    const container = await mount();
+
+    await act(async () => {
+      shareButton(container).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(
+      "Could not copy the link; copy the address manually.",
+    );
+    expect(container.textContent).not.toContain(
+      "Link copied to the clipboard.",
+    );
+  });
+
+  it("warns that a private thread link is limited to the creator and admins", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    const container = await mount({
+      thread: { ...thread, visibility: "private" },
+    });
+    expect(container.textContent).toContain(
+      "This conversation is private: only you and admins can open this link.",
+    );
+  });
+
+  it("does not show the private warning for a workspace-visible thread", async () => {
+    const container = await mount();
+    expect(container.textContent).not.toContain("This conversation is private");
+  });
+});

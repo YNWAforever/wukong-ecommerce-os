@@ -338,6 +338,23 @@ export const STUDIO_COPY = {
   "studio.thread.status.archived": ["已封存", "Archived"],
   "studio.thread.visibility.workspace": ["工作區可見", "Workspace"],
   "studio.thread.visibility.private": ["私人", "Private"],
+  "studio.thread.share": ["複製對話連結", "Copy link to conversation"],
+  "studio.thread.shareCopied": [
+    "已複製連結到剪貼簿。",
+    "Link copied to the clipboard.",
+  ],
+  "studio.thread.shareFailed": [
+    "無法複製連結；請手動複製網址。",
+    "Could not copy the link; copy the address manually.",
+  ],
+  "studio.thread.sharePrivateWarning": [
+    "此對話為私人：只有你與管理員可以開啟此連結。",
+    "This conversation is private: only you and admins can open this link.",
+  ],
+  "studio.thread.shareHint": [
+    "分享的是目前網址；不會另行公開或變更可見範圍。",
+    "Shares the current address only; nothing is published or made more visible.",
+  ],
   "studio.thread.answered": ["已回覆", "Answered"],
   "studio.thread.partial": ["部分回答", "Partially answered"],
   "studio.thread.needsInput": ["需要更多資訊", "More information needed"],
@@ -384,6 +401,14 @@ export const STUDIO_COPY = {
   "studio.threads.searchEmpty": [
     "沒有符合搜尋的對話。",
     "No conversations match this search.",
+  ],
+  "studio.threads.searchSummary": [
+    "搜尋「{query}」：{count} 個對話（伺服器篩選）。",
+    "Search “{query}”: {count} conversation(s), filtered on the server.",
+  ],
+  "studio.threads.searchInvalid": [
+    "搜尋字串最多 120 個字元；未套用篩選。",
+    "A search is at most 120 characters; no filter was applied.",
   ],
   "studio.threads.updated": ["最近更新", "Last updated"],
   "studio.threads.open": ["開啟對話", "Open conversation"],
@@ -845,6 +870,27 @@ export const STUDIO_COPY = {
   "studio.outputs.intro": [
     "只顯示已儲存的成品，並附版本、資料時間與簽核狀態。",
     "Only saved artifacts are shown, with their version, as-of time and sign-off state.",
+  ],
+  "studio.outputs.filtersTitle": ["篩選成品", "Filter artifacts"],
+  "studio.outputs.searchLabel": ["搜尋標題", "Search titles"],
+  "studio.outputs.searchPlaceholder": ["成品標題", "Artifact title"],
+  "studio.outputs.filterKind": ["類型", "Kind"],
+  "studio.outputs.filterAllKinds": ["所有類型", "All kinds"],
+  "studio.outputs.filterStatus": ["狀態", "Status"],
+  "studio.outputs.filterAllStatuses": ["所有狀態", "All statuses"],
+  "studio.outputs.filterApply": ["套用篩選", "Apply filters"],
+  "studio.outputs.filterClear": ["清除篩選", "Clear filters"],
+  "studio.outputs.filterSummary": [
+    "篩選結果：{count} 個成品（伺服器篩選；搜尋：{query}）。",
+    "Filtered result: {count} artifact(s), filtered on the server (search: {query}).",
+  ],
+  "studio.outputs.filterInvalid": [
+    "篩選參數無效；未套用篩選。",
+    "The filter parameters are invalid; no filter was applied.",
+  ],
+  "studio.outputs.filteredEmpty": [
+    "沒有符合篩選的成品。",
+    "No artifacts match these filters.",
   ],
   "studio.signoff.draft": ["草稿", "Draft"],
   "studio.signoff.saved": ["已儲存", "Saved"],

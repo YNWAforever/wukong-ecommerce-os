@@ -51,6 +51,14 @@ function textArray(values: readonly string[]) {
   )}]::text[]`;
 }
 
+/**
+ * `%pattern%` for a case-insensitive LIKE/ILIKE with `%`, `_` and `\` in the
+ * operator's search text treated as literal characters (used with ESCAPE '\').
+ */
+function likePattern(value: string): string {
+  return `%${value.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+}
+
 export type StudioVisibility = "workspace" | "private";
 export type StudioThreadStatus = "open" | "archived";
 export type StudioMessageRole = "operator" | "assistant" | "system" | "tool";
@@ -292,7 +300,11 @@ export type StudioRepository = {
       skillKey?: string | null;
       visibility?: StudioVisibility;
     }): Promise<StudioThread>;
-    list(input?: { limit?: number; before?: Date }): Promise<{
+    /**
+     * `q` is matched case-insensitively against the title and skill key, with
+     * `%`, `_` and `\` in the operator's text treated literally (LIKE escaping).
+     */
+    list(input?: { limit?: number; before?: Date; q?: string }): Promise<{
       items: StudioThread[];
       truncated: boolean;
     }>;
@@ -382,7 +394,16 @@ export type StudioRepository = {
       createdBy: string;
     }): Promise<{ output: StudioOutput; version: StudioOutputVersion }>;
     get(id: string): Promise<StudioOutput | null>;
-    list(input?: { limit?: number }): Promise<StudioOutput[]>;
+    /**
+     * `q` is a case-insensitive title search with LIKE wildcards escaped;
+     * `kind`/`status` are exact filters. All filters combine with AND.
+     */
+    list(input?: {
+      limit?: number;
+      kind?: StudioOutputKind;
+      status?: StudioOutputStatus;
+      q?: string;
+    }): Promise<StudioOutput[]>;
     versions(outputId: string): Promise<StudioOutputVersion[]>;
     setStatus(
       id: string,
@@ -796,10 +817,17 @@ export function createStudioRepository(
         scope.assertOpen();
         const limit = Math.min(Math.max(input.limit ?? 50, 1), 50);
         const before = input.before ?? null;
+        const search = input.q?.trim();
+        const pattern = search ? likePattern(search) : null;
         const rows = await transaction.execute(sql`
           select * from studio_threads
           where workspace_id=${workspaceId}
             ${before ? sql`and created_at < ${before.toISOString()}::timestamptz` : sql``}
+            ${
+              pattern
+                ? sql`and (title ilike ${pattern} escape '\\' or coalesce(skill_key,'') ilike ${pattern} escape '\\')`
+                : sql``
+            }
           order by coalesce(last_message_at,created_at) desc, created_at desc, id desc
           limit ${limit}
         `);
@@ -1110,8 +1138,15 @@ export function createStudioRepository(
       async list(input = {}) {
         scope.assertOpen();
         const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+        const search = input.q?.trim();
+        const pattern = search ? likePattern(search) : null;
+        const kind = input.kind ?? null;
+        const status = input.status ?? null;
         const rows = await transaction.execute(sql`
           select * from studio_outputs where workspace_id=${workspaceId}
+            ${kind ? sql`and kind=${kind}` : sql``}
+            ${status ? sql`and status=${status}` : sql``}
+            ${pattern ? sql`and title ilike ${pattern} escape '\\'` : sql``}
           order by created_at desc, id desc limit ${limit}
         `);
         return rows.map((row) => readOutput(row as Record<string, unknown>));

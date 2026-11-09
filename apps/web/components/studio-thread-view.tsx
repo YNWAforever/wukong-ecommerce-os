@@ -7,6 +7,7 @@ import type {
   StudioMessageResponse,
   StudioThreadResponse,
 } from "../lib/studio/contracts";
+import { copyTextToClipboard } from "../lib/studio/clipboard";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import { useStudioAttachments } from "../lib/studio/attachments";
 import type { StudioTraceStep } from "../lib/studio/types";
@@ -111,6 +112,9 @@ export function StudioThreadView({
   const [traces, setTraces] = useState<Record<string, TraceState>>({});
   const [replayed, setReplayed] = useState(false);
   const [reloadError, setReloadError] = useState<StudioCopyKey | null>(null);
+  const [shareState, setShareState] = useState<"copied" | "failed" | null>(
+    null,
+  );
   const paneRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -266,6 +270,22 @@ export function StudioThreadView({
   const sendErrorKey: StudioCopyKey | null =
     pendingAttempt !== null ? (session.error?.copyKey ?? null) : null;
 
+  /**
+   * Copy a link to this conversation. The copied URL is exactly the current
+   * page plus the stable thread path; no server call and no visibility change.
+   * A private thread keeps its warning visible next to the action.
+   */
+  const handleShare = useCallback(async () => {
+    const path = `/studio/t/${encodeURIComponent(thread.threadId)}`;
+    const origin =
+      typeof window !== "undefined" &&
+      /^https?:\/\//.test(window.location.origin)
+        ? window.location.origin
+        : "";
+    const ok = await copyTextToClipboard(`${origin}${path}`);
+    setShareState(ok ? "copied" : "failed");
+  }, [thread.threadId]);
+
   return (
     <div className={styles["studio-thread"]}>
       <header className={styles["studio-thread-header"]}>
@@ -312,6 +332,36 @@ export function StudioThreadView({
           >
             {studioCopy(locale, "studio.thread.reload")}
           </button>
+          <button
+            type="button"
+            className={styles["studio-secondary-button"]}
+            onClick={() => void handleShare()}
+            aria-describedby="studio-thread-share-status"
+          >
+            {studioCopy(locale, "studio.thread.share")}
+          </button>
+        </div>
+        <div className={styles["studio-thread-share"]}>
+          <p
+            id="studio-thread-share-status"
+            className={styles["studio-thread-share-status"]}
+            role="status"
+            aria-live="polite"
+          >
+            {shareState === "copied"
+              ? studioCopy(locale, "studio.thread.shareCopied")
+              : shareState === "failed"
+                ? studioCopy(locale, "studio.thread.shareFailed")
+                : ""}
+          </p>
+          <p className={styles["studio-composer-hint"]}>
+            {studioCopy(locale, "studio.thread.shareHint")}
+          </p>
+          {thread.visibility === "private" ? (
+            <p className={styles["studio-thread-share-warning"]} role="note">
+              {studioCopy(locale, "studio.thread.sharePrivateWarning")}
+            </p>
+          ) : null}
         </div>
       </header>
 

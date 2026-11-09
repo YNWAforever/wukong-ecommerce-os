@@ -46,8 +46,14 @@ import type {
   StudioRunResponse,
   StudioSendResult,
   StudioThreadResponse,
+  StudioOutputListQuery,
+  StudioThreadListQuery,
 } from "./contracts";
 import { STUDIO_DEFAULT_THREAD_TITLE } from "./contracts";
+import {
+  studioOutputListQuerySchema,
+  studioThreadListQuerySchema,
+} from "./contracts";
 import {
   composeDeterministicReply,
   composeNeedsInputReply,
@@ -1426,11 +1432,21 @@ export function createStudioService(deps: StudioServiceDeps) {
       return { threadId };
     },
 
-    async listThreads(): Promise<ListThreadsResult> {
+    async listThreads(
+      filters: StudioThreadListQuery = {},
+    ): Promise<ListThreadsResult> {
       const { session, role } = await requireStudioSession(deps, "viewer");
+      const parsed = studioThreadListQuerySchema.safeParse(filters);
+      if (!parsed.success)
+        throw new ApiError(400, "invalid_query", "Invalid query parameters.");
+      const search = parsed.data.q?.trim();
       const listed = await database().forWorkspace(
         session.workspaceId,
-        (repos) => repos.studio.threads.list({ limit: 50 }),
+        (repos) =>
+          repos.studio.threads.list({
+            limit: 50,
+            ...(search ? { q: search } : {}),
+          }),
       );
       return {
         items: listed.items
@@ -1725,11 +1741,23 @@ export function createStudioService(deps: StudioServiceDeps) {
       };
     },
 
-    async listOutputs(): Promise<ListOutputsResult> {
+    async listOutputs(
+      filters: StudioOutputListQuery = {},
+    ): Promise<ListOutputsResult> {
       const { session } = await requireStudioSession(deps, "viewer");
+      const parsed = studioOutputListQuerySchema.safeParse(filters);
+      if (!parsed.success)
+        throw new ApiError(400, "invalid_query", "Invalid query parameters.");
+      const search = parsed.data.q?.trim();
       const listed = await database().forWorkspace(
         session.workspaceId,
-        (repos) => repos.studio.outputs.list({ limit: 50 }),
+        (repos) =>
+          repos.studio.outputs.list({
+            limit: 50,
+            ...(search ? { q: search } : {}),
+            ...(parsed.data.kind ? { kind: parsed.data.kind } : {}),
+            ...(parsed.data.status ? { status: parsed.data.status } : {}),
+          }),
       );
       const items: StudioOutputSummary[] = listed.map((output) => ({
         outputId: output.id,
