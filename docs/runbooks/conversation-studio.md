@@ -369,3 +369,26 @@ artifact with explicit empty suggestions and limitations; with a model enabled, 
 evidence-ref-grounded, de-duplicated suggestions with confidence 0–1 are kept (dropped suggestions
 are counted in the reply limitation). Nothing is ever applied — a person must change the category in
 the existing catalog flow. Findings render as read-only cards linked to the listing review screen.
+
+## Activation dry run (preview) — verified 2026-11-09
+
+Steps 1–5 of the production activation sequence were rehearsed end-to-end on a **fresh disposable
+database** (never production, all local):
+
+1. created an empty local Postgres database (`wukong_activation_dry_run`);
+2. replayed the full migration set through `0057_studio_mcp_token_quotas.sql` with the normal
+   `@wukong/db db:migrate` runner (`DATABASE_URL` runtime role + `DATABASE_ADMIN_URL` admin role);
+3. seeded a workspace, owner user/credential, invite-eligibility row and enabled
+   `studio_workspace_settings` row with `tests/e2e/studio-browser-acceptance-seed.mjs`;
+4. built the web production bundle and started it with `CONVERSATION_STUDIO_ENABLED=true`
+   (AI/MCP flags unset) against that database;
+5. ran the authenticated acceptance spec (`STUDIO_BROWSER_ACCEPTANCE=1`, production build):
+   **1 passed (6.3 s)** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
+   execution trace, reload persistence, 390 px layout, threads list.
+
+Post-run evidence in the disposable database: 1 thread, 2 messages, 1 `succeeded` run and audit
+events `studio.thread.created`, `studio.message.received`, `studio.run.completed`. Rollback was
+also rehearsed (`UPDATE studio_workspace_settings SET enabled=false`) and returned the workspace to
+disabled before dropping the database. The exact commands are the A2 activation commands above; only
+the **production** execution (real connection/credentials/migration window) remains gated on the
+operator decision.
