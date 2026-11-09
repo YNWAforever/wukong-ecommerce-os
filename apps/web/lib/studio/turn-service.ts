@@ -1758,32 +1758,46 @@ export function createStudioService(deps: StudioServiceDeps) {
       const data = await database().forWorkspace(
         session.workspaceId,
         async (repos) => {
-          const [counts, quality, jobs, outputs, threads] = await Promise.all([
-            repos.listings.countByStatus(),
-            repos.qualityProjection.read(),
-            repos.pipelineRuns.listForWorkspace(20),
-            repos.studio.outputs
-              .list({ limit: 50 })
-              .then((listed) => listed.items),
-            // Visibility is applied in SQL before LIMIT so another user's
-            // private thread never reaches the inbox aggregate.
-            repos.studio.threads.list({
-              limit: 20,
-              viewerId: session.actorId,
-              includePrivate: THREAD_ADMIN_ROLES.includes(role),
-            }),
-          ]);
-          return { counts, quality, jobs, outputs, threads: threads.items };
+          // Each source is independent: one unreadable source marks its own
+          // section unavailable instead of blanking the whole inbox. The
+          // workspace transaction itself still fails closed above.
+          const fulfilled = <T>(result: PromiseSettledResult<T>) =>
+            result.status === "fulfilled" ? result.value : null;
+          const [counts, quality, jobs, outputs, threads] =
+            await Promise.allSettled([
+              repos.listings.countByStatus(),
+              repos.qualityProjection.read(),
+              repos.pipelineRuns.listForWorkspace(20),
+              repos.studio.outputs
+                .list({ limit: 50 })
+                .then((listed) => listed.items),
+              // Visibility is applied in SQL before LIMIT so another user's
+              // private thread never reaches the inbox aggregate.
+              repos.studio.threads.list({
+                limit: 20,
+                viewerId: session.actorId,
+                includePrivate: THREAD_ADMIN_ROLES.includes(role),
+              }),
+            ]);
+          return {
+            counts: fulfilled(counts),
+            quality: fulfilled(quality),
+            jobs: fulfilled(jobs),
+            outputs: fulfilled(outputs),
+            threads: fulfilled(threads)?.items ?? null,
+          };
         },
       );
       return buildStudioInbox({
         now: clock(),
         listingCounts: data.counts,
-        quality: {
-          hasGapsCount: data.quality.hasGapsCount,
-          noActiveVersion: data.quality.noActiveVersion,
-          unassessableActiveVersion: data.quality.unassessableActiveVersion,
-        },
+        quality: data.quality
+          ? {
+              hasGapsCount: data.quality.hasGapsCount,
+              noActiveVersion: data.quality.noActiveVersion,
+              unassessableActiveVersion: data.quality.unassessableActiveVersion,
+            }
+          : null,
         jobs: data.jobs,
         outputs: data.outputs,
         threads: data.threads,
