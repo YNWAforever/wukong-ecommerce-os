@@ -205,6 +205,10 @@ for that residual risk.
 
 - **Deterministic first.** Home/overview and records answers never call a model or reserve budget.
   A model card is separate and labelled; ungrounded claims are dropped and counted.
+- **Home templates follow the skill registry.** Each role-template card's Pilot/Planned/Unavailable
+  label is derived from the reviewed skill registry at render time, not hard-coded: a pilot card
+  fills the composer with its starter text and selects that skill, and a planned/blocked card
+  states its limitation. Filling never sends.
 - **Copy proposals** never write canonical data. Open the listing in the existing review screen to
   apply anything; the Studio artifact is versioned and can be saved (operator) and signed off
   (reviewer+); sign-off is an artifact state, not a listing approval or publish action.

@@ -257,3 +257,14 @@ and the encryption key, but not approval — a draft can be validated first. New
 `PUT|DELETE /api/studio/mcp-connections/[id]/credential`, `PUT .../schemas`, `POST .../probe`.
 No skill or connector calls an approved connection yet. Remaining C3 work is still user-gated: a
 provider/credential-ownership decision and the live-acceptance run.
+
+### Template availability follows the skill registry
+
+The Studio home role-template cards now derive their Pilot/Planned/Unavailable label from the
+reviewed skill registry instead of a hard-coded snapshot. That corrects stale cards: the five
+skills that reached pilot after the first release (`listing.draft_from_sources`,
+`product_shot.prepare`, `listing.copy_proposal`, `category.map_proposal`, `merchant.audit`) are now
+shown as interactive with their own starter text, `supplier.intel_proposal` stays Planned and the
+two blocked skills stay Unavailable. Filling a card still only fills the composer and never sends;
+the limitation copy on each card now states the shipped deterministic boundary instead of "not
+implemented yet".
