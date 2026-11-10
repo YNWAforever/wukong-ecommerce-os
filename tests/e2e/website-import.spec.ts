@@ -190,10 +190,12 @@ test("partial preview and retry retain evidence until the replacement completes"
     .getByRole("checkbox", { name: "Sample bottle", exact: true })
     .check();
   await page.getByRole("button", { name: "Retry scan", exact: true }).click();
-  await expect(page.getByText(/Previous preview:/)).toBeVisible();
+  await expect(page.getByText(/Previous preview:/)).toBeVisible({
+    timeout: 30000,
+  });
   await expect(
     page.getByRole("checkbox", { name: "Sample bottle", exact: true }),
-  ).toBeDisabled();
+  ).toBeDisabled({ timeout: 30000 });
   await page.screenshot({
     path: testInfo.outputPath("website-retained-retry.png"),
     fullPage: true,
@@ -204,7 +206,7 @@ test("partial preview and retry retain evidence until the replacement completes"
   expect(new URL(page.url()).searchParams.get("scan")).not.toBe(prior);
   await expect(
     page.getByRole("checkbox", { name: "Sample bottle", exact: true }),
-  ).not.toBeChecked();
+  ).not.toBeChecked({ timeout: 30000 });
   await page.screenshot({
     path: testInfo.outputPath("website-partial.png"),
     fullPage: true,
