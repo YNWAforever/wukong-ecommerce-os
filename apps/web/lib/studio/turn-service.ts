@@ -40,6 +40,7 @@ import type {
   SendMessageBody,
   StudioInboxResult,
   StudioMessageResponse,
+  StudioMetricsResult,
   StudioOverviewResult,
   StudioOutputSummary,
   StudioOutputVersionResponse,
@@ -52,6 +53,7 @@ import type {
 } from "./contracts";
 import { STUDIO_DEFAULT_THREAD_TITLE } from "./contracts";
 import {
+  STUDIO_METRICS_WINDOW_DAYS,
   STUDIO_PAGE_SIZE,
   studioOutputListQuerySchema,
   studioThreadListQuerySchema,
@@ -319,6 +321,18 @@ export function routeSkillKey(text: string): string {
   )
     ? "catalog.gap_review"
     : "catalog.find";
+}
+
+/** Parse a count into a non-negative safe integer, never NaN/Infinity. */
+function safeCount(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+/** Keep an aggregate decimal string honest; anything malformed becomes "0". */
+function decimalString(value: unknown): string {
+  const candidate = String(value ?? "0").trim();
+  return /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(candidate) ? candidate : "0";
 }
 
 function isThreadVisible(
@@ -1802,6 +1816,54 @@ export function createStudioService(deps: StudioServiceDeps) {
         outputs: data.outputs,
         threads: data.threads,
       });
+    },
+
+    /**
+     * Admin Studio usage summary (A5.2): read-only projection of the last 30
+     * days of runs, spend, MCP calls, threads and messages. Admin/owner only;
+     * the workspace always comes from the resolved session.
+     */
+    async metrics(): Promise<StudioMetricsResult> {
+      const { session } = await requireStudioSession(deps, "admin");
+      const asOf = clock();
+      const since = new Date(
+        asOf.getTime() - STUDIO_METRICS_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      );
+      const summary = await database().forWorkspace(
+        session.workspaceId,
+        (repos) => repos.studio.metrics.summary({ since }),
+      );
+      return {
+        windowDays: STUDIO_METRICS_WINDOW_DAYS,
+        since: since.toISOString(),
+        asOf: asOf.toISOString(),
+        runs: {
+          total: safeCount(summary.runs.total),
+          succeeded: safeCount(summary.runs.succeeded),
+          failed: safeCount(summary.runs.failed),
+          cancelled: safeCount(summary.runs.cancelled),
+          outcomeUnknown: safeCount(summary.runs.outcomeUnknown),
+          queuedOrRunning: safeCount(summary.runs.queuedOrRunning),
+        },
+        tokens: {
+          input: decimalString(summary.tokens.input),
+          output: decimalString(summary.tokens.output),
+        },
+        spendUsd: {
+          settled: decimalString(summary.spend.settledUsd),
+          reserved: decimalString(summary.spend.reservedUsd),
+        },
+        mcpCalls: {
+          total: safeCount(summary.mcpCalls.total),
+          ok: safeCount(summary.mcpCalls.ok),
+          denied: safeCount(summary.mcpCalls.denied),
+          error: safeCount(summary.mcpCalls.error),
+          unavailable: safeCount(summary.mcpCalls.unavailable),
+          schemaDrift: safeCount(summary.mcpCalls.schemaDrift),
+        },
+        threadsCreated: safeCount(summary.threadsCreated),
+        messages: safeCount(summary.messages),
+      };
     },
 
     async listOutputs(

@@ -450,6 +450,187 @@ describe.skipIf(!enabled)("studio repositories", () => {
     ]);
   });
 
+  it("aggregates windowed studio usage for one workspace", async () => {
+    // Start the window just before this test's fixtures so rows left by earlier
+    // tests in the shared workspace are not counted here.
+    const since = new Date(Date.now() - 50);
+    const made = await studioRepositories(WORKSPACE_A, async (repos) => {
+      const thread = await repos.studio.threads.create({
+        createdBy: "actor-a",
+        title: "Usage metrics thread",
+      });
+      const trigger = await repos.studio.messages.append({
+        threadId: thread.id,
+        role: "operator",
+        content: { text: "usage" },
+        createdBy: "actor-a",
+      });
+      await repos.studio.messages.append({
+        threadId: thread.id,
+        role: "assistant",
+        content: { text: "ok" },
+        createdBy: "studio",
+      });
+      const createRun = async (idempotencyKey: string) => {
+        const { run } = await repos.studio.runs.create({
+          threadId: thread.id,
+          triggerMessageId: trigger.message.id,
+          skillKey: "catalog.find",
+          skillVersion: "1.0.0",
+          idempotencyKey,
+        });
+        return run;
+      };
+      const succeeded = await createRun("usage-r1");
+      await repos.studio.runs.markRunning(succeeded.id);
+      await repos.studio.runs.complete(succeeded.id, {
+        inputTokens: 100,
+        outputTokens: 50,
+        settledUsd: "0.020000",
+      });
+      const failed = await createRun("usage-r2");
+      await repos.studio.runs.markRunning(failed.id);
+      await repos.studio.runs.fail(failed.id, {
+        errorCode: "provider_error",
+        inputTokens: 10,
+        outputTokens: 5,
+        settledUsd: "0.005000",
+      });
+      const unknown = await createRun("usage-r3");
+      await repos.studio.runs.fail(unknown.id, {
+        errorCode: "outcome",
+        outcomeUnknown: true,
+      });
+      const queued = await createRun("usage-r4");
+      const running = await createRun("usage-r5");
+      await repos.studio.runs.markRunning(running.id);
+      await repos.studio.budget.reserve({
+        runId: succeeded.id,
+        pricingVersion: "p1",
+        reservedUsd: "0.020000",
+        workspaceCapUsd: "10.000000",
+      });
+      await repos.studio.budget.settle(succeeded.id, "0.020000");
+      await repos.studio.budget.reserve({
+        runId: failed.id,
+        pricingVersion: "p1",
+        reservedUsd: "0.010000",
+        workspaceCapUsd: "10.000000",
+      });
+      await repos.studio.budget.release(failed.id);
+      await repos.studio.budget.reserve({
+        runId: queued.id,
+        pricingVersion: "p1",
+        reservedUsd: "0.030000",
+        workspaceCapUsd: "10.000000",
+      });
+      const statuses = [
+        "ok",
+        "denied",
+        "error",
+        "unavailable",
+        "schema_drift",
+      ] as const;
+      const mcpIds: string[] = [];
+      for (const [index, status] of statuses.entries()) {
+        const call = await repos.studio.mcpCalls.append({
+          toolName: `usage.tool.${index}`,
+          requestDigest: "a".repeat(64),
+          status,
+          caller: "agent",
+        });
+        mcpIds.push(call.id);
+      }
+      return { thread, unknown, queued, mcpIds, succeeded };
+    });
+
+    // A second workspace's rows must never contribute to A's summary.
+    const foreign = await studioRepositories(WORKSPACE_B, async (repos) => {
+      const thread = await repos.studio.threads.create({
+        createdBy: "actor-b",
+        title: "Foreign usage thread",
+      });
+      const trigger = await repos.studio.messages.append({
+        threadId: thread.id,
+        role: "operator",
+        content: { text: "foreign" },
+        createdBy: "actor-b",
+      });
+      const { run } = await repos.studio.runs.create({
+        threadId: thread.id,
+        triggerMessageId: trigger.message.id,
+        skillKey: "catalog.find",
+        skillVersion: "1.0.0",
+        idempotencyKey: "usage-foreign-r1",
+      });
+      await repos.studio.runs.fail(run.id, { errorCode: "foreign" });
+      await repos.studio.mcpCalls.append({
+        toolName: "usage.foreign.tool",
+        requestDigest: "b".repeat(64),
+        status: "ok",
+        caller: "agent",
+      });
+      return run;
+    });
+    expect(foreign.id).toBeDefined();
+
+    const summary = await studioRepositories(WORKSPACE_A, (repos) =>
+      repos.studio.metrics.summary({ since }),
+    );
+    expect(summary.runs).toEqual({
+      total: 5,
+      succeeded: 1,
+      failed: 1,
+      cancelled: 0,
+      outcomeUnknown: 1,
+      queuedOrRunning: 2,
+    });
+    expect(Number(summary.tokens.input)).toBe(110);
+    expect(Number(summary.tokens.output)).toBe(55);
+    expect(Number(summary.spend.settledUsd)).toBeCloseTo(0.02, 6);
+    expect(Number(summary.spend.reservedUsd)).toBeCloseTo(0.06, 6);
+    expect(summary.mcpCalls).toEqual({
+      total: 5,
+      ok: 1,
+      denied: 1,
+      error: 1,
+      unavailable: 1,
+      schemaDrift: 1,
+    });
+    expect(summary.threadsCreated).toBe(1);
+    expect(summary.messages).toBe(2);
+
+    // Boundary: a row exactly at `since` is included; 1 ms later it is not.
+    const atBoundary = await studioRepositories(WORKSPACE_A, (repos) =>
+      repos.studio.metrics.summary({ since: made.unknown.createdAt }),
+    );
+    expect(atBoundary.runs.outcomeUnknown).toBe(1);
+    const afterBoundary = await studioRepositories(WORKSPACE_A, (repos) =>
+      repos.studio.metrics.summary({
+        since: new Date(made.unknown.createdAt.getTime() + 1),
+      }),
+    );
+    expect(afterBoundary.runs.outcomeUnknown).toBe(0);
+
+    // A future window excludes everything (no silent inclusion).
+    const empty = await studioRepositories(WORKSPACE_A, (repos) =>
+      repos.studio.metrics.summary({
+        since: new Date(Date.now() + 60_000),
+      }),
+    );
+    expect(empty.runs.total).toBe(0);
+    expect(empty.mcpCalls.total).toBe(0);
+    expect(empty.threadsCreated).toBe(0);
+    expect(empty.messages).toBe(0);
+
+    const foreignSummary = await studioRepositories(WORKSPACE_B, (repos) =>
+      repos.studio.metrics.summary({ since }),
+    );
+    expect(foreignSummary.runs.total).toBe(1);
+    expect(foreignSummary.mcpCalls.total).toBe(1);
+    expect(foreignSummary.threadsCreated).toBe(1);
+  });
+
   it("defaults settings and round-trips an explicit configuration", async () => {
     const defaults = await db!.forWorkspace(WORKSPACE_A, (repos) =>
       repos.studio.settings.get(),

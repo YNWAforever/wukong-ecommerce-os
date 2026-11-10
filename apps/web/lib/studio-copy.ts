@@ -1427,6 +1427,51 @@ export const STUDIO_COPY = {
     "收據只證明匯出檔由本部署的簽署金鑰產生；不代表外部驗證或核准。",
     "The receipt only shows the export was produced by this deployment's signing key; it is not external verification or approval.",
   ],
+
+  // -- admin usage summary (A5.2) ------------------------------------------
+  "studio.usage.title": ["用量 — 最近 30 天", "Usage — last 30 days"],
+  "studio.usage.lede": [
+    "唯讀投影：回合、花費、MCP 呼叫、對話與訊息。",
+    "Read-only projection of turns, spend, MCP calls, conversations and messages.",
+  ],
+  "studio.usage.window": [
+    "期間 {since} 至 {asOf}（30 天）",
+    "Window {since} to {asOf} (30 days)",
+  ],
+  "studio.usage.failure": [
+    "未能讀取用量；下方設定不受影響。",
+    "Usage could not be read; the settings below are unaffected.",
+  ],
+  "studio.usage.note": [
+    "這是既有資料表的唯讀投影；結構化回合與預算事件仍是權威來源。",
+    "A read-only projection of existing tables; structured turn/budget events remain the authoritative source.",
+  ],
+  "studio.usage.turnsLabel": ["回合", "Turns"],
+  "studio.usage.turns": [
+    "{total} 次（成功 {succeeded}、失敗 {failed}）",
+    "{total} total (succeeded {succeeded}, failed {failed})",
+  ],
+  "studio.usage.spendLabel": ["支出（USD）", "Spend (USD)"],
+  "studio.usage.spend": [
+    "已結算 {settled}、已預留 {reserved}",
+    "Settled {settled}, reserved {reserved}",
+  ],
+  "studio.usage.tokensLabel": ["Token", "Tokens"],
+  "studio.usage.tokens": [
+    "輸入 {input}、輸出 {output}",
+    "Input {input}, output {output}",
+  ],
+  "studio.usage.mcpLabel": ["MCP 呼叫", "MCP calls"],
+  "studio.usage.mcp": [
+    "{total} 次（拒絕 {denied}、錯誤 {error}）",
+    "{total} total (denied {denied}, error {error})",
+  ],
+  "studio.usage.contentLabel": ["對話與訊息", "Conversations & messages"],
+  "studio.usage.content": [
+    "新增 {threads} 個對話、{messages} 則訊息",
+    "{threads} conversations created, {messages} messages",
+  ],
+
   // -- renderer fallbacks ---------------------------------------------------
   "studio.render.fallback": [
     "此步驟的內容未能顯示。",

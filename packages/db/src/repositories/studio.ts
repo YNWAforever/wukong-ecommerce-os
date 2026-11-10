@@ -34,6 +34,12 @@ function text(value: unknown): string {
   return String(value);
 }
 
+/** Parse a count/bigint column without ever producing NaN/Infinity. */
+function countOf(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+
 function nullableText(value: unknown): string | null {
   return value == null ? null : String(value);
 }
@@ -103,6 +109,36 @@ export type StudioSettings = {
   ai: StudioAiSettings | null;
   updatedBy: string | null;
   updatedAt: Date | null;
+};
+
+/**
+ * Workspace-scoped Studio usage aggregate for the admin usage summary (A5.2).
+ *
+ * Every numeric sum is a decimal string so it stays bigint-safe across the
+ * postgres int8/numeric boundary; the counts are plain numbers. Only rows with
+ * `created_at >= since` in this workspace contribute.
+ */
+export type StudioMetricsSummary = {
+  runs: {
+    total: number;
+    succeeded: number;
+    failed: number;
+    cancelled: number;
+    outcomeUnknown: number;
+    queuedOrRunning: number;
+  };
+  tokens: { input: string; output: string };
+  spend: { settledUsd: string; reservedUsd: string };
+  mcpCalls: {
+    total: number;
+    ok: number;
+    denied: number;
+    error: number;
+    unavailable: number;
+    schemaDrift: number;
+  };
+  threadsCreated: number;
+  messages: number;
 };
 
 export type StudioThread = {
@@ -483,6 +519,14 @@ export type StudioRepository = {
      * the UTC-month quota; rows for other tokens/workspaces never contribute.
      */
     countForTokenSince(tokenId: string, since: Date): Promise<number>;
+  };
+  /**
+   * Read-only workspace usage aggregate (A5.2): one windowed read over runs,
+   * budget reservations, MCP calls, threads and messages. No writes and no
+   * cross-workspace rows.
+   */
+  metrics: {
+    summary(input: { since: Date }): Promise<StudioMetricsSummary>;
   };
   apiTokens: {
     create(input: {
@@ -1391,6 +1435,116 @@ export function createStudioRepository(
             and created_at >= ${since.toISOString()}::timestamptz
         `);
         return Number(rows[0]?.count ?? 0);
+      },
+    },
+
+    metrics: {
+      async summary(input) {
+        scope.assertOpen();
+        const sinceIso = input.since.toISOString();
+        const [
+          runTotals,
+          runStatuses,
+          reservations,
+          mcpStatuses,
+          threads,
+          messages,
+        ] = await Promise.all([
+          transaction.execute(sql`
+              select count(*)::bigint as total,
+                coalesce(sum(input_tokens),0)::text as input_tokens,
+                coalesce(sum(output_tokens),0)::text as output_tokens,
+                coalesce(sum(settled_usd),0)::text as settled_usd
+              from studio_runs
+              where workspace_id=${workspaceId}
+                and created_at >= ${sinceIso}::timestamptz
+            `),
+          transaction.execute(sql`
+              select status, count(*)::bigint as count
+              from studio_runs
+              where workspace_id=${workspaceId}
+                and created_at >= ${sinceIso}::timestamptz
+              group by status
+            `),
+          transaction.execute(sql`
+              select coalesce(sum(reserved_usd),0)::text as reserved_usd
+              from studio_budget_reservations
+              where workspace_id=${workspaceId}
+                and created_at >= ${sinceIso}::timestamptz
+            `),
+          transaction.execute(sql`
+              select status, count(*)::bigint as count
+              from studio_mcp_calls
+              where workspace_id=${workspaceId}
+                and created_at >= ${sinceIso}::timestamptz
+              group by status
+            `),
+          transaction.execute(sql`
+              select count(*)::bigint as count from studio_threads
+              where workspace_id=${workspaceId}
+                and created_at >= ${sinceIso}::timestamptz
+            `),
+          transaction.execute(sql`
+              select count(*)::bigint as count from studio_messages
+              where workspace_id=${workspaceId}
+                and created_at >= ${sinceIso}::timestamptz
+            `),
+        ]);
+
+        const runByStatus = new Map<string, number>();
+        for (const row of runStatuses) {
+          const record = row as Record<string, unknown>;
+          runByStatus.set(text(record.status), countOf(record.count));
+        }
+        const mcpByStatus = new Map<string, number>();
+        for (const row of mcpStatuses) {
+          const record = row as Record<string, unknown>;
+          mcpByStatus.set(text(record.status), countOf(record.count));
+        }
+        const totalRuns = countOf(
+          (runTotals[0] as Record<string, unknown> | undefined)?.total,
+        );
+        const totals = runTotals[0] as Record<string, unknown> | undefined;
+        return {
+          runs: {
+            total: totalRuns,
+            succeeded: runByStatus.get("succeeded") ?? 0,
+            failed: runByStatus.get("failed") ?? 0,
+            cancelled: runByStatus.get("cancelled") ?? 0,
+            outcomeUnknown: runByStatus.get("outcome_unknown") ?? 0,
+            queuedOrRunning:
+              (runByStatus.get("queued") ?? 0) +
+              (runByStatus.get("running") ?? 0),
+          },
+          tokens: {
+            input: text(totals?.input_tokens ?? "0"),
+            output: text(totals?.output_tokens ?? "0"),
+          },
+          spend: {
+            settledUsd: text(totals?.settled_usd ?? "0"),
+            reservedUsd: text(
+              (reservations[0] as Record<string, unknown> | undefined)
+                ?.reserved_usd ?? "0",
+            ),
+          },
+          mcpCalls: {
+            total: [...mcpByStatus.values()].reduce(
+              (sum, count) => sum + count,
+              0,
+            ),
+            ok: mcpByStatus.get("ok") ?? 0,
+            denied: mcpByStatus.get("denied") ?? 0,
+            error: mcpByStatus.get("error") ?? 0,
+            unavailable: mcpByStatus.get("unavailable") ?? 0,
+            schemaDrift: mcpByStatus.get("schema_drift") ?? 0,
+          },
+          threadsCreated: countOf(
+            (threads[0] as Record<string, unknown> | undefined)?.count,
+          ),
+          messages: countOf(
+            (messages[0] as Record<string, unknown> | undefined)?.count,
+          ),
+        } satisfies StudioMetricsSummary;
       },
     },
 

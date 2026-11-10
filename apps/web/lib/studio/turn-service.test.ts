@@ -1253,6 +1253,68 @@ describe("studio inbox", () => {
   });
 });
 
+describe("studio usage metrics", () => {
+  const SUMMARY = {
+    runs: {
+      total: 4,
+      succeeded: 2,
+      failed: 1,
+      cancelled: 0,
+      outcomeUnknown: 1,
+      queuedOrRunning: 0,
+    },
+    tokens: { input: "110", output: "55" },
+    spend: { settledUsd: "0.025000", reservedUsd: "0.030000" },
+    mcpCalls: {
+      total: 5,
+      ok: 3,
+      denied: 1,
+      error: 1,
+      unavailable: 0,
+      schemaDrift: 0,
+    },
+    threadsCreated: 2,
+    messages: 6,
+  } as const;
+
+  it("returns the admin usage summary with a deterministic 30-day window", async () => {
+    const { service, fake } = harness({
+      role: "admin",
+      options: { metrics: SUMMARY },
+    });
+    const metrics = await service.metrics();
+    const since = new Date(NOW.getTime() - 30 * 24 * 60 * 60 * 1000);
+    expect(metrics).toEqual({
+      windowDays: 30,
+      since: since.toISOString(),
+      asOf: NOW.toISOString(),
+      runs: SUMMARY.runs,
+      tokens: SUMMARY.tokens,
+      spendUsd: { settled: "0.025000", reserved: "0.030000" },
+      mcpCalls: SUMMARY.mcpCalls,
+      threadsCreated: 2,
+      messages: 6,
+    });
+    expect(fake.state.metricsSince?.toISOString()).toBe(since.toISOString());
+    expect(fake.state.writes).toContain("metrics.summary");
+  });
+
+  it.each(["viewer", "operator", "reviewer"] as const)(
+    "refuses the %s role",
+    async (role) => {
+      const { service, fake } = harness({
+        role,
+        options: { metrics: SUMMARY },
+      });
+      await expect(service.metrics()).rejects.toMatchObject({
+        status: 403,
+        code: "insufficient_role",
+      });
+      expect(fake.state.writes).not.toContain("metrics.summary");
+    },
+  );
+});
+
 describe("studio copy-proposal turns", () => {
   const COPY_LISTING_ID = "11111111-1111-4111-8111-111111111111";
 

@@ -37,6 +37,32 @@ export type QualitySummary = Awaited<
 export type PipelineRun = Awaited<
   ReturnType<WorkspaceRepositories["pipelineRuns"]["listForWorkspace"]>
 >[number];
+export type StudioMetricsSummary = Awaited<
+  ReturnType<WorkspaceRepositories["studio"]["metrics"]["summary"]>
+>;
+
+const ZERO_METRICS: StudioMetricsSummary = {
+  runs: {
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    cancelled: 0,
+    outcomeUnknown: 0,
+    queuedOrRunning: 0,
+  },
+  tokens: { input: "0", output: "0" },
+  spend: { settledUsd: "0", reservedUsd: "0" },
+  mcpCalls: {
+    total: 0,
+    ok: 0,
+    denied: 0,
+    error: 0,
+    unavailable: 0,
+    schemaDrift: 0,
+  },
+  threadsCreated: 0,
+  messages: 0,
+};
 
 export type FakeBudgetReservation = {
   runId: string;
@@ -272,6 +298,8 @@ export type FakeStudioOptions = {
   budgets?: FakeBudgetReservation[];
   /** Make the assistant message append fail, to exercise the failure path. */
   failOnAssistantAppend?: boolean;
+  /** Usage aggregate returned by the fake `metrics.summary` (A5.2). */
+  metrics?: StudioMetricsSummary;
   /** Make an inbox/list source reject, to exercise partial-read resilience. */
   failSources?: Array<
     "counts" | "quality" | "pipelineRuns" | "outputs" | "threads"
@@ -296,6 +324,7 @@ export type FakeStudio = {
     audits: DomainAuditEvent[];
     writes: string[];
     workspaceCalls: string[];
+    metricsSince: Date | null;
   };
 };
 
@@ -456,6 +485,7 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
     audits: [],
     writes: [],
     workspaceCalls: [],
+    metricsSince: null,
   };
 
   const quality: QualitySummary = {
@@ -473,6 +503,13 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
 
   const repositories = {
     studio: {
+      metrics: {
+        summary: async (input: { since: Date }) => {
+          state.writes.push("metrics.summary");
+          state.metricsSince = input.since;
+          return options.metrics ?? ZERO_METRICS;
+        },
+      },
       settings: {
         get: async () => {
           state.writes.push("settings.get");

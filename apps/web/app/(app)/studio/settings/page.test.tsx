@@ -20,6 +20,29 @@ const state = vi.hoisted(() => ({
   settings: null as Record<string, unknown> | null,
   tokens: [] as Array<Record<string, unknown>>,
   connections: [] as Array<Record<string, unknown>>,
+  metricsThrows: false,
+  metrics: {
+    runs: {
+      total: 12,
+      succeeded: 9,
+      failed: 2,
+      cancelled: 0,
+      outcomeUnknown: 1,
+      queuedOrRunning: 0,
+    },
+    tokens: { input: "1234", output: "567" },
+    spend: { settledUsd: "1.230000", reservedUsd: "0.500000" },
+    mcpCalls: {
+      total: 4,
+      ok: 2,
+      denied: 1,
+      error: 1,
+      unavailable: 0,
+      schemaDrift: 0,
+    },
+    threadsCreated: 3,
+    messages: 8,
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -60,6 +83,12 @@ vi.mock("../../../../lib/intake-runtime", () => ({
     ) => {
       const repos = {
         studio: {
+          metrics: {
+            summary: async () => {
+              if (state.metricsThrows) throw new Error("metrics down");
+              return state.metrics;
+            },
+          },
           settings: { get: async () => state.settings },
           apiTokens: { list: async () => state.tokens },
           mcpCalls: { countForTokenSince: async () => 0 },
@@ -95,6 +124,7 @@ beforeEach(() => {
   };
   state.tokens = [];
   state.connections = [];
+  state.metricsThrows = false;
 });
 
 afterEach(() => {
@@ -194,5 +224,39 @@ describe("/studio/settings content", () => {
     expect(html).toContain("External catalogue");
     expect(html).toContain("Draft");
     expect(html).not.toContain("v1.iv.ciphertext");
+  });
+
+  it("renders the read-only last-30-day usage summary above the form", async () => {
+    const html = await render();
+    expect(html).toContain("Usage — last 30 days");
+    expect(html).toContain("Read-only projection");
+    expect(html).toContain("12 total (succeeded 9, failed 2)");
+    expect(html).toContain("Settled 1.230000, reserved 0.500000");
+    expect(html).toContain("Input 1234, output 567");
+    expect(html).toContain("4 total (denied 1, error 1)");
+    expect(html).toContain("3 conversations created, 8 messages");
+    expect(html).toContain(
+      "structured turn/budget events remain the authoritative source",
+    );
+    // The admin form still renders below the projection.
+    expect(html).toContain("Save settings");
+  });
+
+  it("keeps the settings form and logs content-free when usage fails", async () => {
+    state.metricsThrows = true;
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const html = await render();
+
+    expect(html).toContain(
+      "Usage could not be read; the settings below are unaffected.",
+    );
+    expect(html).toContain("Save settings");
+    expect(html).not.toContain("metrics down");
+    expect(
+      info.mock.calls.some((call) =>
+        String(call[0]).includes("studio_metrics_read_failed"),
+      ),
+    ).toBe(true);
   });
 });
