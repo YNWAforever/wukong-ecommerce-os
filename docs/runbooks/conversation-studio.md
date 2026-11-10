@@ -519,6 +519,19 @@ evidence-ref-grounded, de-duplicated suggestions with confidence 0–1 are kept 
 are counted in the reply limitation). Nothing is ever applied — a person must change the category in
 the existing catalog flow. Findings render as read-only cards linked to the listing review screen.
 
+## Skill: `product_shot.prepare` (pilot v1.1.0)
+
+Deterministic **prepare/handoff** only. The turn reads the target listing (`catalog.get`), the assets
+attached to it (`assets.list`, now executable server-side) and the persisted image-review attempt, then
+records a `product_shot_handoff` dispatch: usable source image ids (PNG/JPEG/WebP, at most eight), the
+current attempt state (`queued` … `approved`/`failed`/`outcome_unknown`, or unknown when no attempt
+exists) and a `ready` flag. It never calls the Photoroom provider, never mints a signed URL, never
+approves an image and persists no artifact; the read-only thread card links to the existing gated
+product-shot screen where the operator continues. Derived cutouts/candidates are counted but never fed
+back as sources, and a missing asset or attempt read is reported as unknown/partial, never as zero.
+`assets.list` also becomes available to the hosted MCP `tools/call` surface with the same read-only,
+workspace-scoped, ids-only shape.
+
 ## Activation dry run (preview) — verified 2026-11-09
 
 Steps 1–5 of the production activation sequence were rehearsed end-to-end on a **fresh disposable

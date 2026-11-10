@@ -1860,3 +1860,178 @@ describe("category.map_proposal turns (C1)", () => {
     );
   });
 });
+
+describe("product_shot.prepare turns (C1 v1.1)", () => {
+  const PRODUCT_LISTING_ID = "22222222-2222-4222-8222-222222222222";
+  const SOURCE_PNG = "33333333-3333-4333-8333-333333333333";
+
+  function productShotOptions(
+    overrides: Partial<FakeStudioOptions> = {},
+  ): FakeStudioOptions {
+    return {
+      catalog: catalogOptions(),
+      snapshots: {
+        [PRODUCT_LISTING_ID]: reviewSnapshot({
+          listingId: PRODUCT_LISTING_ID,
+          content: reviewableContent(),
+          flags: [],
+        }),
+      },
+      sourceAssets: [
+        { id: SOURCE_PNG, kind: "image/png", listingId: PRODUCT_LISTING_ID },
+        {
+          id: "asset-jpeg",
+          kind: "image/jpeg",
+          listingId: PRODUCT_LISTING_ID,
+        },
+        {
+          id: "asset-cutout",
+          kind: "image/png",
+          listingId: PRODUCT_LISTING_ID,
+          metadata: { role: "product_shot_cutout" },
+        },
+        {
+          id: "asset-pdf",
+          kind: "application/pdf",
+          listingId: PRODUCT_LISTING_ID,
+        },
+      ],
+      productShotAttempts: {
+        [PRODUCT_LISTING_ID]: {
+          state: "candidate_ready",
+          sourceAssetId: SOURCE_PNG,
+          candidateReady: true,
+        },
+      },
+      ...overrides,
+    };
+  }
+
+  it("asks for a listing id without touching a model", async () => {
+    const modelFactory = vi.fn(() => {
+      throw new Error("needs_input must not build a model");
+    });
+    const { service, fake } = harness({
+      options: productShotOptions(),
+      createModel: modelFactory as never,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-product-shot-input",
+        text: "prepare the product shot",
+        skillKey: "product_shot.prepare",
+      }),
+    );
+    expect(result.reply.status).toBe("needs_input");
+    expect(result.reply.followUps[0]?.key).toBe(
+      "studio.needs_input.product_shot_listing",
+    );
+    expect(modelFactory).not.toHaveBeenCalled();
+    expect(fake.state.writes).not.toContain("sourceAssets.listForListing");
+  });
+
+  it("prepares a deterministic handoff without a model or provider call", async () => {
+    const modelFactory = vi.fn(() => {
+      throw new Error("no AI settings means no model");
+    });
+    const { service, fake } = harness({
+      options: productShotOptions(),
+      createModel: modelFactory as never,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-product-shot-handoff",
+        text: `prepare the product shot for listing ${PRODUCT_LISTING_ID}`,
+        skillKey: "product_shot.prepare",
+      }),
+    );
+    expect(result.reply.skillKey).toBe("product_shot.prepare");
+    expect(result.reply.skillVersion).toBe("1.1.0");
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.outputs).toEqual([]);
+    expect(result.reply.dispatch).toEqual({
+      kind: "product_shot_handoff",
+      listingId: PRODUCT_LISTING_ID,
+      assetIds: [SOURCE_PNG, "asset-jpeg"],
+      state: "candidate_ready",
+      ready: true,
+    });
+    expect(result.reply.limitations.map((line) => line.key)).toEqual([
+      "studio.limit.product_shot_handoff",
+    ]);
+    expect(modelFactory).not.toHaveBeenCalled();
+    expect(fake.state.writes).toContain("sourceAssets.listForListing");
+    expect(fake.state.writes).toContain("productShots.currentForListing");
+    expect(fake.state.outputs).toEqual([]);
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+    // The persisted assistant message carries the same handoff, not prose.
+    const persisted = fake.state.messages.find(
+      (message) => message.role === "assistant",
+    );
+    expect(persisted?.content).toMatchObject({
+      dispatch: { kind: "product_shot_handoff", ready: true },
+    });
+    expect(JSON.stringify(fake.state.messages)).not.toContain("signed");
+  });
+
+  it("stays partial when the listing has no usable source image", async () => {
+    const { service } = harness({
+      options: productShotOptions({
+        sourceAssets: [
+          {
+            id: "asset-pdf-only",
+            kind: "application/pdf",
+            listingId: PRODUCT_LISTING_ID,
+          },
+        ],
+        productShotAttempts: {},
+      }),
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-product-shot-empty",
+        text: `prepare the product shot for listing ${PRODUCT_LISTING_ID}`,
+        skillKey: "product_shot.prepare",
+      }),
+    );
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.dispatch).toMatchObject({
+      kind: "product_shot_handoff",
+      ready: false,
+      assetIds: [],
+      state: null,
+    });
+    const keys = result.reply.limitations.map((line) => line.key);
+    expect(keys).toContain("studio.limit.product_shot_no_source");
+    expect(keys).toContain("studio.limit.product_shot_state_unknown");
+  });
+
+  it("stays partial for an unknown listing instead of inventing assets", async () => {
+    const { service } = harness({ options: productShotOptions() });
+    const threadId = await openThread(service);
+    const unknown = "44444444-4444-4444-8444-444444444444";
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-product-shot-missing",
+        text: `prepare the product shot for listing ${unknown}`,
+        skillKey: "product_shot.prepare",
+      }),
+    );
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.dispatch).toMatchObject({
+      kind: "product_shot_handoff",
+      listingId: unknown,
+      ready: false,
+    });
+    expect(result.reply.limitations.map((line) => line.key)).toContain(
+      "studio.limit.product_shot_listing_unavailable",
+    );
+  });
+});

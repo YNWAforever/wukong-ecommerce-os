@@ -254,8 +254,12 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
   },
   {
     key: "product_shot.prepare",
-    version: "1.0.0",
-    status: "planned",
+    // v1.1 activates the reviewed definition as a deterministic *prepared
+    // handoff*: the turn reads the listing, its source assets and the current
+    // image-review attempt, then hands the operator to the existing gated
+    // product-shot screen. It never calls the image provider itself.
+    version: "1.1.0",
+    status: "pilot",
     title: {
       "zh-Hant": "準備產品圖片",
       en: "Prepare product shots",

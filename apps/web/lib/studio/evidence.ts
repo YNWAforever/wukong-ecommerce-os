@@ -3,7 +3,9 @@ import type { SkillDefinition, StudioRole, SourceKind } from "@wukong/core";
 import type { StudioTurnLimits } from "./turn-limits";
 import {
   runStudioTool,
+  type ListingAssetEvidence,
   type ListingCopySnapshot,
+  type ProductShotAttemptEvidence,
   type StudioReadDeps,
   type ToolRun,
 } from "./tools";
@@ -29,6 +31,12 @@ import {
   parseAuditPeriod,
 } from "./audit-period";
 import type { CategoryMapContext } from "./category-map";
+import {
+  productShotAttemptFacts,
+  productShotLimitations,
+  splitProductShotAssets,
+  type ProductShotPrepareContext,
+} from "./product-shot";
 
 /**
  * Deterministic evidence assembly (plan Task 5, spec section 3.3).
@@ -475,6 +483,8 @@ function pushFollowUps(pack: EvidencePack, skillKey: string): void {
     pack.followUps.push(translatedLine("studio.followup.audit_export"));
   } else if (skillKey === "category.map_proposal") {
     pack.followUps.push(translatedLine("studio.followup.category_review"));
+  } else if (skillKey === "product_shot.prepare") {
+    pack.followUps.push(translatedLine("studio.followup.product_shot_review"));
   } else {
     pack.followUps.push(translatedLine("studio.followup.list_attention"));
     pack.followUps.push(translatedLine("studio.followup.open_listing"));
@@ -1087,6 +1097,149 @@ async function buildCategoryMapProposal(
   });
 }
 
+/**
+ * Product-shot prepare evidence (C1, activated v1.1).
+ *
+ * Reads the listing with `catalog.get`, its attached assets with `assets.list`
+ * and the persisted image-review attempt through the workspace read surface.
+ * Only ids, content types and a source/derived label cross the boundary: the
+ * provider is never called and no signed URL reaches the turn.
+ */
+async function buildProductShotPrepare(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  const listingId = input.listingId;
+  if (!listingId) throw new Error("listingId required before build");
+  let listingTitle = "";
+  let listingAvailable = false;
+  const detail = await callTool(pack, {
+    toolId: "catalog.get",
+    rawInput: { listingId },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (detail.state === "done") {
+    const listing = detail.output as {
+      listingId: string;
+      title: string;
+      status: string;
+      activeVersion: { versionId: string; sequence: number } | null;
+    };
+    listingAvailable = true;
+    listingTitle = listing.title;
+    markCoverage(pack, "listing", "present");
+    pushSource(
+      pack,
+      {
+        ref: `listing:${listing.listingId}:${
+          listing.activeVersion ? `v${listing.activeVersion.sequence}` : "none"
+        }`,
+        kind: "listing",
+        label: listing.title.slice(0, 300),
+        refId: listing.listingId,
+        version: listing.activeVersion
+          ? String(listing.activeVersion.sequence)
+          : null,
+        coverage: "present",
+        deepLink: `/listings/${listing.listingId}`,
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.listing_status",
+      values: {
+        listingId: listing.listingId,
+        status: listing.status,
+        activeVersion: listing.activeVersion ? "present" : "none",
+      },
+      state: "ok",
+    });
+  } else {
+    pushLimitation(pack, "studio.limit.product_shot_listing_unavailable", {
+      listingId,
+    });
+    markCoverage(pack, "listing", "missing");
+  }
+
+  let assetsReadable = false;
+  let split = {
+    eligibleAssetIds: [] as string[],
+    derivedAssetCount: 0,
+    ineligibleAssetCount: 0,
+  };
+  const assets = await callTool(pack, {
+    toolId: "assets.list",
+    rawInput: { listingId },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (assets.state === "done") {
+    assetsReadable = true;
+    split = splitProductShotAssets(
+      (assets.output as { items: ListingAssetEvidence[] }).items,
+    );
+    pushCheck(pack, {
+      key: "studio.check.product_shot_sources",
+      values: {
+        sources: split.eligibleAssetIds.length,
+        derived: split.derivedAssetCount,
+        ineligible: split.ineligibleAssetCount,
+      },
+      state: split.eligibleAssetIds.length > 0 ? "ok" : "gap",
+    });
+  } else {
+    pushLimitation(pack, "studio.limit.product_shot_assets_unavailable");
+  }
+
+  // The attempt read is a server read, not a model-requestable tool: a failure
+  // stays unknown instead of being reported as "no attempt".
+  let attempt: ProductShotAttemptEvidence | null = null;
+  try {
+    attempt = await input.deps.getProductShotAttempt(listingId);
+  } catch {
+    attempt = null;
+  }
+  const facts = productShotAttemptFacts(attempt);
+  pushCheck(pack, {
+    key: "studio.check.product_shot_state",
+    values: {
+      state: facts.state ?? "unknown",
+      candidate: facts.candidateReady,
+    },
+    state: facts.state === null ? "missing" : "ok",
+  });
+
+  const context: ProductShotPrepareContext = {
+    listingId,
+    listingTitle,
+    ...split,
+    ...facts,
+    ready:
+      listingAvailable && assetsReadable && split.eligibleAssetIds.length > 0,
+  };
+  pack.context.productShotPrepare = context;
+  pack.limitations.push(
+    ...productShotLimitations({
+      listingAvailable,
+      assetsReadable,
+      stateKnown: facts.state !== null,
+      eligibleAssets: split.eligibleAssetIds.length,
+    }),
+  );
+  pack.trace.push({
+    kind: "evidence",
+    toolId: null,
+    state: listingAvailable && assetsReadable ? "done" : "unavailable",
+    durationMs: null,
+    detail: translatedLine("studio.trace.product_shot_evidence", {
+      sources: split.eligibleAssetIds.length,
+    }),
+  });
+}
+
 export async function buildEvidencePack(
   input: BuildEvidenceInput,
 ): Promise<BuildEvidenceResult> {
@@ -1119,7 +1272,9 @@ export async function buildEvidencePack(
       question: translatedLine(
         input.skill.key === "category.map_proposal"
           ? "studio.needs_input.category_listing"
-          : "studio.needs_input.copy_listing",
+          : input.skill.key === "product_shot.prepare"
+            ? "studio.needs_input.product_shot_listing"
+            : "studio.needs_input.copy_listing",
       ),
     };
   const draftAssets = draftAssetIds({
@@ -1149,6 +1304,8 @@ export async function buildEvidencePack(
     await buildMerchantAudit(input, pack);
   else if (input.skill.key === "category.map_proposal")
     await buildCategoryMapProposal(input, pack);
+  else if (input.skill.key === "product_shot.prepare")
+    await buildProductShotPrepare(input, pack);
   else throw new Error(`unsupported pilot skill ${input.skill.key}`);
 
   pushFollowUps(pack, input.skill.key);

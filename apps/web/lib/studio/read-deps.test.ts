@@ -379,3 +379,80 @@ describe("copy snapshot mapping", () => {
     ).toBeNull();
   });
 });
+
+describe("product-shot read mapping (C1 v1.1)", () => {
+  function reposWith(input: {
+    assets?: Array<{
+      id: string;
+      kind: string;
+      listingId: string | null;
+      metadata?: Record<string, unknown> | null;
+    }>;
+    attempt?: {
+      state: string;
+      sourceAssetId: string;
+      candidate: unknown | null;
+    } | null;
+  }) {
+    return {
+      sourceAssets: {
+        listForListing: vi.fn(async () => input.assets ?? []),
+      },
+      productShots: {
+        currentForListing: vi.fn(async () => input.attempt ?? null),
+      },
+    } as unknown as WorkspaceRepositories;
+  }
+
+  it("keeps source images, skips ineligible kinds and labels derived assets", async () => {
+    const repos = reposWith({
+      assets: [
+        {
+          id: "asset-png",
+          kind: "image/png",
+          listingId: "listing-1",
+          metadata: null,
+        },
+        {
+          id: "asset-cutout",
+          kind: "image/png",
+          listingId: "listing-1",
+          metadata: { role: "product_shot_cutout" },
+        },
+        { id: "asset-pdf", kind: "application/pdf", listingId: "listing-1" },
+      ],
+    });
+    const assets =
+      await buildStudioReadDeps(repos).listListingAssets("listing-1");
+    expect(assets).toEqual([
+      { assetId: "asset-png", contentType: "image/png", role: "source" },
+      { assetId: "asset-cutout", contentType: "image/png", role: "derived" },
+      { assetId: "asset-pdf", contentType: "application/pdf", role: "source" },
+    ]);
+  });
+
+  it("maps the persisted attempt without exposing its candidate asset", async () => {
+    const repos = reposWith({
+      attempt: {
+        state: "candidate_ready",
+        sourceAssetId: "asset-png",
+        candidate: { assetId: "secret-candidate" },
+      },
+    });
+    const attempt =
+      await buildStudioReadDeps(repos).getProductShotAttempt("listing-1");
+    expect(attempt).toEqual({
+      state: "candidate_ready",
+      sourceAssetId: "asset-png",
+      candidateReady: true,
+    });
+    expect(JSON.stringify(attempt)).not.toContain("secret-candidate");
+  });
+
+  it("returns null when no attempt exists", async () => {
+    const repos = reposWith({});
+    await expect(
+      buildStudioReadDeps(repos).getProductShotAttempt("listing-1"),
+    ).resolves.toBeNull();
+  });
+});

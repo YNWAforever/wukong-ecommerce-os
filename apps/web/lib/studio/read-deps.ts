@@ -6,9 +6,11 @@ import type {
   CatalogSearchHit,
   ExportAttemptEvidence,
   JobEvidence,
+  ListingAssetEvidence,
   ListingEvidence,
   ListingGap,
   ListingRunStatus,
+  ProductShotAttemptEvidence,
   QualityEvidence,
   SourceAssetEvidence,
   StudioReadDeps,
@@ -236,6 +238,33 @@ export function buildStudioReadDeps(
         rowCount: attempt.rowCount,
         createdAt: attempt.createdAt.toISOString(),
       }));
+    },
+
+    async listListingAssets(listingId): Promise<ListingAssetEvidence[]> {
+      const assets = await repos.sourceAssets.listForListing(listingId);
+      return assets.map((asset) => {
+        const role = (asset.metadata as Record<string, unknown> | null)?.role;
+        return {
+          assetId: asset.id,
+          contentType: asset.kind,
+          role:
+            typeof role === "string" && role.startsWith("product_shot_")
+              ? "derived"
+              : "source",
+        };
+      });
+    },
+
+    async getProductShotAttempt(
+      listingId,
+    ): Promise<ProductShotAttemptEvidence | null> {
+      const attempt = await repos.productShots.currentForListing(listingId);
+      if (!attempt) return null;
+      return {
+        state: attempt.state,
+        sourceAssetId: attempt.sourceAssetId,
+        candidateReady: attempt.candidate !== null,
+      };
     },
   };
 }

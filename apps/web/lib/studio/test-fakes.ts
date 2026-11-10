@@ -276,7 +276,21 @@ export type FakeStudioOptions = {
     id: string;
     kind: string;
     listingId: string | null;
+    metadata?: Record<string, unknown> | null;
   }>;
+  /**
+   * Product-shot image-review attempt per listing id (C1 prepare/handoff).
+   * `candidateReady` stands in for the persisted candidate row; only the
+   * boolean crosses the read-deps boundary, never an asset or URL.
+   */
+  productShotAttempts?: Record<
+    string,
+    {
+      state: string;
+      sourceAssetId: string;
+      candidateReady: boolean;
+    }
+  >;
   /** Listing-pipeline operations keyed by run id, for run-status reads. */
   operations?: Record<string, { listingId: string; executionState: string }>;
   /** Recent export attempts for the merchant audit report (plan Task 11). */
@@ -1286,11 +1300,32 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           return row ? [{ ...row }] : [];
         });
       },
+      listForListing: async (listingId: string) => {
+        state.writes.push("sourceAssets.listForListing");
+        return (options.sourceAssets ?? [])
+          .filter((asset) => asset.listingId === listingId)
+          .map((asset) => ({ ...asset }));
+      },
       attachToListing: async (listingId: string, ids: readonly string[]) => {
         state.writes.push("sourceAssets.attachToListing");
         for (const asset of options.sourceAssets ?? []) {
           if (ids.includes(asset.id)) asset.listingId = listingId;
         }
+      },
+      getByStorageKey: async () => null,
+    },
+    productShots: {
+      currentForListing: async (listingId: string) => {
+        state.writes.push("productShots.currentForListing");
+        const attempt = options.productShotAttempts?.[listingId];
+        if (!attempt) return null;
+        return {
+          attemptId: `attempt-${listingId}`,
+          listingId,
+          sourceAssetId: attempt.sourceAssetId,
+          state: attempt.state as never,
+          candidate: attempt.candidateReady ? ({} as never) : null,
+        } as never;
       },
     },
     dispatchOutbox: {

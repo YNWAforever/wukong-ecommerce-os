@@ -1331,6 +1331,10 @@ export function createStudioService(deps: StudioServiceDeps) {
             limitations: [...deterministic.limitations, ...limitations],
           });
         }
+      } else if (input.skill.key === "product_shot.prepare") {
+        // Deterministic prepare/handoff only: the gated product-shot screen
+        // (and its provider) remains the only place an image is processed.
+        reply = turnReplySchema.parse({ ...deterministic });
       } else {
         const modelOutcome = await analyseTurn({
           workspaceId: input.workspaceId,

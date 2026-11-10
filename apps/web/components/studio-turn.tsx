@@ -11,6 +11,7 @@ import { formatHkDate } from "../lib/ui-copy";
 import { StudioEvidence } from "./studio-evidence";
 import { StudioDispatchCard } from "./studio-dispatch-card";
 import { StudioOutputCard } from "./studio-output-card";
+import { StudioProductShotHandoff } from "./studio-product-shot-handoff";
 import { StudioTrace } from "./studio-trace";
 import styles from "./studio.module.css";
 
@@ -415,13 +416,17 @@ function AssistantTurn({
       ) : null}
 
       {reply.dispatch !== null && threadId ? (
-        <StudioDispatchCard
-          locale={locale}
-          threadId={threadId}
-          runId={message.runId ?? null}
-          dispatch={reply.dispatch}
-          canDispatch={canDispatch}
-        />
+        reply.dispatch.kind === "listing_draft" ? (
+          <StudioDispatchCard
+            locale={locale}
+            threadId={threadId}
+            runId={message.runId ?? null}
+            dispatch={reply.dispatch}
+            canDispatch={canDispatch}
+          />
+        ) : (
+          <StudioProductShotHandoff locale={locale} dispatch={reply.dispatch} />
+        )
       ) : null}
     </article>
   );

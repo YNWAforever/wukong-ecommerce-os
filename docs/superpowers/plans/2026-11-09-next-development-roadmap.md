@@ -25,8 +25,8 @@ connector exists.
 - **Studio surfaces**: `/studio`, `/studio/t/[id]`, `/studio/threads`, `/studio/outputs`,
   `/studio/connections`, admin `/studio/settings`.
 - **Pilot skills**: `catalog.find`, `catalog.gap_review`, `listing.copy_proposal`,
-  `listing.draft_from_sources`, `merchant.audit`; planned: `product_shot.prepare`,
-  `category.map_proposal`, `supplier.intel_proposal`; blocked pending a source/write decision:
+  `listing.draft_from_sources`, `merchant.audit`, `category.map_proposal`, `product_shot.prepare`;
+  planned: `supplier.intel_proposal`; blocked pending a source/write decision:
   `customer.reply_draft`, `logistics.followup`.
 - **Versioned outputs** with digest/readback/sign-off and canonical JSON export; confirmed
   listing-draft dispatch through the existing intake service.
@@ -80,13 +80,13 @@ existing routes; staged flag rollout.
 
 Goal: make the Studio actually useful beyond listing QA.
 
-| #   | Deliverable                                                                                                                                                                                   | Notes                                                           |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| C1  | Finish **planned skills**: `product_shot.prepare`, `category.map_proposal`, `supplier.intel_proposal` (deterministic evidence first, optional model, review gates, versioned artifacts)       | Each skill ships with evidence sources, fixtures/evals, copy */ |
-| C2  | **Blocked-skill decisions**: `customer.reply_draft`, `logistics.followup` — resolve source data ownership, privacy, write gates; either build or keep blocked with documented reasons         | User decision on data sources                                   |
-| C3  | **External MCP first connection**: allowlisted provider, schema pinning, egress/timeout/quota policy, credential ownership, live acceptance; admin approval workflow exercised                | Requires explicit approval + provider decision                  |
-| C4  | **Skill authoring harness**: manifest/versioning, fixture-driven evals, dry-run, per-workspace enablement (ties to A1), rollback                                                              | Makes skill sprawl governable                                   |
-| C5  | **Connector expansion**: ads/marketing connector design (Ads-Copilot direction), analytics read path, and the SHOPLINE write gate plan (first real write still a separate human confirmation) | Scope depends on user priorities                                |
+| #   | Deliverable                                                                                                                                                                                   | Notes                                                                                                          |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| C1  | Finish **planned skills**: `product_shot.prepare`, `category.map_proposal`, `supplier.intel_proposal` (deterministic evidence first, optional model, review gates, versioned artifacts)       | `product_shot.prepare` and `category.map_proposal` are pilot v1.1.0; `supplier.intel_proposal` remains planned |
+| C2  | **Blocked-skill decisions**: `customer.reply_draft`, `logistics.followup` — resolve source data ownership, privacy, write gates; either build or keep blocked with documented reasons         | User decision on data sources                                                                                  |
+| C3  | **External MCP first connection**: allowlisted provider, schema pinning, egress/timeout/quota policy, credential ownership, live acceptance; admin approval workflow exercised                | Requires explicit approval + provider decision                                                                 |
+| C4  | **Skill authoring harness**: manifest/versioning, fixture-driven evals, dry-run, per-workspace enablement (ties to A1), rollback                                                              | Makes skill sprawl governable                                                                                  |
+| C5  | **Connector expansion**: ads/marketing connector design (Ads-Copilot direction), analytics read path, and the SHOPLINE write gate plan (first real write still a separate human confirmation) | Scope depends on user priorities                                                                               |
 
 **Gate for P2:** each skill/MCP addition has: capability-registry state change only with recorded
 verification, tests including negative/grounding cases, and a documented cost/risk note.
@@ -121,7 +121,7 @@ review of cross-tenant flows; load/soak test.
 6. B2 copy-proposal apply handoff + export.
 7. A3 live model onboarding (credential/budget decision).
 8. B4 hosted MCP quotas/rotation.
-9. C1 first planned skill (`product_shot.prepare` or `category.map_proposal`, whichever has cleanest evidence sources).
+9. C1 planned skills: `category.map_proposal` (pilot, #153) and `product_shot.prepare` (pilot, deterministic handoff) done; `supplier.intel_proposal` remains planned.
 10. C3 external MCP first provider (decision + approval flow).
 
 Each task ships as its own branch/PR with the repository gates (format, forbidden-runtime,

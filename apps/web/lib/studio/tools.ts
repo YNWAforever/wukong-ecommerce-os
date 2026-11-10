@@ -60,6 +60,21 @@ export type SourceAssetEvidence = {
   listingId: string | null;
 };
 
+/** One asset attached to a listing, reduced to the reviewed tool schema. */
+export type ListingAssetEvidence = {
+  assetId: string;
+  contentType: string;
+  /** `derived` is a product-shot cutout/candidate already produced for it. */
+  role: "source" | "derived";
+};
+
+/** Persisted image-review state for one listing (no URLs, no asset bytes). */
+export type ProductShotAttemptEvidence = {
+  state: string;
+  sourceAssetId: string | null;
+  candidateReady: boolean;
+};
+
 /** One listing-pipeline operation's persisted state, read for the UI. */
 export type ListingRunStatus = {
   state:
@@ -125,6 +140,16 @@ export type StudioReadDeps = {
   getListingCounts(): Promise<Record<string, number>>;
   /** Recent export attempts, for the audit report (Task 11). */
   getExportAttempts(limit: number): Promise<ExportAttemptEvidence[]>;
+  /**
+   * Assets attached to one listing, for the product-shot prepare skill (C1).
+   * Only ids, content types and a source/derived label cross this boundary;
+   * signed URLs are minted at render time and never enter a turn.
+   */
+  listListingAssets(listingId: string): Promise<ListingAssetEvidence[]>;
+  /** Current image-review attempt for a listing, when one exists. */
+  getProductShotAttempt(
+    listingId: string,
+  ): Promise<ProductShotAttemptEvidence | null>;
 };
 
 export type ToolRun = {
@@ -200,6 +225,19 @@ async function runReadTool(
         },
       };
     }
+    case "assets.list": {
+      const input = parsed as { listingId: string };
+      const assets = await deps.listListingAssets(input.listingId);
+      return {
+        output: {
+          items: assets.map((asset) => ({
+            assetId: asset.assetId,
+            role: asset.role,
+            contentType: asset.contentType,
+          })),
+        },
+      };
+    }
     case "listing.get_run_status": {
       const input = parsed as { listingId: string; runId: string };
       const status = await readListingRunStatus(deps, input);
@@ -211,7 +249,6 @@ async function runReadTool(
     // through the explicit confirmed Studio dispatch route (plan Task 10).
     case "imports.list":
     case "exports.get":
-    case "assets.list":
     case "listing.create_draft":
     case "listing.propose_copy":
       return { state: "unavailable" };

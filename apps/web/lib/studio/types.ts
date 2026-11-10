@@ -110,6 +110,35 @@ export const draftDispatchSchema = z.strictObject({
 });
 export type DraftDispatch = z.infer<typeof draftDispatchSchema>;
 
+/**
+ * A prepared handoff to the existing gated product-shot screen (C1).
+ *
+ * The turn validates the listing and its source assets and records the current
+ * image-review state; it never calls the image provider and never mints a
+ * signed URL. `ready` is false when no eligible source image exists, so the
+ * card can say so instead of offering a doomed action. `state` is the persisted
+ * attempt state (`null` when no attempt exists yet).
+ */
+export const productShotHandoffSchema = z.strictObject({
+  kind: z.literal("product_shot_handoff"),
+  listingId: z.string().min(1).max(200),
+  assetIds: z.array(z.string().min(1).max(200)).max(8),
+  state: z.string().max(40).nullable(),
+  ready: z.boolean(),
+});
+export type ProductShotHandoff = z.infer<typeof productShotHandoffSchema>;
+
+/**
+ * A dispatch-ready preparation attached to an assistant turn. The discriminant
+ * is the workflow it hands off to; a persisted turn written before another
+ * variant existed still parses because the union keeps each strict branch.
+ */
+export const studioDispatchSchema = z.union([
+  draftDispatchSchema,
+  productShotHandoffSchema,
+]);
+export type StudioDispatch = z.infer<typeof studioDispatchSchema>;
+
 export const turnReplySchema = z.strictObject({
   status: z.enum(["answered", "needs_input", "partial"]),
   skillKey: z.string().min(1).max(120),
@@ -131,7 +160,7 @@ export const turnReplySchema = z.strictObject({
    * Absent (null) for every skill that does not prepare a dispatch. Defaulted so
    * replies persisted before this field existed keep parsing.
    */
-  dispatch: draftDispatchSchema.nullable().default(null),
+  dispatch: studioDispatchSchema.nullable().default(null),
   /** Absent (null) when no live model analysis was attempted or configured. */
   analysis: modelAnalysisSchema.nullable(),
   traceSummary: z.strictObject({
