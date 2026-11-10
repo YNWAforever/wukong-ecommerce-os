@@ -1264,15 +1264,14 @@ export const STUDIO_COPY = {
   "studio.connections.title": ["工具與連線", "Tools and connections"],
   "studio.connections.hostedTokens": ["託管 MCP 權杖", "Hosted MCP tokens"],
   "studio.connections.external": ["外部 MCP 連線", "External MCP connections"],
-  "studio.connections.notConfigured": ["未設定", "Not configured"],
   "studio.connections.disabled": ["已停用", "Disabled"],
   "studio.connections.empty": [
     "沒有可用的連線。",
     "No connections are available.",
   ],
   "studio.connections.intro": [
-    "此頁只陳述實際狀態：沒有偽造的連線，也沒有可直接開啟的外部存取。",
-    "This page states the actual state only: no invented connections and no external access that can be switched on here.",
+    "此頁只陳述部署與工作區的實際狀態：沒有偽造的連線，也沒有可在此開啟的外部存取。",
+    "This page states the deployment's and workspace's actual state: no invented connections and no external access that can be switched on here.",
   ],
   "studio.connections.internalTitle": ["內部工具", "Internal tools"],
   "studio.connections.internalIntro": [
@@ -1287,34 +1286,56 @@ export const STUDIO_COPY = {
   "studio.connections.kind.read": ["讀取", "Read"],
   "studio.connections.kind.propose": ["建議", "Propose"],
   "studio.connections.kind.dispatch": ["派送", "Dispatch"],
-  "studio.connections.planned": [
-    "規劃中；尚未實作。",
-    "Planned; not implemented yet.",
-  ],
   "studio.role.viewer": ["檢視者", "Viewer"],
   "studio.role.operator": ["操作員", "Operator"],
   "studio.role.reviewer": ["審核員", "Reviewer"],
   "studio.role.admin": ["管理員", "Admin"],
   "studio.role.owner": ["擁有者", "Owner"],
   "studio.connections.toolState.read": [
-    "讀取工具；只由已啟用的技能使用。",
-    "Read tool; used only by enabled skills.",
+    "讀取工具；由已啟用的技能與（旗標開啟時的）託管 MCP 端點執行。",
+    "Read tool; executed by enabled skills and, when its flag is on, the hosted MCP endpoint.",
   ],
   "studio.connections.toolState.propose": [
-    "已登記；尚未開放執行。",
-    "Registered; not executable yet.",
+    "已登記並在託管 MCP 公告；在已審核技能接上前，執行會回覆不可用。",
+    "Registered and advertised over hosted MCP; execution returns unavailable until a reviewed skill wires it.",
   ],
   "studio.connections.toolState.dispatch": [
-    "已登記；尚未開放執行。",
-    "Registered; not executable yet.",
+    "已登記；永不經 MCP 開放。派送只透過明確確認的工作室路由執行。",
+    "Registered; never exposed over MCP. Dispatch runs only through the explicit confirmed Studio route.",
   ],
-  "studio.connections.hostedBody": [
-    "託管 MCP 伺服器尚未實作；目前沒有外部呼叫者可以存取工作區記錄。",
-    "The hosted MCP server is not implemented; no external caller can reach workspace records yet.",
+  "studio.connections.hostedState.enabled": ["旗標已啟用", "Flag enabled"],
+  "studio.connections.hostedState.disabled": [
+    "此部署停用",
+    "Off on this deployment",
+  ],
+  "studio.connections.hostedBody.enabled": [
+    "託管 MCP 已由 STUDIO_MCP_SERVER_ENABLED=true 啟用；管理員核發的工作區權杖可在 /api/mcp 呼叫已審核的讀取工具，並受權杖範圍與角色下限約束；派送工具永不開放。",
+    "Hosted MCP is enabled by STUDIO_MCP_SERVER_ENABLED=true; admin-issued workspace tokens can call reviewed read tools at /api/mcp, bounded by token scopes and role floors. Dispatch tools are never exposed.",
+  ],
+  "studio.connections.hostedBody.disabled": [
+    "此部署未啟用 STUDIO_MCP_SERVER_ENABLED，因此外部呼叫者無法存取工作區記錄；這裡沒有可開啟的切換。",
+    "STUDIO_MCP_SERVER_ENABLED is off on this deployment, so no external caller can reach workspace records; there is no switch to turn it on here.",
+  ],
+  "studio.connections.hostedTokensManaged": [
+    "權杖在工作室設定中建立、輪替與撤銷。",
+    "Tokens are created, rotated and revoked in Studio settings.",
+  ],
+  "studio.connections.settingsLink": ["前往工作室設定", "Open Studio settings"],
+  "studio.connections.externalState.flagOn": [
+    "旗標已啟用；仍需逐連線核准",
+    "Flag enabled; per-connection approval still required",
+  ],
+  "studio.connections.externalState.disabled": [
+    "預設停用",
+    "Disabled by default",
   ],
   "studio.connections.externalBody": [
-    "外部 MCP 連線預設停用；不接受使用者提供的端點或憑證。",
-    "External MCP connections are disabled by default; no user-supplied endpoint or credential is accepted.",
+    "外部 MCP 僅限管理員、預設停用：管理員在設定中登錄端點、綁定加密憑證、探測公告結構並核准連線；呼叫時不接受使用者提供的端點或憑證。",
+    "External MCP is admin-only and off by default: admins register endpoints, bind an encrypted credential, probe advertised schemas and approve connections in settings; a user-supplied endpoint or credential is never accepted at call time.",
+  ],
+  "studio.connections.externalKeyMissing": [
+    "未設定 STUDIO_MCP_ENCRYPTION_KEY，核准與探測會失敗關閉。",
+    "STUDIO_MCP_ENCRYPTION_KEY is not configured, so approval and probing fail closed.",
   ],
   "studio.connections.blockedTitle": ["受阻的連線", "Blocked connections"],
   "studio.connections.whatsapp": [
