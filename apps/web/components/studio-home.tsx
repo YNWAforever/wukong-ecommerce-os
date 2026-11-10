@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
+import { getSkill } from "@wukong/core";
+
 import type { Locale } from "../lib/locale";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import { useStudioAttachments } from "../lib/studio/attachments";
@@ -52,14 +54,23 @@ export type StudioTemplate = {
 };
 
 /**
- * The two v1 read skills first, then the eight role templates from the design
- * spec §1.2. Only the two pilot read skills are interactive; every other card
- * is `planned` or `unavailable` and states why.
+ * Availability is derived from the reviewed skill registry, never hard-coded:
+ * a pilot skill is interactive, a planned skill states that it is planned, and
+ * a blocked skill stays unavailable. The order is the design spec §1.2 role
+ * template order, with the two read skills first.
  */
-export const STUDIO_TEMPLATES: readonly StudioTemplate[] = [
+function templateAvailability(id: string): StudioAvailability {
+  const skill = getSkill(id);
+  if (skill?.status === "pilot") return "pilot";
+  if (skill?.status === "planned") return "planned";
+  return "unavailable";
+}
+
+type StudioTemplateDefinition = Omit<StudioTemplate, "availability">;
+
+const STUDIO_TEMPLATE_DEFINITIONS: readonly StudioTemplateDefinition[] = [
   {
     id: "catalog.find",
-    availability: "pilot",
     titleKey: "studio.template.catalogFind.title",
     outcomeKey: "studio.template.catalogFind.outcome",
     limitationKey: "studio.template.catalogFind.limitation",
@@ -67,7 +78,6 @@ export const STUDIO_TEMPLATES: readonly StudioTemplate[] = [
   },
   {
     id: "catalog.gap_review",
-    availability: "pilot",
     titleKey: "studio.template.standards.title",
     outcomeKey: "studio.template.standards.outcome",
     limitationKey: "studio.template.standards.limitation",
@@ -75,61 +85,64 @@ export const STUDIO_TEMPLATES: readonly StudioTemplate[] = [
   },
   {
     id: "listing.draft_from_sources",
-    availability: "planned",
     titleKey: "studio.template.listingDraft.title",
     outcomeKey: "studio.template.listingDraft.outcome",
     limitationKey: "studio.template.listingDraft.limitation",
+    starterKey: "studio.template.listingDraft.starter",
   },
   {
     id: "product_shot.prepare",
-    availability: "planned",
     titleKey: "studio.template.productShot.title",
     outcomeKey: "studio.template.productShot.outcome",
     limitationKey: "studio.template.productShot.limitation",
+    starterKey: "studio.template.productShot.starter",
   },
   {
     id: "listing.copy_proposal",
-    availability: "planned",
     titleKey: "studio.template.copyProposal.title",
     outcomeKey: "studio.template.copyProposal.outcome",
     limitationKey: "studio.template.copyProposal.limitation",
+    starterKey: "studio.template.copyProposal.starter",
   },
   {
     id: "category.map_proposal",
-    availability: "planned",
     titleKey: "studio.template.categoryMapping.title",
     outcomeKey: "studio.template.categoryMapping.outcome",
     limitationKey: "studio.template.categoryMapping.limitation",
+    starterKey: "studio.template.categoryMapping.starter",
   },
   {
     id: "supplier.intel_proposal",
-    availability: "planned",
     titleKey: "studio.template.supplierIntel.title",
     outcomeKey: "studio.template.supplierIntel.outcome",
     limitationKey: "studio.template.supplierIntel.limitation",
   },
   {
     id: "customer.reply_draft",
-    availability: "unavailable",
     titleKey: "studio.template.customerReply.title",
     outcomeKey: "studio.template.customerReply.outcome",
     limitationKey: "studio.template.customerReply.limitation",
   },
   {
     id: "merchant.audit",
-    availability: "planned",
     titleKey: "studio.template.merchantAudit.title",
     outcomeKey: "studio.template.merchantAudit.outcome",
     limitationKey: "studio.template.merchantAudit.limitation",
+    starterKey: "studio.template.merchantAudit.starter",
   },
   {
     id: "logistics.followup",
-    availability: "unavailable",
     titleKey: "studio.template.logistics.title",
     outcomeKey: "studio.template.logistics.outcome",
     limitationKey: "studio.template.logistics.limitation",
   },
 ];
+
+export const STUDIO_TEMPLATES: readonly StudioTemplate[] =
+  STUDIO_TEMPLATE_DEFINITIONS.map((template) => ({
+    ...template,
+    availability: templateAvailability(template.id),
+  }));
 
 type PendingHomeAttempt = {
   text: string;

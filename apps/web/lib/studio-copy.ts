@@ -328,8 +328,12 @@ export const STUDIO_COPY = {
     "Draft listing content from catalog records for the existing review flow.",
   ],
   "studio.template.listingDraft.limitation": [
-    "尚未實作；草稿仍要在現有畫面審核。",
-    "Not implemented yet; drafts are still reviewed in the existing screens.",
+    "只準備派送內容；不會建立或寫入商品，仍需在既有畫面審核。",
+    "Prepares dispatch content only; never creates or writes a listing, and review still happens in the existing screens.",
+  ],
+  "studio.template.listingDraft.starter": [
+    "從這些來源準備上架草稿：",
+    "Prepare a listing draft from these sources: ",
   ],
   "studio.template.productShot.title": ["圖片處理", "Image preparation"],
   "studio.template.productShot.outcome": [
@@ -337,8 +341,12 @@ export const STUDIO_COPY = {
     "Prepare derived product images for the existing product-shot flow.",
   ],
   "studio.template.productShot.limitation": [
-    "尚未實作；目前沒有可用的圖片工具。",
-    "Not implemented yet; no image tool is available.",
+    "只準備來源圖與交接卡；不呼叫供應商、不產生新圖，仍由既有流程處理。",
+    "Prepares source images and a handoff card only; no provider call, no new image, and the existing flow still handles it.",
+  ],
+  "studio.template.productShot.starter": [
+    "準備這些商品圖：",
+    "Prepare product images for: ",
   ],
   "studio.template.copyProposal.title": ["內容生成", "Copy proposal"],
   "studio.template.copyProposal.outcome": [
@@ -346,8 +354,12 @@ export const STUDIO_COPY = {
     "Propose copy from catalog records for the existing editor.",
   ],
   "studio.template.copyProposal.limitation": [
-    "尚未實作；不會自動寫入商品內容。",
-    "Not implemented yet; product content is never written automatically.",
+    "只提出建議並附證據；不會自動寫入商品內容。",
+    "Proposes with evidence; product content is never written automatically.",
+  ],
+  "studio.template.copyProposal.starter": [
+    "提出這些商品的文案建議：",
+    "Propose copy for: ",
   ],
   "studio.template.categoryMapping.title": ["分類映射", "Category mapping"],
   "studio.template.categoryMapping.outcome": [
@@ -355,8 +367,12 @@ export const STUDIO_COPY = {
     "Propose category mappings with a confidence note.",
   ],
   "studio.template.categoryMapping.limitation": [
-    "尚未實作；分類仍由現有目錄流程套用。",
-    "Not implemented yet; categories are still applied in the existing catalog flow.",
+    "只提出映射建議與信心程度；分類仍由現有目錄流程套用。",
+    "Proposes mappings with confidence; categories are still applied in the existing catalog flow.",
+  ],
+  "studio.template.categoryMapping.starter": [
+    "提出這些商品的分類對應：",
+    "Propose category mappings for: ",
   ],
   "studio.template.supplierIntel.title": ["供應商情報", "Supplier intel"],
   "studio.template.supplierIntel.outcome": [
@@ -382,8 +398,12 @@ export const STUDIO_COPY = {
     "Assemble a report from listing quality and record coverage.",
   ],
   "studio.template.merchantAudit.limitation": [
-    "尚未實作；報告須由人員簽核，工作室不會批准或發佈。",
-    "Not implemented yet; reports need human sign-off and Studio never approves or publishes.",
+    "唯讀稽核並保存版本化報告；不會變更商品，也不會批准或發佈。",
+    "Read-only audit with a versioned report; listings are never changed and Studio never approves or publishes.",
+  ],
+  "studio.template.merchantAudit.starter": [
+    "產生商家與 SEO 稽核：",
+    "Run a merchant and SEO audit: ",
   ],
   "studio.template.logistics.title": ["物流跟進", "Logistics follow-up"],
   "studio.template.logistics.outcome": [

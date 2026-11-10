@@ -171,23 +171,57 @@ describe("StudioHome", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("renders every role template with an honest availability label", () => {
+  it("renders every role template with an availability derived from the registry", () => {
     const html = render();
 
+    const pilot = STUDIO_TEMPLATES.filter(
+      (template) => template.availability === "pilot",
+    );
+    const planned = STUDIO_TEMPLATES.filter(
+      (template) => template.availability === "planned",
+    );
+    const unavailable = STUDIO_TEMPLATES.filter(
+      (template) => template.availability === "unavailable",
+    );
     expect((html.match(/<h3/g) ?? []).length).toBe(STUDIO_TEMPLATES.length);
-    expect((html.match(/>Pilot</g) ?? []).length).toBe(2);
-    expect((html.match(/>Planned</g) ?? []).length).toBe(6);
-    expect((html.match(/>Unavailable</g) ?? []).length).toBe(2);
-    // Only the two pilot cards are interactive.
-    expect((html.match(/>Fill the composer</g) ?? []).length).toBe(2);
+    expect((html.match(/>Pilot</g) ?? []).length).toBe(pilot.length);
+    expect((html.match(/>Planned</g) ?? []).length).toBe(planned.length);
+    expect((html.match(/>Unavailable</g) ?? []).length).toBe(
+      unavailable.length,
+    );
+    // Every pilot card is interactive and every non-pilot card is not.
+    expect(pilot.every((template) => template.starterKey !== undefined)).toBe(
+      true,
+    );
+    expect((html.match(/>Fill the composer</g) ?? []).length).toBe(
+      pilot.length,
+    );
   });
 
-  it("keeps only the two v1 read skills interactive and none ready", () => {
+  it("derives availability from the reviewed skill registry and keeps blocked skills unavailable", () => {
     expect(
       STUDIO_TEMPLATES.filter(
         (template) => template.availability === "pilot",
       ).map((template) => template.id),
-    ).toEqual(["catalog.find", "catalog.gap_review"]);
+    ).toEqual([
+      "catalog.find",
+      "catalog.gap_review",
+      "listing.draft_from_sources",
+      "product_shot.prepare",
+      "listing.copy_proposal",
+      "category.map_proposal",
+      "merchant.audit",
+    ]);
+    expect(
+      STUDIO_TEMPLATES.filter(
+        (template) => template.availability === "planned",
+      ).map((template) => template.id),
+    ).toEqual(["supplier.intel_proposal"]);
+    expect(
+      STUDIO_TEMPLATES.filter(
+        (template) => template.availability === "unavailable",
+      ).map((template) => template.id),
+    ).toEqual(["customer.reply_draft", "logistics.followup"]);
     expect(
       STUDIO_TEMPLATES.some((template) => template.availability === "ready"),
     ).toBe(false);
@@ -217,6 +251,25 @@ describe("StudioHome", () => {
     expect(container.textContent).toContain("Selected skill");
     expect(container.textContent).toContain("catalog.find");
     expect(document.activeElement).toBe(textarea(container));
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("fills from a newly pilot template with its own starter and selected skill", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = await mount();
+    const card = Array.from(container.querySelectorAll("li")).find((item) =>
+      item.textContent?.includes("Image preparation"),
+    );
+    const fill = Array.from(card?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent === "Fill the composer",
+    );
+    await act(async () => fill?.click());
+
+    expect(textarea(container).value).toBe("Prepare product images for: ");
+    expect(container.textContent).toContain("Selected skill");
+    expect(container.textContent).toContain("product_shot.prepare");
     expect(fetcher).not.toHaveBeenCalled();
   });
 
