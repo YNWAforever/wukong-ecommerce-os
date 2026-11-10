@@ -300,6 +300,8 @@ export type FakeStudioOptions = {
     rowCount: number;
     createdAt: Date;
   }>;
+  /** Recent source imports, for the `imports.list` read tool. */
+  sourceImports?: Array<{ id: string; createdAt: Date }>;
   counts?: Record<string, number>;
   /** Current workspace memberships; defaults to one admin (`actor_ops`). */
   memberships?: FakeMembership[];
@@ -1258,6 +1260,29 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         return (options.exportAttempts ?? []).slice(
           0,
           Math.min(Math.max(limit, 1), 20),
+        );
+      },
+      getById: async (id: string) => {
+        state.writes.push("exportAttempts.getById");
+        const found = (options.exportAttempts ?? []).find(
+          (attempt) => attempt.id === id,
+        );
+        return found
+          ? {
+              ...found,
+              requestedBy: "actor_ops",
+              manifest: [],
+              specVersion: "test",
+            }
+          : null;
+      },
+    },
+    sourceImports: {
+      listRecent: async (limit = 20) => {
+        state.writes.push("sourceImports.listRecent");
+        return (options.sourceImports ?? []).slice(
+          0,
+          Math.min(Math.max(limit, 1), 50),
         );
       },
     },

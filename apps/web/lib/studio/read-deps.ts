@@ -4,7 +4,9 @@ import { bulkFormGaps } from "@wukong/shopline";
 import { canonicalListingToGapsInput } from "../canonical-listing-gaps";
 import type {
   CatalogSearchHit,
+  ExportAttemptDetailEvidence,
   ExportAttemptEvidence,
+  ImportEvidence,
   JobEvidence,
   ListingAssetEvidence,
   ListingEvidence,
@@ -40,6 +42,19 @@ function openBlockingFlagCount(
   return snapshot.flags.filter(
     (flag) => flag.status === "open" && flag.severity === "blocking",
   ).length;
+}
+
+/** Collapse an export attempt's artifact status to the reviewed state label. */
+function exportAttemptState(
+  status: "pending" | "ready" | "failed" | null | undefined,
+): "pending" | "ready" | "failed" | "recorded" {
+  return status === "ready"
+    ? "ready"
+    : status === "failed"
+      ? "failed"
+      : status === "pending"
+        ? "pending"
+        : "recorded";
 }
 
 /**
@@ -227,16 +242,38 @@ export function buildStudioReadDeps(
       );
       return attempts.map((attempt) => ({
         attemptId: attempt.id,
-        state:
-          attempt.artifactStatus === "ready"
-            ? "ready"
-            : attempt.artifactStatus === "failed"
-              ? "failed"
-              : attempt.artifactStatus === "pending"
-                ? "pending"
-                : "recorded",
+        state: exportAttemptState(attempt.artifactStatus),
         rowCount: attempt.rowCount,
         createdAt: attempt.createdAt.toISOString(),
+      }));
+    },
+
+    async getExportAttemptDetail(
+      exportAttemptId,
+    ): Promise<ExportAttemptDetailEvidence | null> {
+      // Workspace-scoped repository: an id from another workspace does not
+      // resolve here, so it is reported as unavailable rather than guessed.
+      const attempt = await repos.exportAttempts.getById(exportAttemptId);
+      if (!attempt) return null;
+      return {
+        exportAttemptId: attempt.id,
+        state: exportAttemptState(attempt.artifactStatus),
+        // No reconciliation signal is exposed by this read layer yet; stating
+        // `unknown` is the honest answer instead of inventing a match.
+        reconciliation: "unknown",
+      };
+    },
+
+    async listImports(limit): Promise<ImportEvidence[]> {
+      const imports = await repos.sourceImports.listRecent(
+        Math.min(Math.max(limit, 1), 50),
+      );
+      return imports.map((row) => ({
+        importId: row.id,
+        // Source imports are immutable receipts; there is no state machine to
+        // report, so the stored fact is "received".
+        state: "received" as const,
+        receivedAt: row.createdAt.toISOString(),
       }));
     },
 

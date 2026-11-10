@@ -277,3 +277,13 @@ encryption-key presence from the deployment environment, links to `/studio/setti
 external-connection management, and states per-tool execution honestly (read: skills plus the
 flag-gated hosted endpoint; propose: advertised but unavailable until a reviewed skill wires it;
 dispatch: never exposed over MCP). The page still renders no connect control or connected state.
+
+### Read tool plane completes (`imports.list`, `exports.get`)
+
+Two reviewed read tools were registered and advertised over hosted MCP but always answered
+`unavailable`. They now execute on the same workspace-scoped read surface as the other reads:
+`imports.list` returns recent source-import receipts (bounded, newest first, id/`received`/received
+time only) and `exports.get` returns one export attempt's reviewed state, with reconciliation
+reported as `unknown` because no reconciliation read exists yet. This removes the last gap between
+the reviewed tool registry and executable reads, so the connections-page read-state copy is true for
+every read tool; propose/dispatch tools remain deliberately outside the tool plane.
