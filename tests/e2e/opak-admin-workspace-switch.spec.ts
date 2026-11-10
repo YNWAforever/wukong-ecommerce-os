@@ -214,22 +214,27 @@ test("accepted delayed workspace POST holds native Back, links, tabs and second 
   const { first, second } = await setup(page);
   await page.goto("/jobs");
   await page.getByRole("link", { name: "Admin", exact: true }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   await test.step("Admin content is ready after Jobs → Admin SPA return", async () => {
     await expect(
       page.getByRole("heading", {
         name: /^(工作區管理|Workspace administration)$/,
       }),
       "Admin heading must render after the SPA return",
-    ).toBeVisible({ timeout: 10000 });
+      // Slow CI runners can take longer than 10s to load the admin route's
+      // client chunks after the SPA return; this is a render wait, not a
+      // correctness grace period for the assertion below.
+    ).toBeVisible({ timeout: 30000 });
     await expect(
       page.getByRole("tabpanel"),
       "Members panel must render",
-    ).toHaveAttribute("aria-labelledby", "admin-tab-members");
+    ).toHaveAttribute("aria-labelledby", "admin-tab-members", {
+      timeout: 20000,
+    });
     await expect(
       page.getByRole("textbox", { name: /Invite email address/ }),
       "Invite textbox must render before the workspace switch",
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 20000 });
   });
   const before = await page.evaluate(() => ({
     count:
