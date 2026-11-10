@@ -168,6 +168,19 @@ shows the new plaintext in the same once-only block as creation.
 later explicit decision wires a reviewed skill to it; the UI must not show a "connected" state.
 Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not automatic.
 
+### Endpoint destination guard
+
+`approvedEndpoint` (shared by registration and the outbound client) accepts HTTPS only, rejects
+embedded credentials, and rejects non-public destinations: `localhost`/`*.localhost`/`*.local`/
+`*.internal`, IPv4 loopback, private, CGNAT, link-local (including `169.254.169.254`), benchmark,
+multicast and reserved ranges, and IPv6 loopback, ULA, link-local, multicast and `::ffff:` private
+maps. A draft pointing at one of these fails `400 invalid_endpoint`.
+
+The guard is textual: DNS names that resolve to a private address — including DNS rebinding — are
+not detected. Approved connections remain admin-gated and the outbound client is still not
+instantiated; before the first live connector, add an egress policy or a resolve-and-verify check
+for that residual risk.
+
 ## Operating the Studio
 
 - **Deterministic first.** Home/overview and records answers never call a model or reserve budget.

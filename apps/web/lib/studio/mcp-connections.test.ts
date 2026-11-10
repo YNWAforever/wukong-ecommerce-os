@@ -201,12 +201,16 @@ describe("external MCP connection service", () => {
     expect(JSON.stringify(fake.state.audits)).not.toContain(ENDPOINT);
   });
 
-  it("rejects non-https endpoints, embedded credentials and foreign schema keys", async () => {
+  it("rejects non-https endpoints, embedded credentials, non-public hosts and foreign schema keys", async () => {
     const { service, fake } = fixture();
     for (const endpointUrl of [
       "http://mcp.example.test/rpc",
       "https://user:pass@mcp.example.test/rpc",
       "not a url",
+      "https://localhost/rpc",
+      "https://127.0.0.1/rpc",
+      "https://169.254.169.254/latest",
+      "https://[::1]/rpc",
     ]) {
       await expect(
         service.createDraftConnection({ ...createBody, endpointUrl }),
