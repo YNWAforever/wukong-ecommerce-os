@@ -1036,4 +1036,40 @@ describe.skipIf(!enabled)("studio repositories", () => {
       ),
     ).toBe(0);
   });
+
+  it("counts only active API tokens for the calling workspace", async () => {
+    const beforeA = await db!.forWorkspace(WORKSPACE_A, (repos) =>
+      repos.studio.apiTokens.countActive(),
+    );
+    const beforeB = await db!.forWorkspace(WORKSPACE_B, (repos) =>
+      repos.studio.apiTokens.countActive(),
+    );
+    const token = await db!.forWorkspace(WORKSPACE_B, (repos) =>
+      repos.studio.apiTokens.create({
+        label: "quota-count",
+        tokenHash: "9".repeat(64),
+        prefix: "wuk_quota",
+        scopes: ["read"],
+        createdBy: "admin-b",
+      }),
+    );
+    expect(
+      await db!.forWorkspace(WORKSPACE_A, (repos) =>
+        repos.studio.apiTokens.countActive(),
+      ),
+    ).toBe(beforeA);
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.apiTokens.countActive(),
+      ),
+    ).toBe(beforeB + 1);
+    await db!.forWorkspace(WORKSPACE_B, (repos) =>
+      repos.studio.apiTokens.revoke(token.id),
+    );
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.apiTokens.countActive(),
+      ),
+    ).toBe(beforeB);
+  });
 });

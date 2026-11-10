@@ -542,6 +542,8 @@ export type StudioRepository = {
     findByHash(tokenHash: string): Promise<StudioApiToken | null>;
     revoke(id: string): Promise<boolean>;
     touch(id: string): Promise<void>;
+    /** Count of non-revoked tokens in this workspace (quota guard). */
+    countActive(): Promise<number>;
     /** Update both quota limits; false when the row is absent/revoked. */
     updateLimits(
       id: string,
@@ -1624,6 +1626,14 @@ export function createStudioRepository(
           order by created_at desc, id desc limit ${limit}
         `);
         return rows.map((row) => readApiToken(row as Record<string, unknown>));
+      },
+      async countActive() {
+        scope.assertOpen();
+        const rows = await transaction.execute(sql`
+          select count(*)::int as count from studio_api_tokens
+          where workspace_id=${workspaceId} and revoked_at is null
+        `);
+        return Number((rows[0] as { count?: unknown } | undefined)?.count ?? 0);
       },
     },
   };

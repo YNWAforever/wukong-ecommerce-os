@@ -1063,6 +1063,11 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
           return state.apiTokens.slice(0, limit);
         },
+        countActive: async () => {
+          state.writes.push("apiTokens.countActive");
+          return state.apiTokens.filter((entry) => entry.revokedAt === null)
+            .length;
+        },
       },
       mcpCalls: {
         append: async (input: {

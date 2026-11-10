@@ -37,6 +37,13 @@ export const MCP_TOKEN_RATE_LIMIT_MAX = 600;
 export const MCP_TOKEN_MONTHLY_QUOTA_MIN = 1;
 export const MCP_TOKEN_MONTHLY_QUOTA_MAX = 1_000_000;
 
+/**
+ * Soft cap on active tokens per workspace, aligned with the 100-row admin
+ * list. Creation stops at the cap; rotation is exempt (it can exceed by one
+ * transiently) so rotating the last token never dead-ends.
+ */
+export const MCP_TOKEN_MAX_ACTIVE = 100;
+
 const rateLimitSchema = z
   .number()
   .int()
@@ -211,6 +218,14 @@ export function createMcpTokenService(deps: McpTokenServiceDeps) {
       const created = await database().forWorkspace(
         session.workspaceId,
         async (repos) => {
+          const activeCount = await repos.studio.apiTokens.countActive();
+          if (activeCount >= MCP_TOKEN_MAX_ACTIVE) {
+            throw new ApiError(
+              409,
+              "token_limit_reached",
+              "Revoke an existing token before creating another.",
+            );
+          }
           const row = await repos.studio.apiTokens.create({
             label,
             tokenHash,
