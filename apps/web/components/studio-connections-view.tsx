@@ -1,7 +1,10 @@
+import Link from "next/link";
+
 import type { StudioRole } from "@wukong/core";
 import { TOOL_DEFINITIONS } from "@wukong/core";
 
 import type { Locale } from "../lib/locale";
+import { hasStudioMcpEncryptionKey } from "../lib/studio/mcp-credentials";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import styles from "./studio.module.css";
 
@@ -11,15 +14,43 @@ import styles from "./studio.module.css";
  * Internal tools come from the reviewed `@wukong/core` registry, so this page
  * cannot drift from what the turn service may actually execute: id, kind,
  * minimum role and capability id are the definition's own values, and the
- * state column distinguishes a read tool the pilot skills use from propose and
- * dispatch tools that are registered but not executable yet.
+ * state column distinguishes read tools (skills plus the flag-gated hosted MCP
+ * endpoint) from propose/dispatch tools that are advertised but not executable
+ * through the tool plane.
  *
- * Everything else is a stated non-connection. Hosted MCP tokens are not
- * implemented; external MCP is disabled by default and accepts no user-supplied
- * endpoint or credential; WhatsApp, a customer-service inbox and logistics have
- * no data source and stay blocked. There is no "Connect" control, no fake green
- * status and no toggle — this page only reports the source tree's real state.
+ * Hosted and external MCP are reported from the deployment's actual flags, not
+ * from a hard-coded snapshot: the hosted endpoint and admin-managed tokens are
+ * implemented and flag-gated, and external MCP is admin-only and off by
+ * default. There is no "Connect" control, no fake green status and no toggle on
+ * this page — the settings page is where an admin manages tokens and external
+ * connections, and this page links there instead of implying a connection.
  */
+
+export type ConnectionsRuntimeState = {
+  /** `STUDIO_MCP_SERVER_ENABLED === "true"`. */
+  readonly hostedMcpEnabled: boolean;
+  /** `STUDIO_EXTERNAL_MCP_ENABLED === "true"` (per-connection approval still applies). */
+  readonly externalMcpEnabled: boolean;
+  /** `STUDIO_MCP_ENCRYPTION_KEY` present and well-formed. */
+  readonly mcpEncryptionKeyPresent: boolean;
+};
+
+const RUNTIME_OFF: ConnectionsRuntimeState = {
+  hostedMcpEnabled: false,
+  externalMcpEnabled: false,
+  mcpEncryptionKeyPresent: false,
+};
+
+/** Resolve the flag-gated runtime state this page reports. */
+export function resolveConnectionsRuntime(
+  env: NodeJS.ProcessEnv = process.env,
+): ConnectionsRuntimeState {
+  return {
+    hostedMcpEnabled: env.STUDIO_MCP_SERVER_ENABLED === "true",
+    externalMcpEnabled: env.STUDIO_EXTERNAL_MCP_ENABLED === "true",
+    mcpEncryptionKeyPresent: hasStudioMcpEncryptionKey(env),
+  };
+}
 
 const TOOL_KIND_KEYS = {
   read: "studio.connections.kind.read",
@@ -43,9 +74,13 @@ const ROLE_KEYS = {
 
 export type StudioConnectionsViewProps = {
   readonly locale: Locale;
+  readonly runtime?: ConnectionsRuntimeState;
 };
 
-export function StudioConnectionsView({ locale }: StudioConnectionsViewProps) {
+export function StudioConnectionsView({
+  locale,
+  runtime = RUNTIME_OFF,
+}: StudioConnectionsViewProps) {
   return (
     <div className={styles["studio-connections"]}>
       <header className={styles["studio-home-header"]}>
@@ -129,18 +164,39 @@ export function StudioConnectionsView({ locale }: StudioConnectionsViewProps) {
         className={styles["studio-section"]}
         aria-label={studioCopy(locale, "studio.connections.hostedTokens")}
       >
-        <div className={styles["studio-connection-card"]} data-state="planned">
+        <div
+          className={styles["studio-connection-card"]}
+          data-state={runtime.hostedMcpEnabled ? "configured" : "blocked"}
+        >
           <h2 className={styles["studio-section-title"]}>
             {studioCopy(locale, "studio.connections.hostedTokens")}
           </h2>
-          <p className={styles["studio-badge"]} data-availability="planned">
-            {studioCopy(locale, "studio.connections.notConfigured")}
+          <p
+            className={styles["studio-badge"]}
+            data-availability={
+              runtime.hostedMcpEnabled ? "pilot" : "unavailable"
+            }
+          >
+            {studioCopy(
+              locale,
+              runtime.hostedMcpEnabled
+                ? "studio.connections.hostedState.enabled"
+                : "studio.connections.hostedState.disabled",
+            )}
           </p>
           <p className={styles["studio-section-lede"]}>
-            {studioCopy(locale, "studio.connections.hostedBody")}
+            {studioCopy(
+              locale,
+              runtime.hostedMcpEnabled
+                ? "studio.connections.hostedBody.enabled"
+                : "studio.connections.hostedBody.disabled",
+            )}
           </p>
           <p className={styles["studio-section-lede"]}>
-            {studioCopy(locale, "studio.connections.planned")}
+            {studioCopy(locale, "studio.connections.hostedTokensManaged")}{" "}
+            <Link href="/studio/settings">
+              {studioCopy(locale, "studio.connections.settingsLink")}
+            </Link>
           </p>
         </div>
       </section>
@@ -149,15 +205,38 @@ export function StudioConnectionsView({ locale }: StudioConnectionsViewProps) {
         className={styles["studio-section"]}
         aria-label={studioCopy(locale, "studio.connections.external")}
       >
-        <div className={styles["studio-connection-card"]} data-state="blocked">
+        <div
+          className={styles["studio-connection-card"]}
+          data-state={runtime.externalMcpEnabled ? "configured" : "blocked"}
+        >
           <h2 className={styles["studio-section-title"]}>
             {studioCopy(locale, "studio.connections.external")}
           </h2>
-          <p className={styles["studio-badge"]} data-availability="unavailable">
-            {studioCopy(locale, "studio.connections.disabled")}
+          <p
+            className={styles["studio-badge"]}
+            data-availability={
+              runtime.externalMcpEnabled ? "pilot" : "unavailable"
+            }
+          >
+            {studioCopy(
+              locale,
+              runtime.externalMcpEnabled
+                ? "studio.connections.externalState.flagOn"
+                : "studio.connections.externalState.disabled",
+            )}
           </p>
           <p className={styles["studio-section-lede"]}>
             {studioCopy(locale, "studio.connections.externalBody")}
+          </p>
+          {runtime.externalMcpEnabled && !runtime.mcpEncryptionKeyPresent ? (
+            <p className={styles["studio-section-lede"]}>
+              {studioCopy(locale, "studio.connections.externalKeyMissing")}
+            </p>
+          ) : null}
+          <p className={styles["studio-section-lede"]}>
+            <Link href="/studio/settings">
+              {studioCopy(locale, "studio.connections.settingsLink")}
+            </Link>
           </p>
         </div>
       </section>

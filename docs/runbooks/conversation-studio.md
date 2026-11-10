@@ -209,6 +209,10 @@ for that residual risk.
   label is derived from the reviewed skill registry at render time, not hard-coded: a pilot card
   fills the composer with its starter text and selects that skill, and a planned/blocked card
   states its limitation. Filling never sends.
+- **Connections page reports the real deployment state.** `/studio/connections` derives hosted-MCP
+  (`STUDIO_MCP_SERVER_ENABLED`), external-MCP (`STUDIO_EXTERNAL_MCP_ENABLED`) and encryption-key
+  presence from the environment instead of a hard-coded snapshot, links to `/studio/settings` for
+  token and connection management, and never renders a connect toggle or green "connected" state.
 - **Copy proposals** never write canonical data. Open the listing in the existing review screen to
   apply anything; the Studio artifact is versioned and can be saved (operator) and signed off
   (reviewer+); sign-off is an artifact state, not a listing approval or publish action.

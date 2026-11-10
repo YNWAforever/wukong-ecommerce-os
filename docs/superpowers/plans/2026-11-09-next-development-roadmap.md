@@ -268,3 +268,12 @@ shown as interactive with their own starter text, `supplier.intel_proposal` stay
 two blocked skills stay Unavailable. Filling a card still only fills the composer and never sends;
 the limitation copy on each card now states the shipped deterministic boundary instead of "not
 implemented yet".
+
+### Connections page reflects the flag-gated MCP reality
+
+`/studio/connections` no longer hard-codes "hosted MCP is not implemented / planned": it now
+derives hosted-MCP (`STUDIO_MCP_SERVER_ENABLED`), external-MCP (`STUDIO_EXTERNAL_MCP_ENABLED`) and
+encryption-key presence from the deployment environment, links to `/studio/settings` for token and
+external-connection management, and states per-tool execution honestly (read: skills plus the
+flag-gated hosted endpoint; propose: advertised but unavailable until a reviewed skill wires it;
+dispatch: never exposed over MCP). The page still renders no connect control or connected state.
