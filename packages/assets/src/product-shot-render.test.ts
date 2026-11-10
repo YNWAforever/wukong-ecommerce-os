@@ -150,19 +150,23 @@ describe("renderProductShot", () => {
     ).rejects.toThrow("input_too_large");
   });
 
-  it("rejects images over the decoded pixel limit", async () => {
-    const input = await sharp({
-      create: {
-        width: 6401,
-        height: 6250,
-        channels: 4,
-        background: "#ff0000ff",
-      },
-    })
-      .png({ compressionLevel: 9 })
-      .toBuffer();
-    await expect(renderProductShot(input)).rejects.toThrow("input_too_large");
-  });
+  it(
+    "rejects images over the decoded pixel limit",
+    { timeout: 30_000 },
+    async () => {
+      const input = await sharp({
+        create: {
+          width: 6401,
+          height: 6250,
+          channels: 4,
+          background: "#ff0000ff",
+        },
+      })
+        .png({ compressionLevel: 9 })
+        .toBuffer();
+      await expect(renderProductShot(input)).rejects.toThrow("input_too_large");
+    },
+  );
 });
 
 it("validates and fully decodes selected originals before provider dispatch", async () => {

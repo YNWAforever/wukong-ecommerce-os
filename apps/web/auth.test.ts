@@ -58,7 +58,7 @@ describe("Better Auth configuration", () => {
     });
     expect(options.verification).toEqual({ modelName: "authVerifications" });
     expect(options.rateLimit).toEqual({
-      enabled: true,
+      enabled: false,
       storage: "database",
       modelName: "authRateLimits",
     });

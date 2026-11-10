@@ -30,9 +30,9 @@
   "dependencies": {
     "@wukong/core": "workspace:*",
     "@wukong/shopline": "workspace:*",
-    "drizzle-orm": "^0.44.7",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.7",
-    "zod": "4.4.3",
+    "zod": "^4.6.6",
     "@wukong/jobs": "workspace:*"
   },
   "devDependencies": {
@@ -40,6 +40,6 @@
     "drizzle-kit": "^0.31.7",
     "tsx": "^4.20.6",
     "typescript": "7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "4.1.12"
   }
 }

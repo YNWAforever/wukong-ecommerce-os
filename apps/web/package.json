@@ -18,15 +18,15 @@
     "@wukong/db": "workspace:*",
     "@wukong/jobs": "workspace:*",
     "@wukong/shopline": "workspace:*",
-    "better-auth": "^1.5.5",
-    "drizzle-orm": "0.44.7",
-    "next": "16.2.10",
-    "nodemailer": "^9.0.3",
+    "better-auth": "^1.7.7",
+    "drizzle-orm": "^0.45.2",
+    "next": "16.4.1",
+    "nodemailer": "^10.1.4",
     "parse5": "8.0.1",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "robots-parser": "3.0.1",
-    "zod": "4.4.3",
+    "zod": "^4.6.6",
     "pdf-lib": "1.17.1"
   },
   "devDependencies": {
@@ -34,9 +34,9 @@
     "@types/nodemailer": "^8.0.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "happy-dom": "20.8.3",
+    "happy-dom": "^21.0.4",
     "postgres": "^3.4.7",
     "typescript": "5.9.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.12"
   }
 }

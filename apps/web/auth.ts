@@ -182,7 +182,14 @@ export function buildAuthOptions(
       revokeSessionsOnPasswordReset: true,
     },
     rateLimit: {
-      enabled: true,
+      // Better Auth resolves the client IP from the forwarded request, and this
+      // app calls its handler with an internal Request that carries no address,
+      // so its per-IP limiter collapses into one shared bucket per path. 1.7
+      // ships 3 sign-ins per 10 s, which would let any client throttle every
+      // operator. The app keeps its own audited controls instead: five password
+      // failures per address lock for 15 minutes and auth email is capped at
+      // three per address per 15 minutes.
+      enabled: false,
       storage: "database",
       modelName: "authRateLimits",
     },

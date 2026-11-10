@@ -19,6 +19,9 @@ human half is the gate.
 
 ## Release gate
 
+- [ ] `pnpm security:audit` reports no high/critical advisories in the production tree; the current
+      state and the upgrade procedure are recorded in
+      [dependency-security.md](./dependency-security.md).
 - [ ] CI pins Node 24 and pnpm 11.7, performs a frozen install, proves the forbidden legacy runtime surface is absent, renders and validates Wrangler configuration, builds database dependencies, migrates Postgres, and runs lint, typecheck, unit, integration, build, and full Playwright. _[verified by `pnpm release-gate:check`]_
 - [ ] Playwright uses production-built Next plus `wrangler dev`, local Cloudflare Queue simulation, local Hyperdrive-to-Postgres, MinIO, and Mailpit with fake AI/mock SHOPLINE only. _[verified by `pnpm release-gate:check`]_
 - [ ] The exact synthetic Opak draft passes `audit:verify` with missing action count `0` and accessible foreign-record count `0`. _[verified by `pnpm release-gate:check`]_

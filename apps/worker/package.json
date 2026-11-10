@@ -26,7 +26,7 @@
     "@cloudflare/workers-types": "5.20260718.1",
     "@types/node": "latest",
     "typescript": "7.0.2",
-    "vitest": "4.1.10",
+    "vitest": "4.1.12",
     "wrangler": "4.112.0"
   }
 }
