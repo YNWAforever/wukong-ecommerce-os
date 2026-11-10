@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { sourceImports } from "../schema.js";
@@ -32,6 +32,8 @@ export type SourceImport = {
 export type SourceImportRepository = {
   create(input: CreateSourceImportInput): Promise<SourceImport>;
   getById(id: string): Promise<SourceImport | null>;
+  /** Recent source imports for the workspace, newest first (bounded read). */
+  listRecent(limit?: number): Promise<SourceImport[]>;
   findByWorkbookIdentity(
     input: Pick<
       CreateSourceImportInput,
@@ -101,6 +103,16 @@ export function createSourceImportRepository(
         )
         .limit(1);
       return row ?? null;
+    },
+
+    async listRecent(limit = 20) {
+      scope.assertOpen();
+      return transaction
+        .select(COLUMNS)
+        .from(sourceImports)
+        .where(eq(sourceImports.workspaceId, workspaceId))
+        .orderBy(desc(sourceImports.createdAt), desc(sourceImports.id))
+        .limit(Math.min(Math.max(limit, 1), 50));
     },
   };
 }

@@ -446,6 +446,73 @@ describe("MCP methods", () => {
     expect(fake.state.mcpCalls[0]?.status).toBe("unavailable");
   });
 
+  it("executes imports.list and exports.get read tools", async () => {
+    const at = new Date("2026-11-08T10:00:00.000Z");
+    const { server } = fixture({
+      options: {
+        ...answeredTurnOptions(),
+        sourceImports: [{ id: "import-1", createdAt: at }],
+        exportAttempts: [
+          {
+            id: "attempt-1",
+            artifactStatus: "ready",
+            rowCount: 2,
+            createdAt: at,
+          },
+        ],
+      },
+    });
+    const readImports = await call(
+      server,
+      rpc(20, "tools/call", {
+        name: "imports.list",
+        arguments: { limit: 5 },
+      }),
+    );
+    const importsResult = readImports.body?.result as {
+      content: Array<{ text: string }>;
+      isError?: boolean;
+    };
+    expect(importsResult.isError).toBeUndefined();
+    expect(JSON.parse(importsResult.content[0]!.text)).toEqual({
+      items: [
+        {
+          importId: "import-1",
+          state: "received",
+          receivedAt: at.toISOString(),
+        },
+      ],
+      truncated: false,
+    });
+
+    const readExport = await call(
+      server,
+      rpc(21, "tools/call", {
+        name: "exports.get",
+        arguments: { exportAttemptId: "attempt-1" },
+      }),
+    );
+    const exportResult = readExport.body?.result as {
+      content: Array<{ text: string }>;
+      isError?: boolean;
+    };
+    expect(exportResult.isError).toBeUndefined();
+    expect(JSON.parse(exportResult.content[0]!.text)).toEqual({
+      exportAttemptId: "attempt-1",
+      state: "ready",
+      reconciliation: "unknown",
+    });
+
+    const missing = await call(
+      server,
+      rpc(22, "tools/call", {
+        name: "exports.get",
+        arguments: { exportAttemptId: "attempt-foreign" },
+      }),
+    );
+    expect((missing.body?.result as { isError?: boolean }).isError).toBe(true);
+  });
+
   it("returns isError for invalid arguments and records schema_drift", async () => {
     const { server, fake } = fixture({ options: answeredTurnOptions() });
     const called = await call(

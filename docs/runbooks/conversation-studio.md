@@ -213,6 +213,11 @@ for that residual risk.
   (`STUDIO_MCP_SERVER_ENABLED`), external-MCP (`STUDIO_EXTERNAL_MCP_ENABLED`) and encryption-key
   presence from the environment instead of a hard-coded snapshot, links to `/studio/settings` for
   token and connection management, and never renders a connect toggle or green "connected" state.
+- **Every reviewed read tool executes.** `imports.list` reads recent workspace source-import
+  receipts (id, `received` state, received time) and `exports.get` reads one export attempt by id,
+  so the hosted-MCP `tools/call` path no longer advertises a read tool that only answers
+  `unavailable`. `exports.get` reports `reconciliation: "unknown"` because this read layer has no
+  reconciliation signal; a foreign or missing attempt id is `unavailable`, never invented.
 - **Copy proposals** never write canonical data. Open the listing in the existing review screen to
   apply anything; the Studio artifact is versioned and can be saved (operator) and signed off
   (reviewer+); sign-off is an artifact state, not a listing approval or publish action.

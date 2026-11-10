@@ -120,4 +120,30 @@ describe("source import repository", () => {
       ),
     ).toBeNull();
   });
+
+  it("lists recent imports for its workspace only, within the reviewed bound", async () => {
+    const mine = await database.forWorkspace(workspaceId, (r) =>
+      r.sourceImports.create(inputFor({ connectionId })),
+    );
+    const foreign = await database.forWorkspace(otherWorkspaceId, (r) =>
+      r.sourceImports.create(inputFor({ connectionId: otherConnectionId })),
+    );
+
+    const recent = await database.forWorkspace(workspaceId, (r) =>
+      r.sourceImports.listRecent(50),
+    );
+    const ids = recent.map((row) => row.id);
+    expect(ids).toContain(mine.id);
+    expect(ids).not.toContain(foreign.id);
+
+    // A non-positive or oversized limit is clamped, never unbounded.
+    await expect(
+      database.forWorkspace(workspaceId, (r) => r.sourceImports.listRecent(0)),
+    ).resolves.toHaveLength(1);
+    await expect(
+      database.forWorkspace(workspaceId, (r) =>
+        r.sourceImports.listRecent(500),
+      ),
+    ).resolves.toHaveLength(Math.min(recent.length, 50));
+  });
 });

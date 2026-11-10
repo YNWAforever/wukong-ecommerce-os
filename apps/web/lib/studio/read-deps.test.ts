@@ -456,3 +456,88 @@ describe("product-shot read mapping (C1 v1.1)", () => {
     ).resolves.toBeNull();
   });
 });
+
+describe("exports.get and imports.list reads", () => {
+  function reposWithExportAttempts(
+    attempts: Array<{
+      id: string;
+      artifactStatus: "pending" | "ready" | "failed" | null;
+      rowCount: number;
+      createdAt: Date;
+    }>,
+  ): WorkspaceRepositories {
+    return {
+      exportAttempts: {
+        getById: vi.fn(
+          async (id: string) =>
+            attempts.find((attempt) => attempt.id === id) ?? null,
+        ),
+      },
+    } as unknown as WorkspaceRepositories;
+  }
+
+  it("maps one export attempt and reports reconciliation as unknown", async () => {
+    const repos = reposWithExportAttempts([
+      {
+        id: "attempt-ready",
+        artifactStatus: "ready",
+        rowCount: 3,
+        createdAt: NOW,
+      },
+    ]);
+    await expect(
+      buildStudioReadDeps(repos).getExportAttemptDetail("attempt-ready"),
+    ).resolves.toEqual({
+      exportAttemptId: "attempt-ready",
+      state: "ready",
+      reconciliation: "unknown",
+    });
+  });
+
+  it("reports a historical attempt without artifact state as recorded", async () => {
+    const repos = reposWithExportAttempts([
+      { id: "attempt-old", artifactStatus: null, rowCount: 1, createdAt: NOW },
+    ]);
+    await expect(
+      buildStudioReadDeps(repos).getExportAttemptDetail("attempt-old"),
+    ).resolves.toEqual({
+      exportAttemptId: "attempt-old",
+      state: "recorded",
+      reconciliation: "unknown",
+    });
+  });
+
+  it("returns null for an export attempt the workspace does not own", async () => {
+    const repos = reposWithExportAttempts([]);
+    await expect(
+      buildStudioReadDeps(repos).getExportAttemptDetail("attempt-foreign"),
+    ).resolves.toBeNull();
+  });
+
+  it("maps recent source imports and clamps the read to the reviewed bound", async () => {
+    const listRecent = vi.fn(async (limit: number) =>
+      [
+        { id: "import-2", createdAt: new Date("2026-11-09T00:00:00.000Z") },
+        { id: "import-1", createdAt: new Date("2026-11-08T00:00:00.000Z") },
+      ].slice(0, limit),
+    );
+    const repos = {
+      sourceImports: { listRecent },
+    } as unknown as WorkspaceRepositories;
+
+    const imports = await buildStudioReadDeps(repos).listImports(500);
+    expect(listRecent).toHaveBeenCalledWith(50);
+    expect(imports).toEqual([
+      {
+        importId: "import-2",
+        state: "received",
+        receivedAt: "2026-11-09T00:00:00.000Z",
+      },
+      {
+        importId: "import-1",
+        state: "received",
+        receivedAt: "2026-11-08T00:00:00.000Z",
+      },
+    ]);
+  });
+});

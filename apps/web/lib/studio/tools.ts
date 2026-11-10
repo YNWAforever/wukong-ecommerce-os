@@ -89,6 +89,25 @@ export type ExportAttemptEvidence = {
   createdAt: string;
 };
 
+/**
+ * One export attempt read by id (`exports.get`). `reconciliation` is always
+ * `unknown` here: this read layer has no reconciliation signal, so it states
+ * that instead of guessing a match.
+ */
+export type ExportAttemptDetailEvidence = {
+  exportAttemptId: string;
+  state: "pending" | "ready" | "failed" | "recorded";
+  reconciliation: "matched" | "unmatched" | "unknown";
+};
+
+/** One source import, reduced to the reviewed `imports.list` schema. */
+export type ImportEvidence = {
+  importId: string;
+  /** Source imports have no state machine; `received` is the stored fact. */
+  state: "received";
+  receivedAt: string;
+};
+
 /** Current copy snapshot for the reviewed listing version (proposal context). */
 export type ListingCopySnapshot = {
   listingId: string;
@@ -140,6 +159,15 @@ export type StudioReadDeps = {
   getListingCounts(): Promise<Record<string, number>>;
   /** Recent export attempts, for the audit report (Task 11). */
   getExportAttempts(limit: number): Promise<ExportAttemptEvidence[]>;
+  /**
+   * One export attempt by id, for the `exports.get` read tool. Returns `null`
+   * for an id the workspace does not own, exactly like a deleted one.
+   */
+  getExportAttemptDetail(
+    exportAttemptId: string,
+  ): Promise<ExportAttemptDetailEvidence | null>;
+  /** Recent source imports, for the `imports.list` read tool. */
+  listImports(limit: number): Promise<ImportEvidence[]>;
   /**
    * Assets attached to one listing, for the product-shot prepare skill (C1).
    * Only ids, content types and a source/derived label cross this boundary;
@@ -244,11 +272,27 @@ async function runReadTool(
       if (!status) return { state: "unavailable" };
       return { output: status };
     }
+    case "imports.list": {
+      const input = parsed as { limit?: number };
+      const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+      const items = await deps.listImports(limit);
+      return {
+        output: {
+          items: items.slice(0, limit),
+          truncated: items.length >= limit,
+        },
+      };
+    }
+    case "exports.get": {
+      const input = parsed as { exportAttemptId: string };
+      const detail = await deps.getExportAttemptDetail(input.exportAttemptId);
+      if (!detail) return { state: "unavailable" };
+      return { output: detail };
+    }
     // Dispatch never runs through the tool plane: `listing.create_draft` is a
     // reviewed registry entry, but creating canonical listing data must go
     // through the explicit confirmed Studio dispatch route (plan Task 10).
-    case "imports.list":
-    case "exports.get":
+    // `listing.propose_copy` likewise has a dedicated artifact route.
     case "listing.create_draft":
     case "listing.propose_copy":
       return { state: "unavailable" };

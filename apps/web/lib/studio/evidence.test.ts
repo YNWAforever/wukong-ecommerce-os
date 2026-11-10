@@ -138,6 +138,23 @@ function baseDeps(overrides: Partial<StudioReadDeps> = {}): StudioReadDeps {
         },
       ];
     },
+    async getExportAttemptDetail(exportAttemptId) {
+      if (exportAttemptId !== "attempt-1") return null;
+      return {
+        exportAttemptId,
+        state: "ready" as const,
+        reconciliation: "unknown" as const,
+      };
+    },
+    async listImports() {
+      return [
+        {
+          importId: "import-1",
+          state: "received" as const,
+          receivedAt: now.toISOString(),
+        },
+      ];
+    },
     async listListingAssets() {
       return [];
     },
