@@ -532,3 +532,13 @@ signed query parameters, SHOPLINE token prefixes, unmasked password/API-key JSON
 injection markers. It reports pattern names with line/column positions only — never the matched
 value — and exits non-zero when anything is found. This is a best-effort sample; a person must still
 review deployment-specific logs for the release gate.
+
+## Admin usage summary (A5.2)
+
+`/studio/settings` (admin/owner only) renders a read-only **Usage — last 30 days** section computed
+server-side from the existing Studio tables: turns by status with input/output tokens, settled and
+reserved USD, MCP calls by status, and threads/messages created in the window. It is a projection
+only — no new table, write, model call or migration — and structured turn/budget events remain the
+authoritative observability source for investigations. If the aggregate read fails, the page logs
+`studio_metrics_read_failed` and shows one localised failure note while the settings form still
+renders.

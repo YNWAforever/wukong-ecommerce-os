@@ -331,7 +331,43 @@ export const studioOutputListQuerySchema = z
   .strict();
 export type StudioOutputListQuery = {
   q?: string;
-  kind?: StudioOutputKindFilter;
-  status?: StudioOutputStatusFilter;
+  kind?: string;
+  status?: string;
   offset?: number;
+};
+
+/** The admin usage summary window (A5.2). */
+export const STUDIO_METRICS_WINDOW_DAYS = 30;
+
+/**
+ * Admin-facing Studio usage summary (A5.2).
+ *
+ * A read-only projection of the existing studio tables for the last
+ * `windowDays`; token sums and spend are decimal strings so they remain
+ * bigint-safe, counts are numbers. `asOf`/`since` come from the injected clock.
+ */
+export type StudioMetricsResult = {
+  windowDays: number;
+  since: string;
+  asOf: string;
+  runs: {
+    total: number;
+    succeeded: number;
+    failed: number;
+    cancelled: number;
+    outcomeUnknown: number;
+    queuedOrRunning: number;
+  };
+  tokens: { input: string; output: string };
+  spendUsd: { settled: string; reserved: string };
+  mcpCalls: {
+    total: number;
+    ok: number;
+    denied: number;
+    error: number;
+    unavailable: number;
+    schemaDrift: number;
+  };
+  threadsCreated: number;
+  messages: number;
 };
