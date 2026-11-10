@@ -314,5 +314,7 @@ part of `pnpm test`) scans `apps/web` for any server module that imports a funct
 `"use client"` module and calls it, so the class of 500 cannot silently return. The flags-on
 acceptance also carries a route smoke over every Studio surface (home, threads, outputs, inbox,
 connections, owner settings), asserting the real heading renders instead of a server error and that
-the A5 usage projection appears on settings. No planned skills
+the A5 usage projection appears on settings; and a viewer-role authorization pass (disabled
+create/send controls with the honest note, read surfaces available, admin settings rendering the
+not-found boundary with no admin content). No planned skills
 remain; C1 is complete. Still user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.

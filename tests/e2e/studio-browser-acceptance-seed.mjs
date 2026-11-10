@@ -39,6 +39,14 @@ export const STUDIO_BROWSER_ACCEPTANCE_EMAIL =
 export const STUDIO_BROWSER_ACCEPTANCE_PASSWORD =
   "Local-only studio browser password 1!";
 /**
+ * Read-only member reused by the authorization acceptance: viewer role in the
+ * same workspace. Duplicated in the spec for the same reason as the ids below.
+ */
+export const STUDIO_BROWSER_ACCEPTANCE_VIEWER_USER_ID =
+  "user_studio_browser_viewer_e2e";
+export const STUDIO_BROWSER_ACCEPTANCE_VIEWER_EMAIL =
+  "studio-browser-viewer@local.invalid";
+/**
  * Fixed synthetic listing linked to a bulk-form workbook row, so the
  * deterministic supplier-intel finding can be exercised through the browser.
  * The spec duplicates these ids (it must not import this module: running the
@@ -117,6 +125,8 @@ const WORKSPACE_ID = STUDIO_BROWSER_ACCEPTANCE_WORKSPACE_ID;
 const USER_ID = STUDIO_BROWSER_ACCEPTANCE_USER_ID;
 const EMAIL = STUDIO_BROWSER_ACCEPTANCE_EMAIL;
 const PASSWORD = STUDIO_BROWSER_ACCEPTANCE_PASSWORD;
+const VIEWER_USER_ID = STUDIO_BROWSER_ACCEPTANCE_VIEWER_USER_ID;
+const VIEWER_EMAIL = STUDIO_BROWSER_ACCEPTANCE_VIEWER_EMAIL;
 
 const DATABASE_URL =
   process.env.BROWSER_E2E_DATABASE_ADMIN_URL ??
@@ -158,13 +168,27 @@ try {
     `;
     await tx`DELETE FROM workspace_invites WHERE workspace_id = ${WORKSPACE_ID}`;
     await tx`INSERT INTO workspace_invites (workspace_id, email, role, status) VALUES (${WORKSPACE_ID}, ${EMAIL}, 'admin', 'accepted')`;
+    await tx`INSERT INTO workspace_invites (workspace_id, email, role, status) VALUES (${WORKSPACE_ID}, ${VIEWER_EMAIL}, 'viewer', 'accepted')`;
     await tx`
       INSERT INTO memberships (workspace_id, user_id, role)
       VALUES (${WORKSPACE_ID}, ${USER_ID}, 'owner')
       ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = excluded.role
     `;
+    await tx`
+      INSERT INTO users (id, email, name, auth_email_verified)
+      VALUES (${VIEWER_USER_ID}, ${VIEWER_EMAIL}, 'Studio Browser Viewer', true)
+      ON CONFLICT (id) DO UPDATE SET
+        email = excluded.email, name = excluded.name, auth_email_verified = true
+    `;
+    await tx`
+      INSERT INTO memberships (workspace_id, user_id, role)
+      VALUES (${WORKSPACE_ID}, ${VIEWER_USER_ID}, 'viewer')
+      ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = excluded.role
+    `;
     await tx`DELETE FROM auth_accounts WHERE user_id = ${USER_ID} OR account_id = ${USER_ID}`;
     await tx`INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password) VALUES ('acct_studio_browser_e2e', ${USER_ID}, ${USER_ID}, 'credential', ${passwordHash})`;
+    await tx`DELETE FROM auth_accounts WHERE user_id = ${VIEWER_USER_ID} OR account_id = ${VIEWER_USER_ID}`;
+    await tx`INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password) VALUES ('acct_studio_browser_viewer_e2e', ${VIEWER_USER_ID}, ${VIEWER_USER_ID}, 'credential', ${passwordHash})`;
     await tx`
       INSERT INTO studio_workspace_settings (workspace_id, enabled, updated_by)
       VALUES (${WORKSPACE_ID}, true, ${USER_ID})
@@ -225,6 +249,8 @@ try {
       workspaceId: WORKSPACE_ID,
       userId: USER_ID,
       email: EMAIL,
+      viewerUserId: VIEWER_USER_ID,
+      viewerEmail: VIEWER_EMAIL,
       studioEnabled: true,
       supplierListingId: SUPPLIER_LISTING_ID,
     }),
