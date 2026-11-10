@@ -1187,6 +1187,28 @@ export const STUDIO_COPY = {
 
   // -- finding card (C1) ----------------------------------------------------
   "studio.finding.title": ["分類對應建議", "Category mapping proposal"],
+  "studio.finding.supplierTitle": ["供應商情報", "Supplier intelligence"],
+  "studio.finding.supplierMeta": [
+    "從已連結的工作簿列整理；不會寫入任何資料。",
+    "Compiled from the linked workbook row; nothing is written.",
+  ],
+  "studio.finding.field": ["欄位", "Field"],
+  "studio.finding.value": ["值", "Value"],
+  "studio.finding.missingFields": [
+    "未知欄位：{fields}",
+    "Unknown fields: {fields}",
+  ],
+  "studio.finding.supplierNotApplied": [
+    "尚未套用 — 工作室只保存唯讀發現，不會寫入供應商或商品資料。",
+    "Not applied — Studio only saves a read-only finding; no supplier or listing record is written.",
+  ],
+  "studio.supplierField.supplier": ["供應商", "Supplier"],
+  "studio.supplierField.brand": ["品牌", "Brand"],
+  "studio.supplierField.sku": ["貨號", "SKU"],
+  "studio.supplierField.barcode": ["條碼", "Barcode"],
+  "studio.supplierField.mpn": ["製造編號", "MPN"],
+  "studio.supplierField.productCost": ["商品成本", "Product cost"],
+  "studio.supplierField.tradePrice": ["Trade 價", "Trade price"],
   "studio.finding.listing": ["商品 {listingId}", "Listing {listingId}"],
   "studio.finding.currentCategory": ["目前分類", "Current category"],
   "studio.finding.unknown": ["未知", "Unknown"],
