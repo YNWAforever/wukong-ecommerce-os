@@ -162,15 +162,31 @@ shows the new plaintext in the same once-only block as creation.
 ## External MCP connections (disabled by default)
 
 1. Admin creates a draft connection on `/studio/settings` with an HTTPS endpoint, transport and a
-   pinned tool allowlist plus advertised-schema hashes.
-2. Approval requires: `STUDIO_EXTERNAL_MCP_ENABLED=true`, the workspace Studio row enabled, a valid
+   tool allowlist. Schema hashes may be supplied now or collected by a probe.
+2. The admin binds the workspace-owned credential (bearer token). It is encrypted server-side with
+   `STUDIO_MCP_ENCRYPTION_KEY` as an AES-256-GCM `v1.<iv>.<ct>` envelope; no API returns it and the
+   audit row records only that it was set/cleared plus the generation. Setting, rotating or clearing
+   the credential bumps the generation and returns an approved connection to `draft`, so approval is
+   repeated for the new generation.
+3. **Probe** (explicit admin click) calls `initialize` + `tools/list` through the reviewed outbound
+   client and shows the advertised input-schema sha256 per tool. It never invokes a tool and a draft
+   may be probed so hashes can be pinned before approval. The probe is gated by
+   `STUDIO_EXTERNAL_MCP_ENABLED=true`, the enabled workspace Studio row and a valid
+   `STUDIO_MCP_ENCRYPTION_KEY`; a disabled connection is never probed.
+4. **Pin advertised hashes** stores the `{tool -> sha256(inputSchema)}` snapshot (allowlisted names
+   only); pinning also bumps the generation and returns an approved connection to `draft`.
+5. Approval requires: `STUDIO_EXTERNAL_MCP_ENABLED=true`, the workspace Studio row enabled, a valid
    `STUDIO_MCP_ENCRYPTION_KEY`, and a pinned 64-hex schema hash for every allowlisted tool.
-3. Credentials are encrypted server-side (AES-256-GCM envelope, new key) and never returned by any
-   API; disabling removes transport eligibility.
+6. Every probe appends a `studio_mcp_calls` ledger row (`tools/list`, status, latency, request and
+   response digests, caller `external_mcp`) and a `studio.mcp.connection.probed` audit event with the
+   outcome and counts. Endpoint, credential and provider payloads are never written to either.
+   Credential and pinning actions audit `studio.mcp.connection.credential_set` /
+   `credential_cleared` / `schemas_pinned`.
 
-**No call site instantiates the outbound client yet.** An approved connection is dormant until a
-later explicit decision wires a reviewed skill to it; the UI must not show a "connected" state.
-Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not automatic.
+**No skill call site yet.** The admin probe is the only outbound call: an approved connection is
+dormant until a later explicit decision wires a reviewed skill (or the C5 ads connector design) to
+it, and the UI never shows a "connected" state. Wrapping existing direct adapters (Tavily,
+Photoroom, SHOPLINE) in MCP is not automatic.
 
 ### Endpoint destination guard
 

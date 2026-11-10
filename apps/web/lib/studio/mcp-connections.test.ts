@@ -1,13 +1,25 @@
 import { describe, expect, it } from "vitest";
 
 import type { StudioMcpConnection } from "@wukong/db";
+import type {
+  ExternalMcpTool,
+  McpClient,
+  McpClientDeps,
+  McpToolListResult,
+} from "@wukong/ai";
 
 import { isStudioEnabled } from "../studio-flags";
+import {
+  decryptStudioMcpCredential,
+  encryptStudioMcpCredential,
+} from "./mcp-credentials";
 import {
   createMcpConnectionBodySchema,
   createMcpConnectionService,
   externalMcpEnabled,
   externalMcpTransportAllowed,
+  pinMcpSchemaHashesBodySchema,
+  setMcpCredentialBodySchema,
   updateMcpConnectionBodySchema,
   type McpConnectionServiceDeps,
 } from "./mcp-connections.js";
@@ -29,7 +41,10 @@ import {
 const WORKSPACE = "ws_test";
 const KEY = Buffer.alloc(32, 0x01).toString("base64");
 const HASH = "a".repeat(64);
+const OTHER_HASH = "b".repeat(64);
 const ENDPOINT = "https://mcp.example.test/rpc";
+const CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
+const CREDENTIAL = "synthetic-bearer-secret";
 const ON_ENV = {
   CONVERSATION_STUDIO_ENABLED: "true",
   STUDIO_MCP_SERVER_ENABLED: "true",
@@ -39,12 +54,34 @@ const ON_ENV = {
 
 type Role = "viewer" | "operator" | "reviewer" | "admin" | "owner";
 
+function advertisedTool(
+  name: string,
+  hash: string,
+  schema: unknown = { type: "object" },
+): ExternalMcpTool {
+  return { name, description: null, inputSchema: schema, schemaHash: hash };
+}
+
+function clientResult(
+  result: McpToolListResult,
+  capture: { input?: McpClientDeps } = {},
+) {
+  const factory = (input: McpClientDeps): McpClient => {
+    capture.input = input;
+    return {
+      listTools: async () => result,
+      callTool: async () => ({ status: "unavailable" }),
+    };
+  };
+  return { factory, capture };
+}
+
 function fakeConnection(
   overrides: Partial<StudioMcpConnection> = {},
 ): StudioMcpConnection {
   const createdAt = new Date("2026-11-08T10:00:00.000Z");
   return {
-    id: "11111111-1111-4111-8111-111111111111",
+    id: CONNECTION_ID,
     workspaceId: WORKSPACE,
     label: "External catalogue",
     endpointUrl: ENDPOINT,
@@ -68,6 +105,7 @@ function fixture(
     role?: Role;
     env?: NodeJS.ProcessEnv;
     options?: FakeStudioOptions;
+    createClient?: (input: McpClientDeps) => McpClient;
   } = {},
 ) {
   const options = input.options ?? {};
@@ -87,6 +125,7 @@ function fixture(
     getDatabase: fakeGetDatabase(fake.repos, fake.state.workspaceCalls),
     isStudioEnabled,
     env: input.env ?? ON_ENV,
+    ...(input.createClient ? { createClient: input.createClient } : {}),
   };
   return { service: createMcpConnectionService(deps), fake };
 }
@@ -227,7 +266,9 @@ describe("external MCP connection service", () => {
 
   it("lists snapshots for an admin and never returns credential envelopes", async () => {
     const { service } = fixture({
-      options: { mcpConnections: [fakeConnection()] },
+      options: {
+        mcpConnections: [fakeConnection({ credentialEnvelope: null })],
+      },
     });
     const snapshot = await service.listConnections();
     expect(snapshot.items).toHaveLength(1);
@@ -340,6 +381,278 @@ describe("external MCP connection service", () => {
         status: 403,
         code: "insufficient_role",
       });
+    }
+  });
+});
+
+describe("external MCP credential, pinning and probe administration", () => {
+  it("validates credential and pin bodies", () => {
+    expect(
+      setMcpCredentialBodySchema.safeParse({ credential: CREDENTIAL }).success,
+    ).toBe(true);
+    for (const body of [
+      {},
+      { credential: "" },
+      { credential: "x", extra: 1 },
+    ]) {
+      expect(setMcpCredentialBodySchema.safeParse(body).success).toBe(false);
+    }
+    expect(
+      setMcpCredentialBodySchema.safeParse({ credential: "x".repeat(4097) })
+        .success,
+    ).toBe(false);
+    expect(
+      pinMcpSchemaHashesBodySchema.safeParse({
+        schemaHashes: { "catalog.search": HASH },
+      }).success,
+    ).toBe(true);
+    for (const body of [
+      {},
+      { schemaHashes: { "catalog.search": "not-a-hash" } },
+      { schemaHashes: { "other.tool": HASH } },
+      { schemaHashes: { "catalog.search": HASH }, extra: true },
+    ]) {
+      // The foreign-tool case is shape-valid but service-validated; only the
+      // shape cases fail here.
+      if (JSON.stringify(body).includes("other.tool")) continue;
+      expect(pinMcpSchemaHashesBodySchema.safeParse(body).success).toBe(false);
+    }
+  });
+
+  it("stores an encrypted credential, never returns it and bumps generation", async () => {
+    const { service, fake } = fixture({
+      options: { mcpConnections: [fakeConnection({ status: "approved" })] },
+    });
+    const view = await service.setCredential(CONNECTION_ID, {
+      credential: CREDENTIAL,
+    });
+    expect(view).toMatchObject({
+      status: "draft",
+      generation: 2,
+      credentialPresent: true,
+    });
+    expect(JSON.stringify(view)).not.toContain(CREDENTIAL);
+    const envelope = fake.state.mcpConnections[0]!.credentialEnvelope;
+    expect(envelope).toMatch(/^v1\./);
+    await expect(
+      decryptStudioMcpCredential(envelope as string, KEY),
+    ).resolves.toBe(CREDENTIAL);
+    expect(fake.state.audits.map((event) => event.action)).toEqual([
+      "studio.mcp.connection.credential_set",
+    ]);
+    expect(JSON.stringify(fake.state.audits)).not.toContain(CREDENTIAL);
+  });
+
+  it("clears a credential with a generation bump and no plaintext", async () => {
+    const { service, fake } = fixture({
+      options: {
+        mcpConnections: [
+          fakeConnection({ credentialEnvelope: "v1.iv.ciphertext" }),
+        ],
+      },
+    });
+    const view = await service.clearCredential(CONNECTION_ID);
+    expect(view.credentialPresent).toBe(false);
+    expect(view.generation).toBe(2);
+    expect(fake.state.mcpConnections[0]!.credentialEnvelope).toBeNull();
+    expect(fake.state.audits.map((event) => event.action)).toEqual([
+      "studio.mcp.connection.credential_cleared",
+    ]);
+  });
+
+  it("pins only allowlisted advertised hashes and returns approved to draft", async () => {
+    const { service, fake } = fixture({
+      options: { mcpConnections: [fakeConnection({ status: "approved" })] },
+    });
+    const view = await service.pinSchemaHashes(CONNECTION_ID, {
+      schemaHashes: { "catalog.search": OTHER_HASH },
+    });
+    expect(view.schemaHashes).toEqual({ "catalog.search": OTHER_HASH });
+    expect(view.status).toBe("draft");
+    expect(view.generation).toBe(2);
+    expect(fake.state.audits.map((event) => event.action)).toEqual([
+      "studio.mcp.connection.schemas_pinned",
+    ]);
+    await expect(
+      service.pinSchemaHashes(CONNECTION_ID, {
+        schemaHashes: { "other.tool": HASH },
+      }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_schema_hashes" });
+  });
+
+  it("probes through the injected client with the decrypted credential", async () => {
+    const envelope = await encryptStudioMcpCredential(CREDENTIAL, KEY);
+    const { factory, capture } = clientResult({
+      status: "ok",
+      tools: [advertisedTool("catalog.search", HASH)],
+    });
+    const { service, fake } = fixture({
+      createClient: factory,
+      options: {
+        mcpConnections: [
+          fakeConnection({ status: "approved", credentialEnvelope: envelope }),
+        ],
+      },
+    });
+    const result = await service.probeConnection(CONNECTION_ID);
+    expect(result).toEqual({
+      connectionId: CONNECTION_ID,
+      status: "ok",
+      tools: [
+        {
+          name: "catalog.search",
+          allowlisted: true,
+          advertisedHash: HASH,
+          pinnedHash: HASH,
+          match: true,
+        },
+      ],
+      missingPins: [],
+      drift: [],
+      missingAllowlisted: [],
+    });
+    expect(capture.input).toMatchObject({
+      endpointUrl: ENDPOINT,
+      toolAllowlist: ["catalog.search"],
+      credential: CREDENTIAL,
+      enabled: true,
+    });
+    expect(fake.state.mcpCalls).toHaveLength(1);
+    expect(fake.state.mcpCalls[0]).toMatchObject({
+      connectionId: CONNECTION_ID,
+      toolName: "tools/list",
+      status: "ok",
+      caller: "external_mcp",
+    });
+    expect(fake.state.audits.map((event) => event.action)).toEqual([
+      "studio.mcp.connection.probed",
+    ]);
+    expect(JSON.stringify(fake.state.audits)).not.toContain(CREDENTIAL);
+    expect(JSON.stringify(fake.state.audits)).not.toContain(ENDPOINT);
+    expect(JSON.stringify(fake.state.mcpCalls)).not.toContain(ENDPOINT);
+  });
+
+  it("reports drift, missing tools and transport failures honestly", async () => {
+    const drifted = fixture({
+      createClient: clientResult({
+        status: "ok",
+        tools: [advertisedTool("catalog.search", OTHER_HASH)],
+      }).factory,
+      options: {
+        mcpConnections: [fakeConnection({ credentialEnvelope: null })],
+      },
+    });
+    const driftResult = await drifted.service.probeConnection(CONNECTION_ID);
+    expect(driftResult).toMatchObject({
+      status: "schema_drift",
+      drift: ["catalog.search"],
+    });
+    expect(drifted.fake.state.mcpCalls[0]!.status).toBe("schema_drift");
+
+    const missing = fixture({
+      createClient: clientResult({ status: "ok", tools: [] }).factory,
+      options: {
+        mcpConnections: [fakeConnection({ credentialEnvelope: null })],
+      },
+    });
+    const missingResult = await missing.service.probeConnection(CONNECTION_ID);
+    expect(missingResult).toMatchObject({
+      status: "denied",
+      missingAllowlisted: ["catalog.search"],
+    });
+    expect(missing.fake.state.mcpCalls[0]!.status).toBe("denied");
+
+    const timeout = fixture({
+      createClient: clientResult({ status: "timeout" }).factory,
+      options: {
+        mcpConnections: [fakeConnection({ credentialEnvelope: null })],
+      },
+    });
+    expect(await timeout.service.probeConnection(CONNECTION_ID)).toMatchObject({
+      status: "timeout",
+      tools: [],
+    });
+    expect(timeout.fake.state.mcpCalls[0]).toMatchObject({
+      status: "unavailable",
+      errorCode: "timeout",
+    });
+  });
+
+  it("reports unpinned allowlisted tools so they can be pinned", async () => {
+    const { service } = fixture({
+      createClient: clientResult({
+        status: "ok",
+        tools: [advertisedTool("catalog.search", HASH)],
+      }).factory,
+      options: {
+        mcpConnections: [
+          fakeConnection({ schemaHashes: {}, credentialEnvelope: null }),
+        ],
+      },
+    });
+    const result = await service.probeConnection(CONNECTION_ID);
+    expect(result).toMatchObject({
+      status: "ok",
+      missingPins: ["catalog.search"],
+    });
+    expect(result.tools[0]).toMatchObject({ pinnedHash: null, match: null });
+  });
+
+  it("never probes a disabled connection and fails closed without flag or key", async () => {
+    const disabled = fixture({
+      createClient: clientResult({ status: "ok", tools: [] }).factory,
+      options: { mcpConnections: [fakeConnection({ status: "disabled" })] },
+    });
+    await expect(
+      disabled.service.probeConnection(CONNECTION_ID),
+    ).rejects.toMatchObject({ status: 409, code: "connection_disabled" });
+
+    for (const env of [
+      {
+        CONVERSATION_STUDIO_ENABLED: "true",
+        STUDIO_EXTERNAL_MCP_ENABLED: "",
+        STUDIO_MCP_ENCRYPTION_KEY: KEY,
+      } as unknown as NodeJS.ProcessEnv,
+      {
+        CONVERSATION_STUDIO_ENABLED: "true",
+        STUDIO_EXTERNAL_MCP_ENABLED: "true",
+        STUDIO_MCP_ENCRYPTION_KEY: "",
+      } as unknown as NodeJS.ProcessEnv,
+    ]) {
+      const { factory, capture } = clientResult({ status: "ok", tools: [] });
+      const { service } = fixture({
+        env,
+        createClient: factory,
+        options: {
+          mcpConnections: [fakeConnection({ credentialEnvelope: null })],
+        },
+      });
+      await expect(
+        service.probeConnection(CONNECTION_ID),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(capture.input).toBeUndefined();
+    }
+  });
+
+  it("requires admin for credential, pinning and probe actions", async () => {
+    for (const role of ["viewer", "operator", "reviewer"] as const) {
+      const { service } = fixture({
+        role,
+        options: {
+          mcpConnections: [fakeConnection({ credentialEnvelope: null })],
+        },
+      });
+      await expect(
+        service.setCredential(CONNECTION_ID, { credential: CREDENTIAL }),
+      ).rejects.toMatchObject({ status: 403, code: "insufficient_role" });
+      await expect(
+        service.pinSchemaHashes(CONNECTION_ID, {
+          schemaHashes: { "catalog.search": HASH },
+        }),
+      ).rejects.toMatchObject({ status: 403, code: "insufficient_role" });
+      await expect(
+        service.probeConnection(CONNECTION_ID),
+      ).rejects.toMatchObject({ status: 403, code: "insufficient_role" });
     }
   });
 });

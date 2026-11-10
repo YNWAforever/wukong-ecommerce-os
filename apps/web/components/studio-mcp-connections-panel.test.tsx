@@ -34,6 +34,7 @@ function connection(
     generation: 1,
     toolAllowlist: ["catalog.search"],
     schemaHashes: { "catalog.search": HASH },
+    credentialPresent: false,
     approvedBy: null,
     approvedAt: null,
     createdAt: "2026-11-08T10:00:00.000Z",
@@ -51,6 +52,7 @@ function snapshot(
     workspaceEnabled: true,
     encryptionKeyPresent: false,
     approvable: false,
+    probeAvailable: false,
     ...overrides,
   };
 }
@@ -254,5 +256,133 @@ describe("StudioMcpConnectionsPanel", () => {
     expect(container.textContent).toContain(
       "Schema hashes must be JSON mapping tool names to 64-character hex hashes.",
     );
+  });
+
+  it("stores a credential only after the explicit click and clears the field", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
+      Response.json(
+        connection({
+          credentialPresent: true,
+          generation: 2,
+          status: "draft",
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = await mount(
+      snapshot({
+        items: [connection()],
+        externalFlagOn: true,
+        encryptionKeyPresent: true,
+        approvable: true,
+        probeAvailable: true,
+      }),
+    );
+    const input = container.querySelector(
+      'input[name="connection-credential-11111111-1111-4111-8111-111111111111"]',
+    ) as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    await act(async () => {
+      setValue(input, "synthetic-bearer-secret");
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+
+    const save = findButton(container, "Save credential");
+    await act(async () => {
+      save!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe(
+      "/api/studio/mcp-connections/11111111-1111-4111-8111-111111111111/credential",
+    );
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe("PUT");
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      credential: "synthetic-bearer-secret",
+    });
+    expect(container.textContent).toContain("Credential stored");
+    expect(input.value).toBe("");
+    // The plaintext never appears in the rendered page.
+    expect(container.textContent).not.toContain("synthetic-bearer-secret");
+  });
+
+  it("probes, shows unpinned advertised hashes and pins them explicitly", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/probe")) {
+        return Response.json({
+          connectionId: "11111111-1111-4111-8111-111111111111",
+          status: "ok",
+          tools: [
+            {
+              name: "catalog.search",
+              allowlisted: true,
+              advertisedHash: HASH,
+              pinnedHash: null,
+              match: null,
+            },
+          ],
+          missingPins: ["catalog.search"],
+          drift: [],
+          missingAllowlisted: [],
+        });
+      }
+      return Response.json(
+        connection({
+          schemaHashes: { "catalog.search": HASH },
+          generation: 2,
+          status: "draft",
+        }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = await mount(
+      snapshot({
+        items: [connection({ schemaHashes: {} })],
+        externalFlagOn: true,
+        encryptionKeyPresent: true,
+        approvable: true,
+        probeAvailable: true,
+      }),
+    );
+
+    const probe = findButton(container, "Probe endpoint");
+    expect(probe?.disabled).toBe(false);
+    await act(async () => {
+      probe!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe(
+      "/api/studio/mcp-connections/11111111-1111-4111-8111-111111111111/probe",
+    );
+    expect(container.textContent).toContain("Probe result");
+    expect(container.textContent).toContain("Not pinned");
+    expect(container.textContent).toContain("Pin advertised hashes");
+
+    const pin = findButton(container, "Pin advertised hashes");
+    await act(async () => {
+      pin!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const pinCall = fetcher.mock.calls.find((call) =>
+      String(call[0]).endsWith("/schemas"),
+    );
+    expect(pinCall?.[1]?.method).toBe("PUT");
+    expect(JSON.parse(String(pinCall?.[1]?.body))).toEqual({
+      schemaHashes: { "catalog.search": HASH },
+    });
+    expect(container.textContent).toContain("Advertised hashes pinned");
   });
 });

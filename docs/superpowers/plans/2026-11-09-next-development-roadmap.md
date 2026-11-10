@@ -244,3 +244,16 @@ hosted MCP `tools/call`), and the thread renders a read-only handoff card linked
 screen. `supplier.intel_proposal` remains the only planned skill; C1 is otherwise complete. Still
 user-gated: A2 production migration window, A3 live model credential/budget, C3 external MCP decision,
 plus the P3.2/C5 operator decisions.
+
+### C3 external-MCP admin workflow (PR #182)
+
+The external MCP admin workflow is now implemented end-to-end, with the transport still disabled by
+default: workspace credential binding/rotation/clearing (encrypted `v1.<iv>.<ct>` envelope, plaintext
+never returned), an explicit admin probe (`initialize` + `tools/list` only) that reports advertised
+schema hashes and drift, and hash pinning before approval. Credential/pin changes bump the generation
+and return approved connections to `draft`; every probe writes a digest-only `studio_mcp_calls` row
+and a content-free audit event. Probe availability requires the global flag, the workspace Studio row
+and the encryption key, but not approval — a draft can be validated first. New endpoints:
+`PUT|DELETE /api/studio/mcp-connections/[id]/credential`, `PUT .../schemas`, `POST .../probe`.
+No skill or connector calls an approved connection yet. Remaining C3 work is still user-gated: a
+provider/credential-ownership decision and the live-acceptance run.
