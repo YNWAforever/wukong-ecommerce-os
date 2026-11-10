@@ -195,6 +195,14 @@ export function composeDeterministicReply(input: {
         state: context?.state ?? "unknown",
       }),
     );
+  } else if (skill.key === "supplier.intel_proposal") {
+    const fields = checkValues(pack, "studio.check.supplier_fields");
+    sections.push(
+      translatedLine("studio.answer.supplier_intel", {
+        fields: numberValue(fields, "present"),
+        missing: numberValue(fields, "missing"),
+      }),
+    );
   }
 
   let dispatch: StudioDispatch | null = null;

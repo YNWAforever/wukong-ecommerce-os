@@ -116,6 +116,7 @@ const STUDIO_TEMPLATE_DEFINITIONS: readonly StudioTemplateDefinition[] = [
     titleKey: "studio.template.supplierIntel.title",
     outcomeKey: "studio.template.supplierIntel.outcome",
     limitationKey: "studio.template.supplierIntel.limitation",
+    starterKey: "studio.template.supplierIntel.starter",
   },
   {
     id: "customer.reply_draft",

@@ -17,7 +17,7 @@ const EXPECTED_STATUS = {
   "merchant.audit": "pilot",
   "product_shot.prepare": "pilot",
   "category.map_proposal": "pilot",
-  "supplier.intel_proposal": "planned",
+  "supplier.intel_proposal": "pilot",
   "customer.reply_draft": "blocked",
   "logistics.followup": "blocked",
 } as const;
@@ -30,6 +30,7 @@ const EXECUTABLE_KEYS = [
   "listing.draft_from_sources",
   "merchant.audit",
   "product_shot.prepare",
+  "supplier.intel_proposal",
 ];
 
 function parseDefinition(value: unknown): boolean {
@@ -194,7 +195,7 @@ describe("skillDefinitionSchema", () => {
     expect(
       parseDefinition({ ...base, title: { ...base.title, en: " " } }),
     ).toBe(false);
-    expect(parseDefinition({ ...base, title: { "zh-Hant": "標題" } })).toBe(
+    expect(parseDefinition({ ...base, title: { "zh-Hant": "標�?" } })).toBe(
       false,
     );
     expect(

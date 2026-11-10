@@ -561,6 +561,18 @@ back as sources, and a missing asset or attempt read is reported as unknown/part
 `assets.list` also becomes available to the hosted MCP `tools/call` surface with the same read-only,
 workspace-scoped, ids-only shape.
 
+## Skill: `supplier.intel_proposal` (pilot v1.1.0)
+
+Deterministic finding from the listing's **linked workbook row**. The bulk-form importer stores the
+canonical row (including `supplier`, `brand`, `sku`, `barcode`, `mpn`, `productCost`, `tradePrice`)
+in `platform_products.raw_row` and links its source-import receipt, so the turn reads the listing
+(`catalog.get`) plus that row and receipt through the workspace read surface. It persists a versioned
+`wukong-supplier-intel/v1` finding with the fields that have a stored value, lists the missing fields
+as unknown, and states its limitations: nothing is applied, no supplier or listing record is written,
+and workspace-level website records are not listing-linked so they are never used as evidence. No
+model is called; without a linked row the turn stays **partial** and saves no artifact. The finding
+renders as a read-only card linked to the listing review screen.
+
 ## Activation dry run (preview) — verified 2026-11-09
 
 Steps 1–5 of the production activation sequence were rehearsed end-to-end on a **fresh disposable

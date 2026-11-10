@@ -25,8 +25,8 @@ connector exists.
 - **Studio surfaces**: `/studio`, `/studio/t/[id]`, `/studio/threads`, `/studio/outputs`,
   `/studio/connections`, admin `/studio/settings`.
 - **Pilot skills**: `catalog.find`, `catalog.gap_review`, `listing.copy_proposal`,
-  `listing.draft_from_sources`, `merchant.audit`, `category.map_proposal`, `product_shot.prepare`;
-  planned: `supplier.intel_proposal`; blocked pending a source/write decision:
+  `listing.draft_from_sources`, `merchant.audit`, `category.map_proposal`, `product_shot.prepare`,
+  `supplier.intel_proposal`; blocked pending a source/write decision:
   `customer.reply_draft`, `logistics.followup`.
 - **Versioned outputs** with digest/readback/sign-off and canonical JSON export; confirmed
   listing-draft dispatch through the existing intake service.
@@ -80,13 +80,13 @@ existing routes; staged flag rollout.
 
 Goal: make the Studio actually useful beyond listing QA.
 
-| #   | Deliverable                                                                                                                                                                                   | Notes                                                                                                          |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| C1  | Finish **planned skills**: `product_shot.prepare`, `category.map_proposal`, `supplier.intel_proposal` (deterministic evidence first, optional model, review gates, versioned artifacts)       | `product_shot.prepare` and `category.map_proposal` are pilot v1.1.0; `supplier.intel_proposal` remains planned |
-| C2  | **Blocked-skill decisions**: `customer.reply_draft`, `logistics.followup` — resolve source data ownership, privacy, write gates; either build or keep blocked with documented reasons         | User decision on data sources                                                                                  |
-| C3  | **External MCP first connection**: allowlisted provider, schema pinning, egress/timeout/quota policy, credential ownership, live acceptance; admin approval workflow exercised                | Requires explicit approval + provider decision                                                                 |
-| C4  | **Skill authoring harness**: manifest/versioning, fixture-driven evals, dry-run, per-workspace enablement (ties to A1), rollback                                                              | Makes skill sprawl governable                                                                                  |
-| C5  | **Connector expansion**: ads/marketing connector design (Ads-Copilot direction), analytics read path, and the SHOPLINE write gate plan (first real write still a separate human confirmation) | Scope depends on user priorities                                                                               |
+| #   | Deliverable                                                                                                                                                                                   | Notes                                                |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| C1  | Finish **planned skills**: `product_shot.prepare`, `category.map_proposal`, `supplier.intel_proposal` (deterministic evidence first, optional model, review gates, versioned artifacts)       | All three are pilot v1.1.0; no planned skills remain |
+| C2  | **Blocked-skill decisions**: `customer.reply_draft`, `logistics.followup` — resolve source data ownership, privacy, write gates; either build or keep blocked with documented reasons         | User decision on data sources                        |
+| C3  | **External MCP first connection**: allowlisted provider, schema pinning, egress/timeout/quota policy, credential ownership, live acceptance; admin approval workflow exercised                | Requires explicit approval + provider decision       |
+| C4  | **Skill authoring harness**: manifest/versioning, fixture-driven evals, dry-run, per-workspace enablement (ties to A1), rollback                                                              | Makes skill sprawl governable                        |
+| C5  | **Connector expansion**: ads/marketing connector design (Ads-Copilot direction), analytics read path, and the SHOPLINE write gate plan (first real write still a separate human confirmation) | Scope depends on user priorities                     |
 
 **Gate for P2:** each skill/MCP addition has: capability-registry state change only with recorded
 verification, tests including negative/grounding cases, and a documented cost/risk note.
@@ -121,7 +121,9 @@ review of cross-tenant flows; load/soak test.
 6. B2 copy-proposal apply handoff + export.
 7. A3 live model onboarding (credential/budget decision).
 8. B4 hosted MCP quotas/rotation.
-9. C1 planned skills: `category.map_proposal` (pilot, #153) and `product_shot.prepare` (pilot, deterministic handoff) done; `supplier.intel_proposal` remains planned.
+9. C1 planned skills: `category.map_proposal` (pilot, #153), `product_shot.prepare` (pilot,
+   deterministic handoff) and `supplier.intel_proposal` (pilot, linked-workbook finding) are done;
+   no skill remains planned.
 10. C3 external MCP first provider (decision + approval flow).
 
 Each task ships as its own branch/PR with the repository gates (format, forbidden-runtime,
@@ -241,7 +243,7 @@ reads the listing, its source assets and the persisted image-review attempt, the
 `product_shot_handoff` dispatch with usable source image ids and the current state; it never calls the
 provider, mints no signed URL and writes nothing. `assets.list` is executable server-side (and for the
 hosted MCP `tools/call`), and the thread renders a read-only handoff card linked to the existing gated
-screen. `supplier.intel_proposal` remains the only planned skill; C1 is otherwise complete. Still
+screen. `supplier.intel_proposal` was the only planned skill; C1 is otherwise complete. Still
 user-gated: A2 production migration window, A3 live model credential/budget, C3 external MCP decision,
 plus the P3.2/C5 operator decisions.
 
@@ -264,10 +266,10 @@ The Studio home role-template cards now derive their Pilot/Planned/Unavailable l
 reviewed skill registry instead of a hard-coded snapshot. That corrects stale cards: the five
 skills that reached pilot after the first release (`listing.draft_from_sources`,
 `product_shot.prepare`, `listing.copy_proposal`, `category.map_proposal`, `merchant.audit`) are now
-shown as interactive with their own starter text, `supplier.intel_proposal` stays Planned and the
-two blocked skills stay Unavailable. Filling a card still only fills the composer and never sends;
-the limitation copy on each card now states the shipped deterministic boundary instead of "not
-implemented yet".
+shown as interactive with their own starter text, `supplier.intel_proposal` stayed Planned (it later
+reached pilot in its own change), and the two blocked skills stay Unavailable. Filling a card still
+only fills the composer and never sends; the limitation copy on each card now states the shipped
+deterministic boundary instead of "not implemented yet".
 
 ### Connections page reflects the flag-gated MCP reality
 
@@ -287,3 +289,19 @@ time only) and `exports.get` returns one export attempt's reviewed state, with r
 reported as `unknown` because no reconciliation read exists yet. This removes the last gap between
 the reviewed tool registry and executable reads, so the connections-page read-state copy is true for
 every read tool; propose/dispatch tools remain deliberately outside the tool plane.
+
+### C1 completes: `supplier.intel_proposal` pilot (linked-workbook finding)
+
+The last planned skill is now **pilot v1.1.0** as a deterministic finding. The data-linkage question
+that kept it planned is resolved by the bulk-form import path: importing a supplier workbook writes
+the canonical row (including `supplier`, `brand`, `sku`, `barcode`, `mpn`, `productCost`,
+`tradePrice`) into `platform_products.raw_row` and links the source-import receipt, so the turn can
+quote stored cells for a listing without a model, a write or a new connector.
+
+The turn reads the listing (`catalog.get`) plus the linked row/receipt through the workspace read
+surface, persists a versioned `wukong-supplier-intel/v1` finding with present values and an explicit
+missing-field list, and states its boundaries: nothing applied, no supplier record written, and
+workspace-level website records excluded because they are not listing-linked. Without a linked row
+the turn is partial and saves no artifact. `studio-home` picks the new pilot status up from the
+registry, so the supplier template is now interactive with starter text. No planned skills remain;
+C1 is complete. Still user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.

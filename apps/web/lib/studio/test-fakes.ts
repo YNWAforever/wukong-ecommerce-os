@@ -302,6 +302,16 @@ export type FakeStudioOptions = {
   }>;
   /** Recent source imports, for the `imports.list` read tool. */
   sourceImports?: Array<{ id: string; createdAt: Date }>;
+  /** Linked platform-product rows keyed by listing id (supplier intel, C1). */
+  platformProductByListing?: Record<
+    string,
+    {
+      id: string;
+      listingId: string;
+      rawRow: Record<string, string | null> | null;
+      sourceImportId: string | null;
+    }
+  >;
   counts?: Record<string, number>;
   /** Current workspace memberships; defaults to one admin (`actor_ops`). */
   memberships?: FakeMembership[];
@@ -1284,6 +1294,18 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           0,
           Math.min(Math.max(limit, 1), 50),
         );
+      },
+      getById: async (id: string) => {
+        state.writes.push("sourceImports.getById");
+        return (
+          (options.sourceImports ?? []).find((row) => row.id === id) ?? null
+        );
+      },
+    },
+    platformProducts: {
+      getByListingId: async (listingId: string) => {
+        state.writes.push("platformProducts.getByListingId");
+        return options.platformProductByListing?.[listingId] ?? null;
       },
     },
     reads: {

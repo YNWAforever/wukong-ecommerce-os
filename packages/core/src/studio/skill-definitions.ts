@@ -330,20 +330,26 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
   },
   {
     key: "supplier.intel_proposal",
-    version: "1.0.0",
-    status: "planned",
+    // v1.1 activates the reviewed definition as a deterministic finding: the
+    // linked platform-product row carries the canonical bulk-form workbook row
+    // (including `supplier`, identifiers and cost fields) and its source import
+    // receipt, so field-level suggestions can be compiled without a model or a
+    // write. Website records are workspace-level, not listing-linked, so they
+    // are deliberately excluded from the reviewed sources.
+    version: "1.1.0",
+    status: "pilot",
     title: {
       "zh-Hant": "整理供應商情報",
       en: "Compile supplier intelligence",
     },
     outcome: {
-      "zh-Hant":
-        "從工作簿匯入與網站商品記錄整理欄位級供應商建議，供審核後儲存。",
-      en: "Compile field-level supplier suggestions from workbook imports and website product records for reviewed saving.",
+      "zh-Hant": "從商品連結的工作簿列整理欄位級供應商建議，供審核後儲存。",
+      en: "Compile field-level supplier suggestions from the listing's linked workbook row for reviewed saving.",
     },
     limitation: {
-      "zh-Hant": "只根據已匯入或已掃描的來源；未有來源的欄位維持未知。",
-      en: "Only from imported or scanned sources; fields without a source stay unknown.",
+      "zh-Hant":
+        "只根據已連結的工作簿列；缺漏欄位維持未知，不會自動套用，也不會寫入供應商資料。",
+      en: "Only from the linked workbook row; missing fields stay unknown, nothing is applied automatically, and no supplier record is written.",
     },
     inputs: [
       {
@@ -355,13 +361,13 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
       },
     ],
     optionalInputs: [],
-    allowedTools: ["imports.list", "catalog.get"],
+    allowedTools: ["catalog.get"],
     outputKind: "finding",
     evidence: {
-      requiredSources: ["workbook", "source_import", "website"],
+      requiredSources: ["listing", "workbook", "source_import"],
       unknownsPolicy: "null-with-reason",
     },
-    budgetClass: "model-turns-v1",
+    budgetClass: "free",
     completion: "schema+evidence+readback",
   },
   {

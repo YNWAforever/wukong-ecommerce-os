@@ -379,9 +379,13 @@ export const STUDIO_COPY = {
     "從已匯入資料提出供應商欄位建議。",
     "Propose supplier fields from imported records.",
   ],
+  "studio.template.supplierIntel.starter": [
+    "從已連結的工作簿列整理供應商情報：",
+    "Compile supplier intel from the linked workbook row: ",
+  ],
   "studio.template.supplierIntel.limitation": [
-    "尚未實作；建議須由人員檢視後儲存。",
-    "Not implemented yet; proposals are reviewed and saved by a person.",
+    "只根據已連結的工作簿列；缺漏欄位維持未知，不會自動套用。",
+    "Only from the linked workbook row; missing fields stay unknown and nothing is applied automatically.",
   ],
   "studio.template.customerReply.title": ["客服回覆", "Customer replies"],
   "studio.template.customerReply.outcome": [
@@ -1349,6 +1353,52 @@ export const STUDIO_COPY = {
   "studio.connections.logistics": [
     "物流與訂單：沒有資料來源，維持封鎖。",
     "Logistics and orders: no data source exists; stays blocked.",
+  ],
+
+  // -- supplier-intel skill (C1 v1.1) ---------------------------------------
+  "studio.answer.supplier_intel": [
+    "已從已連結的工作簿列整理 {fields} 個欄位；{missing} 個欄位維持未知。",
+    "Compiled {fields} field(s) from the linked workbook row; {missing} stayed unknown.",
+  ],
+  "studio.check.supplier_listing": [
+    "商品 {listingId}：狀態 {status}；生效版本：{activeVersion}。",
+    "Listing {listingId}: status {status}; active version: {activeVersion}.",
+  ],
+  "studio.check.supplier_fields": [
+    "工作簿欄位：{present} 個有值；{missing} 個未知。",
+    "Workbook fields: {present} present; {missing} unknown.",
+  ],
+  "studio.trace.supplier_evidence": [
+    "已讀取商品與已連結的工作簿列；{fields} 個欄位有值，{missing} 個未知。",
+    "Read the listing and its linked workbook row; {fields} field(s) present, {missing} unknown.",
+  ],
+  "studio.needs_input.supplier_listing": [
+    "請提供要整理供應商情報的商品（貼上商品編號）。",
+    "Provide the listing to compile supplier intel for (paste its listing id).",
+  ],
+  "studio.limit.supplier_not_applied": [
+    "供應商欄位建議只供審核；不會自動套用，也不會寫入供應商資料。",
+    "Supplier-field suggestions are for review only; nothing is applied automatically and no supplier record is written.",
+  ],
+  "studio.limit.supplier_listing_unavailable": [
+    "未能讀取商品 {listingId} 的記錄；未提供供應商欄位建議。",
+    "The record for listing {listingId} could not be read; no supplier-field suggestions are offered.",
+  ],
+  "studio.limit.supplier_workbook_unavailable": [
+    "商品 {listingId} 未有已連結的工作簿列；未以推測代替記錄。",
+    "Listing {listingId} has no linked workbook row; guesswork never replaces records.",
+  ],
+  "studio.limit.supplier_source_import_unavailable": [
+    "找不到工作簿列的來源匯入憑證；來源欄位維持未標註。",
+    "The workbook row's source-import receipt could not be resolved; source provenance stays unlabelled.",
+  ],
+  "studio.limit.supplier_website_unlinked": [
+    "網站商品記錄屬於工作區層級，未連結到個別商品，因此不作為此技能的依據。",
+    "Website product records are workspace-level and not linked to a listing, so they are not used as evidence for this skill.",
+  ],
+  "studio.limit.supplier_fields_missing": [
+    "工作簿列缺少或無法安全引用的欄位：{fields}。",
+    "Fields missing or unsafe to quote from the workbook row: {fields}.",
   ],
 
   // -- honest states (spec §2.4) --------------------------------------------

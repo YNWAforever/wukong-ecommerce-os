@@ -210,13 +210,14 @@ describe("StudioHome", () => {
       "product_shot.prepare",
       "listing.copy_proposal",
       "category.map_proposal",
+      "supplier.intel_proposal",
       "merchant.audit",
     ]);
     expect(
       STUDIO_TEMPLATES.filter(
         (template) => template.availability === "planned",
       ).map((template) => template.id),
-    ).toEqual(["supplier.intel_proposal"]);
+    ).toEqual([]);
     expect(
       STUDIO_TEMPLATES.filter(
         (template) => template.availability === "unavailable",
@@ -551,7 +552,7 @@ describe("StudioHome", () => {
     expect(html).toContain("歡迎回來");
     expect(html).toContain("來自工作區記錄；不會呼叫 AI。");
     expect(html).toContain("AI 可能會出錯；重要數字請先核對。");
-    expect(html).toContain("規劃中");
+    expect(html).toContain("試行");
     expect(html).toContain("未能提供");
   });
 });

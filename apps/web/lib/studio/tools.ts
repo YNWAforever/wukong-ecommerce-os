@@ -8,6 +8,7 @@ import {
 } from "@wukong/core";
 
 import { translatedLine, type TranslatedLine } from "./types";
+import type { SupplierFieldKey } from "./supplier-intel";
 import { readListingRunStatus } from "./tools/listing-run-status";
 
 /**
@@ -108,6 +109,18 @@ export type ImportEvidence = {
   receivedAt: string;
 };
 
+/**
+ * The linked workbook row for one listing, reduced to the supplier columns the
+ * finding may quote. Values are the canonical bulk-form cells only; missing or
+ * blank columns stay in `missingFields` instead of becoming empty strings.
+ */
+export type SupplierWorkbookEvidence = {
+  productId: string;
+  values: Partial<Record<SupplierFieldKey, string>>;
+  missingFields: SupplierFieldKey[];
+  sourceImport: { importId: string; receivedAt: string } | null;
+};
+
 /** Current copy snapshot for the reviewed listing version (proposal context). */
 export type ListingCopySnapshot = {
   listingId: string;
@@ -168,6 +181,14 @@ export type StudioReadDeps = {
   ): Promise<ExportAttemptDetailEvidence | null>;
   /** Recent source imports, for the `imports.list` read tool. */
   listImports(limit: number): Promise<ImportEvidence[]>;
+  /**
+   * Linked workbook row for the supplier-intel skill (C1). A server read, not a
+   * model-requestable tool: only canonical bulk-form supplier/identifier/cost
+   * cells cross this boundary, never the whole raw row.
+   */
+  getSupplierWorkbook(
+    listingId: string,
+  ): Promise<SupplierWorkbookEvidence | null>;
   /**
    * Assets attached to one listing, for the product-shot prepare skill (C1).
    * Only ids, content types and a source/derived label cross this boundary;

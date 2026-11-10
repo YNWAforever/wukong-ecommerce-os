@@ -312,7 +312,7 @@ describe("settings admin update", () => {
       [{ ...BASE_BODY, enabled: "yes" }, "invalid_settings"],
       [{ ...BASE_BODY, allowedSkills: ["nope.unknown"] }, "unknown_skill"],
       [
-        { ...BASE_BODY, allowedSkills: ["supplier.intel_proposal"] },
+        { ...BASE_BODY, allowedSkills: ["customer.reply_draft"] },
         "unknown_skill",
       ],
       [
