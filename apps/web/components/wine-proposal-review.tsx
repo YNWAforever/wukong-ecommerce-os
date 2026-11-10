@@ -62,63 +62,72 @@ export function WineProposalReview({
       {!proposal.differences.length && (
         <p>{t("沒有可比較的差異。", "No differences are available.")}</p>
       )}
-      {proposal.differences.map((row) => (
-        <fieldset
-          key={row.path}
-          disabled={
-            disabled ||
-            proposal.state !== "available" ||
-            !row.selectable ||
-            !canEdit
-          }
-        >
-          <legend>
-            <label>
-              <input
-                type="checkbox"
-                data-proposal-path={row.path}
-                checked={selected.includes(row.path)}
-                onChange={(event) =>
-                  onSelect((items) =>
-                    event.target.checked
-                      ? [...items, row.path]
-                      : items.filter((path) => path !== row.path),
-                  )
-                }
-              />
-              {row.kind === "section" && row.path.slice(9) in wineSectionLabels
-                ? wineSectionLabels[
-                    row.path.slice(9) as keyof typeof wineSectionLabels
-                  ][locale === "en" ? 1 : 0]
-                : evidenceFieldLabel(row.path, locale)}
-            </label>
-          </legend>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
-              gap: 16,
-            }}
-          >
-            <div>
-              <strong>{t("目前內容", "Before")}</strong>
-              <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                {displayValue(row.before)}
-              </pre>
+      {proposal.differences.map((row) => {
+        // The checkbox sits inside the fieldset's first <legend>, which HTML
+        // exempts from the fieldset's disabled state. Without its own
+        // attribute a protected path stays clickable in a real browser even
+        // though the row is meant to be unselectable.
+        const rowDisabled =
+          disabled ||
+          proposal.state !== "available" ||
+          !row.selectable ||
+          !canEdit;
+        return (
+          <fieldset key={row.path} disabled={rowDisabled}>
+            <legend>
+              <label>
+                <input
+                  type="checkbox"
+                  data-proposal-path={row.path}
+                  disabled={rowDisabled}
+                  checked={selected.includes(row.path)}
+                  onChange={(event) =>
+                    onSelect((items) =>
+                      event.target.checked
+                        ? [...items, row.path]
+                        : items.filter((path) => path !== row.path),
+                    )
+                  }
+                />
+                {row.kind === "section" &&
+                row.path.slice(9) in wineSectionLabels
+                  ? wineSectionLabels[
+                      row.path.slice(9) as keyof typeof wineSectionLabels
+                    ][locale === "en" ? 1 : 0]
+                  : evidenceFieldLabel(row.path, locale)}
+              </label>
+            </legend>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+                gap: 16,
+              }}
+            >
+              <div>
+                <strong>{t("目前內容", "Before")}</strong>
+                <pre
+                  style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+                >
+                  {displayValue(row.before)}
+                </pre>
+              </div>
+              <div>
+                <strong>{t("建議內容", "After")}</strong>
+                <pre
+                  style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+                >
+                  {displayValue(row.after)}
+                </pre>
+              </div>
             </div>
-            <div>
-              <strong>{t("建議內容", "After")}</strong>
-              <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                {displayValue(row.after)}
-              </pre>
-            </div>
-          </div>
-          {JSON.stringify(row.before) === JSON.stringify(row.after) && (
-            <p>{t("內容相同，仍可選擇", "Unchanged; still selectable")}</p>
-          )}
-          {row.reason && <p>{row.reason}</p>}
-        </fieldset>
-      ))}
+            {JSON.stringify(row.before) === JSON.stringify(row.after) && (
+              <p>{t("內容相同，仍可選擇", "Unchanged; still selectable")}</p>
+            )}
+            {row.reason && <p>{row.reason}</p>}
+          </fieldset>
+        );
+      })}
       {proposal.state === "available" && (
         <>
           <p>

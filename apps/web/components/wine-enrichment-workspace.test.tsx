@@ -111,6 +111,41 @@ it("shows bilingual differences before guarded atomic adoption and refreshes cur
   expect(call[1].headers["Idempotency-Key"]).toMatch(/^[a-f0-9-]{36}$/);
   expect(refresh).toHaveBeenCalled();
 });
+it("disables a protected path's checkbox itself, not only its fieldset", async () => {
+  const protectedProposal = {
+    ...proposal,
+    differences: [
+      ...proposal.differences,
+      {
+        path: "sections.introduction",
+        kind: "section",
+        before: { en: "Before", "zh-Hant": "以前" },
+        after: { en: "After", "zh-Hant": "之後" },
+        selectable: false,
+        reason: "proposal_path_protected",
+      },
+    ],
+  };
+  const fetcher = vi
+    .fn()
+    .mockImplementation((_url: string, init: any) =>
+      Promise.resolve(
+        Response.json(init?.method === "POST" ? {} : protectedProposal),
+      ),
+    );
+  await render(fetcher);
+  const protectedInput = el.querySelector(
+    '[data-proposal-path="sections.introduction"]',
+  ) as HTMLInputElement;
+  expect(protectedInput.disabled).toBe(true);
+  expect(
+    (
+      el.querySelector(
+        '[data-proposal-path="sections.pairing"]',
+      ) as HTMLInputElement
+    ).disabled,
+  ).toBe(false);
+});
 it("surfaces composition conflicts and reloads server eligibility", async () => {
   const fetcher = vi
     .fn()
