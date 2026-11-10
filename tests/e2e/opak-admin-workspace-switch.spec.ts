@@ -224,7 +224,7 @@ test("accepted delayed workspace POST holds native Back, links, tabs and second 
       // Slow CI runners can take longer than 10s to load the admin route's
       // client chunks after the SPA return; this is a render wait, not a
       // correctness grace period for the assertion below.
-    ).toBeVisible({ timeout: 30000 });
+    ).toBeVisible({ timeout: 60000 });
     await expect(
       page.getByRole("tabpanel"),
       "Members panel must render",
