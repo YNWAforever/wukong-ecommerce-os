@@ -93,6 +93,12 @@ export const RELEASE_GATE_CHECKS = [
     because: "a drill is an event, and approval is a decision",
   },
   {
+    key: "`pnpm security:audit` reports no high/critical advisories",
+    kind: "human",
+    because:
+      "the audit needs registry access and a severity judgement about dev-only findings",
+  },
+  {
     key: "CI pins Node 24 and pnpm 11.7",
     kind: "automated",
     verify() {
