@@ -13,6 +13,10 @@ import { z } from "zod";
 import type { Locale } from "../lib/locale";
 import { renderStudioLine } from "../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
+import {
+  outputStatusSchema,
+  type StudioOutputStatus,
+} from "../lib/studio/output-status";
 import { formatHkDate } from "../lib/ui-copy";
 import { StudioReviewCard } from "./studio-review-card";
 import { StudioFindingCard } from "./studio-finding-card";
@@ -41,14 +45,6 @@ import styles from "./studio.module.css";
  * fetch every artifact up front; inside a thread the card loads immediately
  * because the operator already asked for that turn's output.
  */
-
-const outputStatusSchema = z.enum([
-  "draft",
-  "saved",
-  "signed_off",
-  "discarded",
-]);
-export type StudioOutputStatus = z.infer<typeof outputStatusSchema>;
 
 const studioOutputViewSchema = z.object({
   outputId: z.string().min(1).max(200),
@@ -128,12 +124,6 @@ export const studioOutputListItemSchema = studioOutputViewSchema.pick({
   updatedAt: true,
 });
 export type StudioOutputListItem = z.infer<typeof studioOutputListItemSchema>;
-
-/** Normalize a wire status; unknown values are not rendered as a status chip. */
-export function toOutputStatus(value: unknown): StudioOutputStatus | null {
-  const parsed = outputStatusSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
-}
 
 const STATUS_KEYS: Readonly<Record<StudioOutputStatus, StudioCopyKey>> = {
   draft: "studio.signoff.draft",
