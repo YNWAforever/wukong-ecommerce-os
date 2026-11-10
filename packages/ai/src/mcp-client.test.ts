@@ -81,6 +81,31 @@ describe("external MCP client gating", () => {
     expect(approvedEndpoint(ENDPOINT)).not.toBeNull();
   });
 
+  it("rejects loopback, private, link-local and internal destinations", () => {
+    for (const endpoint of [
+      "https://localhost/rpc",
+      "https://LOCALHOST./rpc",
+      "https://mcp.internal/rpc",
+      "https://printer.local/rpc",
+      "https://127.0.0.1/rpc",
+      "https://10.12.0.1/rpc",
+      "https://100.64.0.1/rpc",
+      "https://172.20.0.1/rpc",
+      "https://192.168.1.1/rpc",
+      "https://169.254.169.254/latest",
+      "https://224.0.0.1/rpc",
+      "https://[::1]/rpc",
+      "https://[fd12::1]/rpc",
+      "https://[fe80::1]/rpc",
+      "https://2130706433/rpc",
+    ]) {
+      expect(approvedEndpoint(endpoint), endpoint).toBeNull();
+    }
+    // Public hosts stay allowed; the guard is destination-based only.
+    expect(approvedEndpoint("https://mcp.example.test/rpc")).not.toBeNull();
+    expect(approvedEndpoint("https://8.8.8.8/rpc")).not.toBeNull();
+  });
+
   it("does not call the transport for a non-https or credential-bearing endpoint", async () => {
     for (const endpointUrl of [
       "http://mcp.example.test/rpc",

@@ -158,11 +158,12 @@ export function createMcpConnectionService(deps: McpConnectionServiceDeps) {
   function validatedEndpoint(raw: string): string {
     const endpoint = approvedEndpoint(raw);
     if (!endpoint) {
-      // http:, embedded credentials and malformed URLs all fail the same way.
+      // http:, embedded credentials, malformed URLs and non-public hosts all
+      // fail the same way.
       throw new ApiError(
         400,
         "invalid_endpoint",
-        "An HTTPS endpoint without credentials is required.",
+        "An HTTPS endpoint on a public host, without credentials, is required.",
       );
     }
     return endpoint.href;

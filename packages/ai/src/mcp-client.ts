@@ -94,7 +94,79 @@ export function schemaHash(inputSchema: unknown): string {
   return createHash("sha256").update(canonicalJson(inputSchema)).digest("hex");
 }
 
-/** Validate the fixed origin: https only, no embedded userinfo. */
+function ipv4Octets(hostname: string): number[] | null {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
+  if (!match) return null;
+  const octets = match.slice(1).map((part) => Number(part));
+  return octets.every((octet) => octet >= 0 && octet <= 255) ? octets : null;
+}
+
+function inIpv4Cidr(
+  octets: number[],
+  base: [number, number, number, number],
+  bits: number,
+): boolean {
+  const value =
+    ((octets[0]! << 24) >>> 0) +
+    (octets[1]! << 16) +
+    (octets[2]! << 8) +
+    octets[3]!;
+  const begin =
+    ((base[0] << 24) >>> 0) + (base[1] << 16) + (base[2] << 8) + base[3];
+  return value >= begin && value < begin + 2 ** (32 - bits);
+}
+
+/**
+ * True for loopback, private, link-local, multicast and otherwise non-public
+ * destinations. Hosted MCP calls are server-side, so an approved connection
+ * must never be able to address the deployment's own network (SSRF guard).
+ * DNS names are checked textually; DNS rebinding is a residual risk documented
+ * in the Conversation Studio runbook rather than solved here.
+ */
+export function isPrivateEndpointHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.+$/, "");
+  if (host.startsWith("[") && host.endsWith("]")) {
+    return isPrivateIpv6(host.slice(1, -1));
+  }
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  ) {
+    return true;
+  }
+  const octets = ipv4Octets(host);
+  if (!octets) return false;
+  return (
+    inIpv4Cidr(octets, [0, 0, 0, 0], 8) ||
+    inIpv4Cidr(octets, [10, 0, 0, 0], 8) ||
+    inIpv4Cidr(octets, [100, 64, 0, 0], 10) ||
+    inIpv4Cidr(octets, [127, 0, 0, 0], 8) ||
+    inIpv4Cidr(octets, [169, 254, 0, 0], 16) ||
+    inIpv4Cidr(octets, [172, 16, 0, 0], 12) ||
+    inIpv4Cidr(octets, [192, 0, 0, 0], 24) ||
+    inIpv4Cidr(octets, [192, 168, 0, 0], 16) ||
+    inIpv4Cidr(octets, [198, 18, 0, 0], 15) ||
+    inIpv4Cidr(octets, [224, 0, 0, 0], 4) ||
+    inIpv4Cidr(octets, [240, 0, 0, 0], 4)
+  );
+}
+
+function isPrivateIpv6(address: string): boolean {
+  const host = address.toLowerCase();
+  if (host === "::" || host === "::1") return true;
+  if (/^f[cd][0-9a-f]{2}:/.test(host)) return true;
+  if (/^fe[89ab][0-9a-f]:/.test(host)) return true;
+  if (/^ff[0-9a-f]{2}:/.test(host)) return true;
+  if (host.startsWith("::ffff:")) {
+    const mapped = ipv4Octets(host.slice("::ffff:".length));
+    return mapped !== null && isPrivateEndpointHost(mapped.join("."));
+  }
+  return false;
+}
+
+/** Validate the fixed origin: https, no embedded userinfo, public host only. */
 export function approvedEndpoint(raw: string): URL | null {
   let url: URL;
   try {
@@ -104,6 +176,7 @@ export function approvedEndpoint(raw: string): URL | null {
   }
   if (url.protocol !== "https:") return null;
   if (url.username.length > 0 || url.password.length > 0) return null;
+  if (isPrivateEndpointHost(url.hostname)) return null;
   return url;
 }
 
