@@ -2101,6 +2101,7 @@ describe("supplier.intel_proposal turns (C1 v1.1)", () => {
     expect(fake.state.writes).toContain("sourceImports.getById");
     expect(fake.state.writes).toContain("outputs.create");
     expect(fake.state.writes).toContain("outputs.addVersion");
+    expect(fake.state.outputs[0]?.title).toContain("Supplier intel ·");
 
     const version = fake.state.outputVersions[0];
     expect(version?.payload).toMatchObject({

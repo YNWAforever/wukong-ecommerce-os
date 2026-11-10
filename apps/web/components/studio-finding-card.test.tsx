@@ -30,6 +30,34 @@ const payload = {
   asOf: "2026-11-08T10:00:00.000Z",
 };
 
+const supplierPayload = {
+  schemaVersion: "wukong-supplier-intel/v1",
+  listingId: "33333333-3333-4333-8333-333333333333",
+  listingTitle: "Supplier-linked wine",
+  productId: "product-1",
+  fields: [
+    {
+      field: "supplier",
+      value: "Demo Supplier Ltd",
+      evidenceRefs: ["workbook:product-1", "source_import:import-1"],
+    },
+    {
+      field: "productCost",
+      value: "120.0",
+      evidenceRefs: ["workbook:product-1", "source_import:import-1"],
+    },
+  ],
+  missingFields: ["barcode", "mpn"],
+  limitations: [
+    { key: "studio.limit.supplier_not_applied", values: {} },
+    {
+      key: "studio.limit.supplier_fields_missing",
+      values: { fields: "barcode,mpn" },
+    },
+  ],
+  asOf: "2026-11-11T10:00:00.000Z",
+};
+
 function render(
   locale: "zh-Hant" | "en" = "en",
   value: unknown = payload,
@@ -106,5 +134,69 @@ describe("StudioFindingCard", () => {
     expect(html).toContain("目前分類");
     expect(html).toContain("尚未套用");
     expect(html).toContain("須人工審核");
+  });
+});
+
+describe("StudioFindingCard supplier intel", () => {
+  function renderSupplier(
+    locale: "zh-Hant" | "en" = "en",
+    value: unknown = supplierPayload,
+  ): string {
+    return renderToStaticMarkup(
+      <StudioFindingCard locale={locale} payload={value} />,
+    );
+  }
+
+  it("renders quoted fields with evidence refs and unknown fields", () => {
+    const html = renderSupplier("en");
+    expect(html).toContain("Supplier intelligence");
+    expect(html).toContain("Supplier-linked wine");
+    expect(html).toContain("Compiled from the linked workbook row");
+    expect(html).toContain("Demo Supplier Ltd");
+    expect(html).toContain("Product cost");
+    expect(html).toContain("120.0");
+    expect(html).toContain("workbook:product-1");
+    expect(html).toContain("source_import:import-1");
+    expect(html).toContain("Unknown fields: Barcode, MPN");
+  });
+
+  it("states nothing is applied or written and links to the listing", () => {
+    const html = renderSupplier("en");
+    expect(html).toContain(
+      "Not applied — Studio only saves a read-only finding; no supplier or listing record is written.",
+    );
+    expect(html).toContain(
+      'href="/listings/33333333-3333-4333-8333-333333333333"',
+    );
+    expect(html).toContain(
+      "Supplier-field suggestions are for review only; nothing is applied automatically and no supplier record is written.",
+    );
+    expect(html).not.toContain("<button");
+  });
+
+  it("keeps an honest unavailable state for an invalid supplier payload", () => {
+    for (const invalid of [
+      { ...supplierPayload, productId: "" },
+      { ...supplierPayload, schemaVersion: "wukong-supplier-intel/v2" },
+      {
+        ...supplierPayload,
+        fields: [{ field: "nope", value: "x", evidenceRefs: ["a"] }],
+      },
+    ]) {
+      const html = renderSupplier("en", invalid);
+      expect(html).toContain(
+        "This finding could not be displayed; nothing is invented.",
+      );
+      expect(html).not.toContain("<table");
+    }
+  });
+
+  it("renders zh-Hant supplier copy", () => {
+    const html = renderSupplier("zh-Hant");
+    expect(html).toContain("供應商情報");
+    expect(html).toContain("Demo Supplier Ltd");
+    expect(html).toContain("商品成本");
+    expect(html).toContain("未知欄位：條碼, 製造編號");
+    expect(html).toContain("尚未套用");
   });
 });
