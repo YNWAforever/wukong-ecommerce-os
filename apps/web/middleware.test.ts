@@ -4,9 +4,17 @@ import { describe, expect, it } from "vitest";
 
 import { config, middleware } from "./middleware";
 
-function request(path: string, cookie?: string): NextRequest {
+function request(
+  path: string,
+  cookie?: string,
+  init: { method?: string; headers?: Record<string, string> } = {},
+): NextRequest {
   return new NextRequest(`https://wukong.test${path}`, {
-    headers: cookie ? { cookie } : undefined,
+    method: init.method,
+    headers: {
+      ...(cookie ? { cookie } : {}),
+      ...(init.headers ?? {}),
+    },
   });
 }
 
@@ -33,6 +41,16 @@ describe("authentication middleware", () => {
     "/api",
     "/apiary",
   ])("keeps page redirect middleware matched at %s", (url) => {
+    expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    "/api/studio/threads",
+    "/api/studio/threads/thread-1/messages",
+    "/api/studio/tokens/token-1/rotate",
+  ])("matches the Studio API cross-site guard at %s", (url) => {
     expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(
       true,
     );
@@ -103,5 +121,59 @@ describe("authentication middleware", () => {
     expect(location).not.toContain("unrelated-secret");
     expect(location).not.toContain("do-not-leak");
     expect(response.headers.get("cookie")).toBeNull();
+  });
+});
+
+describe("Studio cross-site mutation guard", () => {
+  it.each(["cross-site", "same-site", "Cross-Site"])(
+    "blocks a Studio mutation carrying Sec-Fetch-Site: %s",
+    async (fetchSite) => {
+      const response = middleware(
+        request("/api/studio/threads", "better-auth.session_token=opaque", {
+          method: "POST",
+          headers: { "sec-fetch-site": fetchSite },
+        }),
+      );
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({
+        code: "cross_origin_blocked",
+        message: "Cross-site requests are not allowed.",
+      });
+    },
+  );
+
+  it.each([
+    { method: "POST", fetchSite: "same-origin" },
+    { method: "PATCH", fetchSite: "same-origin" },
+    { method: "DELETE", fetchSite: "none" },
+    { method: "POST", fetchSite: null },
+    { method: "GET", fetchSite: "cross-site" },
+  ])(
+    "allows method=$method with Sec-Fetch-Site=$fetchSite",
+    ({ method, fetchSite }) => {
+      const response = middleware(
+        request("/api/studio/threads", undefined, {
+          method,
+          headers: fetchSite ? { "sec-fetch-site": fetchSite } : {},
+        }),
+      );
+      expect(response.headers.get("x-middleware-next")).toBe("1");
+    },
+  );
+
+  it("leaves non-Studio APIs outside the guard", () => {
+    for (const path of [
+      "/api/mcp",
+      "/api/catalog",
+      "/api/listings/listing-1/approve",
+    ]) {
+      const response = middleware(
+        request(path, undefined, {
+          method: "POST",
+          headers: { "sec-fetch-site": "cross-site" },
+        }),
+      );
+      expect(response.headers.get("x-middleware-next")).toBe("1");
+    }
   });
 });

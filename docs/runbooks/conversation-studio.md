@@ -200,9 +200,17 @@ for that residual risk.
   tool steps, a bounded 20 read per-listing detail fan-out and at most two model calls; exceeding a
   limit persists a failed run with a distinct error code (`studio_turn_timeout` /
   `studio_step_budget_exceeded`). No token streaming; no retention enforcement yet
-  (`retention_days` is stored only); no workspace-settings
-  admin API (SQL above); hosted-MCP quotas are per-token rolling-minute/monthly limits only (no
-  global per-workspace MCP concurrency cap).
+  (`retention_days` is stored only); hosted-MCP quotas are per-token rolling-minute/monthly limits
+  plus the 100-active-token cap (no global per-workspace MCP concurrency cap).
+
+### Studio API cross-site guard
+
+`POST`/`PATCH`/`PUT`/`DELETE` requests under `/api/studio/` pass through middleware before any route
+handler. Browser requests whose `Sec-Fetch-Site` header is `cross-site` or `same-site` are rejected
+with `403 {"code":"cross_origin_blocked"}`; `same-origin`, `none` and absent headers (non-browser
+clients) continue to the route-level session/bearer checks. `/api/mcp` is excluded because its
+JSON-RPC clients are cross-origin by design and authenticate with a bearer token. Other app APIs
+still rely on the Better Auth session cookie's SameSite policy.
 
 ## Copy-proposal handoff and artifact exports (B2)
 
