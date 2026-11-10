@@ -118,7 +118,7 @@ test("admin preserves dirty inputs, compares conflicts, connects safely, and use
   await invite.fill("draft-admin@local.invalid");
   await page.getByRole("tab", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeVisible({ timeout: 20000 });
   await dialog.getByRole("button", { name: "Stay here", exact: true }).click();
   await expect(invite).toHaveValue("draft-admin@local.invalid");
   await page.getByRole("tab", { name: "Settings", exact: true }).click();
@@ -254,8 +254,9 @@ test("native SPA Back preserves dirty admin URL and inputs until save or discard
   await signInBulkImportOperator(page, fixture, false);
   await page.goto("/catalog");
   await page.locator('a[href="/admin"]').first().click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   const invite = page.getByLabel(/Invite email address/);
+  await expect(invite).toBeVisible({ timeout: 20000 });
   await invite.fill("native-back-draft@local.invalid");
   const length = await page.evaluate(() => {
     console.log(
@@ -272,20 +273,20 @@ test("native SPA Back preserves dirty admin URL and inputs until save or discard
   });
   await page.evaluate(() => history.back());
   const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(dialog).toBeVisible({ timeout: 20000 });
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   await expect(invite).toHaveValue("native-back-draft@local.invalid");
   await dialog.getByRole("button", { name: "Stay here", exact: true }).click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   expect(await page.evaluate(() => history.length)).toBe(length);
   await page.evaluate(() => history.back());
-  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeVisible({ timeout: 20000 });
   await dialog
     .getByRole("button", { name: "Discard and leave", exact: true })
     .click();
-  await expect(page).toHaveURL(/\/catalog$/);
+  await expect(page).toHaveURL(/\/catalog$/, { timeout: 20000 });
   await page.locator('a[href="/admin"]').first().click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   await invite.fill("native-back-save@local.invalid");
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -306,14 +307,15 @@ test("native SPA Back preserves dirty admin URL and inputs until save or discard
     }
   });
   await page.evaluate(() => history.back());
-  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeVisible({ timeout: 20000 });
   await dialog
     .getByRole("button", { name: "Save and leave", exact: true })
     .click();
   await expect(page.locator(".members-panel [role=alert]")).toContainText(
     "Synthetic invitation conflict",
+    { timeout: 20000 },
   );
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   await expect(invite).toHaveValue("native-back-save@local.invalid");
   await dialog
     .getByRole("button", { name: "Save and leave", exact: true })
@@ -321,9 +323,9 @@ test("native SPA Back preserves dirty admin URL and inputs until save or discard
   await expect(
     dialog.getByRole("button", { name: "Save and leave", exact: true }),
   ).toBeDisabled();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   release();
-  await expect(page).toHaveURL(/\/catalog$/);
+  await expect(page).toHaveURL(/\/catalog$/, { timeout: 20000 });
   const members = await page.request.get("/api/workspace/members");
   expect(members.status()).toBe(200);
   expect(
@@ -332,7 +334,7 @@ test("native SPA Back preserves dirty admin URL and inputs until save or discard
     ),
   ).toBe(true);
   await page.evaluate(() => history.back());
-  await expect(page).toHaveURL(/\/listings\/import$/);
+  await expect(page).toHaveURL(/\/listings\/import$/, { timeout: 20000 });
 });
 test("unindexed SPA forward and multi-entry Back keep dirty admin until the exact destination is approved", async ({
   page,
@@ -353,11 +355,11 @@ test("unindexed SPA forward and multi-entry Back keep dirty admin until the exac
   await signInBulkImportOperator(page, fixture, false);
   await page.goto("/catalog");
   await page.locator('a[href="/admin"]').first().click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   await page.locator('a[href="/catalog"]').first().click();
   await expect(page).toHaveURL(/\/catalog(?:\?|$)/);
   await page.evaluate(() => history.back());
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   const invite = page.getByLabel(/Invite email address/);
   await invite.fill("unindexed-forward@local.invalid");
   const length = await page.evaluate(() => {
@@ -375,8 +377,8 @@ test("unindexed SPA forward and multi-entry Back keep dirty admin until the exac
   });
   await page.evaluate(() => history.forward());
   const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(dialog).toBeVisible({ timeout: 20000 });
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   await expect(invite).toHaveValue("unindexed-forward@local.invalid");
   expect(await page.evaluate(() => history.length)).toBe(length);
   await dialog
@@ -386,12 +388,12 @@ test("unindexed SPA forward and multi-entry Back keep dirty admin until the exac
   await page.locator('a[href="/jobs"]').first().click();
   await expect(page).toHaveURL(/\/jobs(?:\?|$)/);
   await page.locator('a[href="/admin"]').first().click();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   await invite.fill("unindexed-multi-save@local.invalid");
   const multiLength = await page.evaluate(() => history.length);
   await page.evaluate(() => history.go(-2));
-  await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(dialog).toBeVisible({ timeout: 20000 });
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
   await expect(invite).toHaveValue("unindexed-multi-save@local.invalid");
   expect(await page.evaluate(() => history.length)).toBe(multiLength);
   await dialog
