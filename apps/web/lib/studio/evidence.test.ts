@@ -155,6 +155,22 @@ function baseDeps(overrides: Partial<StudioReadDeps> = {}): StudioReadDeps {
         },
       ];
     },
+    async getSupplierWorkbook(listingId) {
+      if (listingId !== LISTING_A) return null;
+      return {
+        productId: "product-a",
+        values: {
+          supplier: "Demo Supplier Ltd",
+          brand: "Chateau Demo",
+          sku: "OPAK-001",
+        },
+        missingFields: ["barcode", "mpn", "productCost", "tradePrice"],
+        sourceImport: {
+          importId: "import-1",
+          receivedAt: now.toISOString(),
+        },
+      };
+    },
     async listListingAssets() {
       return [];
     },
@@ -1223,5 +1239,89 @@ describe("product_shot.prepare evidence (C1 v1.1)", () => {
       listingId: "missing-listing",
       ready: false,
     });
+  });
+});
+
+describe("supplier.intel_proposal evidence (C1 v1.1)", () => {
+  const supplier = skill("supplier.intel_proposal");
+
+  it("asks for a listing id with supplier-specific needs-input copy", async () => {
+    const result = await buildEvidencePack({
+      skill: supplier,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: "compile supplier intel",
+    });
+    expect(result.status).toBe("needs_input");
+    if (result.status !== "needs_input")
+      throw new Error("expected needs_input");
+    expect(result.question.key).toBe("studio.needs_input.supplier_listing");
+  });
+
+  it("quotes the linked workbook row and its source-import receipt", async () => {
+    const result = await buildEvidencePack({
+      skill: supplier,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: "compile supplier intel",
+      listingId: LISTING_A,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const pack = result.pack;
+    expect(pack.coverage.get("listing")).toBe("present");
+    expect(pack.coverage.get("workbook")).toBe("present");
+    expect(pack.coverage.get("source_import")).toBe("present");
+    expect(
+      pack.checks.find((check) => check.key === "studio.check.supplier_fields"),
+    ).toMatchObject({
+      values: { present: 3, missing: 4 },
+      state: "missing",
+    });
+    const context = pack.context.supplierIntel as {
+      workbook: { productId: string; values: Record<string, string> } | null;
+      sourceImport: { importId: string } | null;
+    };
+    expect(context.workbook?.productId).toBe("product-a");
+    expect(context.workbook?.values.supplier).toBe("Demo Supplier Ltd");
+    expect(context.sourceImport?.importId).toBe("import-1");
+    expect(pack.limitations.map((line) => line.key)).toEqual(
+      expect.arrayContaining([
+        "studio.limit.supplier_not_applied",
+        "studio.limit.supplier_website_unlinked",
+        "studio.limit.supplier_fields_missing",
+      ]),
+    );
+    const reply = composeDeterministicReply({ skill: supplier, pack });
+    expect(reply.records.sections.map((line) => line.key)).toContain(
+      "studio.answer.supplier_intel",
+    );
+  });
+
+  it("stays partial and invents nothing when no workbook row is linked", async () => {
+    const result = await buildEvidencePack({
+      skill: supplier,
+      deps: baseDeps({ getSupplierWorkbook: async () => null }),
+      role: "operator",
+      now,
+      query: "compile supplier intel",
+      listingId: LISTING_A,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    expect(result.pack.coverage.get("workbook")).toBe("missing");
+    expect(result.pack.coverage.get("source_import")).toBe("missing");
+    expect(result.pack.context.supplierIntel).toMatchObject({
+      workbook: null,
+      sourceImport: null,
+    });
+    expect(result.pack.limitations.map((line) => line.key)).toContain(
+      "studio.limit.supplier_workbook_unavailable",
+    );
+    const reply = composeDeterministicReply({
+      skill: supplier,
+      pack: result.pack,
+    });
+    expect(reply.status).toBe("partial");
   });
 });

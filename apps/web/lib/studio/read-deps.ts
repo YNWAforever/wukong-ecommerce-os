@@ -16,7 +16,9 @@ import type {
   QualityEvidence,
   SourceAssetEvidence,
   StudioReadDeps,
+  SupplierWorkbookEvidence,
 } from "./tools";
+import { SUPPLIER_FIELD_COLUMNS } from "./supplier-intel";
 
 /**
  * Bind the deterministic Studio read surface to workspace-scoped repositories
@@ -275,6 +277,42 @@ export function buildStudioReadDeps(
         state: "received" as const,
         receivedAt: row.createdAt.toISOString(),
       }));
+    },
+
+    async getSupplierWorkbook(
+      listingId,
+    ): Promise<SupplierWorkbookEvidence | null> {
+      const product = await repos.platformProducts.getByListingId(listingId);
+      if (!product?.rawRow) return null;
+      const values: SupplierWorkbookEvidence["values"] = {};
+      const missingFields: SupplierWorkbookEvidence["missingFields"] = [];
+      for (const { field, column } of SUPPLIER_FIELD_COLUMNS) {
+        const raw = product.rawRow[column];
+        const value = typeof raw === "string" ? raw.trim() : "";
+        if (value.length === 0) {
+          missingFields.push(field);
+        } else if (value.length <= 200) {
+          values[field] = value;
+        } else {
+          // An oversized cell is reported as unknown rather than truncated
+          // into a different supplier fact.
+          missingFields.push(field);
+        }
+      }
+      const sourceImport = product.sourceImportId
+        ? await repos.sourceImports.getById(product.sourceImportId)
+        : null;
+      return {
+        productId: product.id,
+        values,
+        missingFields,
+        sourceImport: sourceImport
+          ? {
+              importId: sourceImport.id,
+              receivedAt: sourceImport.createdAt.toISOString(),
+            }
+          : null,
+      };
     },
 
     async listListingAssets(listingId): Promise<ListingAssetEvidence[]> {

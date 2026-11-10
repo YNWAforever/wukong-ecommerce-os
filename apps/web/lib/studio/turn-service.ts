@@ -83,6 +83,11 @@ import {
   type CategoryMapContext,
   type CategoryMapSuggestion,
 } from "./category-map";
+import {
+  supplierIntelPayloadFromContext,
+  supplierIntelProposalPayloadSchema,
+  type SupplierIntelContext,
+} from "./supplier-intel";
 import { buildStudioReadDeps } from "./read-deps";
 import { merchantAuditPayloadSchema } from "./report-payload";
 import type { ListingCopySnapshot } from "./tools";
@@ -1335,6 +1340,45 @@ export function createStudioService(deps: StudioServiceDeps) {
         // Deterministic prepare/handoff only: the gated product-shot screen
         // (and its provider) remains the only place an image is processed.
         reply = turnReplySchema.parse({ ...deterministic });
+      } else if (input.skill.key === "supplier.intel_proposal") {
+        // Deterministic finding from the linked workbook row: the artifact
+        // quotes stored cells and is saved as evidence; nothing is applied and
+        // no model call is made.
+        const context = packResult.pack.context.supplierIntel as
+          SupplierIntelContext | undefined;
+        const payload = context
+          ? supplierIntelPayloadFromContext(context, input.now)
+          : null;
+        if (!context || !payload) {
+          reply = turnReplySchema.parse({
+            ...deterministic,
+            status: "partial",
+          });
+        } else {
+          const parsed = supplierIntelProposalPayloadSchema.parse(payload);
+          const created = await createFindingOutput(
+            { getDatabase: () => deps.getDatabase() },
+            {
+              workspaceId: input.workspaceId,
+              actorId: input.session.actorId,
+              threadId: input.threadId,
+              runId: input.run.id,
+              title: `Supplier intel · ${
+                context.listingTitle || context.listingId
+              }`.slice(0, 200),
+              payload: parsed as unknown as Record<string, unknown>,
+              asOf: input.now,
+              scope: { listingId: context.listingId },
+            },
+          );
+          reply = turnReplySchema.parse({
+            ...deterministic,
+            status: parsed.fields.length > 0 ? "answered" : "partial",
+            outputs: [
+              { outputId: created.outputId, revision: created.revision },
+            ],
+          });
+        }
       } else {
         const modelOutcome = await analyseTurn({
           workspaceId: input.workspaceId,

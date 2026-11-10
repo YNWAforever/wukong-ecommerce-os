@@ -2035,3 +2035,127 @@ describe("product_shot.prepare turns (C1 v1.1)", () => {
     );
   });
 });
+
+describe("supplier.intel_proposal turns (C1 v1.1)", () => {
+  const SUPPLIER_LISTING_ID = "55555555-5555-4555-8555-555555555555";
+  const IMPORT_ID = "66666666-6666-4666-8666-666666666666";
+
+  function supplierOptions(
+    overrides: Partial<FakeStudioOptions> = {},
+  ): FakeStudioOptions {
+    return {
+      catalog: catalogOptions(),
+      snapshots: {
+        [SUPPLIER_LISTING_ID]: reviewSnapshot({
+          listingId: SUPPLIER_LISTING_ID,
+          content: reviewableContent(),
+          flags: [],
+        }),
+      },
+      sourceImports: [
+        { id: IMPORT_ID, createdAt: new Date("2026-11-08T10:00:00.000Z") },
+      ],
+      platformProductByListing: {
+        [SUPPLIER_LISTING_ID]: {
+          id: "product-supplier-1",
+          listingId: SUPPLIER_LISTING_ID,
+          rawRow: {
+            supplier: "Demo Supplier Ltd",
+            brand: "Chateau Demo",
+            sku: "OPAK-001",
+            barcode: "",
+            mpn: null,
+            productCost: "120.0",
+            tradePrice: "150.0",
+          },
+          sourceImportId: IMPORT_ID,
+        },
+      },
+      ...overrides,
+    };
+  }
+
+  it("saves a deterministic finding and never touches a model", async () => {
+    const modelFactory = vi.fn(() => {
+      throw new Error("deterministic supplier intel must not build a model");
+    });
+    const { service, fake } = harness({
+      options: supplierOptions(),
+      createModel: modelFactory as never,
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-supplier",
+        text: `compile supplier intel for listing ${SUPPLIER_LISTING_ID}`,
+        skillKey: "supplier.intel_proposal",
+      }),
+    );
+    expect(result.reply.skillVersion).toBe("1.1.0");
+    expect(result.reply.status).toBe("answered");
+    expect(result.reply.outputs).toHaveLength(1);
+    expect(modelFactory).not.toHaveBeenCalled();
+    expect(fake.state.runs[0]?.status).toBe("succeeded");
+    expect(fake.state.writes).toContain("platformProducts.getByListingId");
+    expect(fake.state.writes).toContain("sourceImports.getById");
+    expect(fake.state.writes).toContain("outputs.create");
+    expect(fake.state.writes).toContain("outputs.addVersion");
+
+    const version = fake.state.outputVersions[0];
+    expect(version?.payload).toMatchObject({
+      schemaVersion: "wukong-supplier-intel/v1",
+      listingId: SUPPLIER_LISTING_ID,
+      productId: "product-supplier-1",
+      missingFields: ["barcode", "mpn"],
+    });
+    const fields = version?.payload.fields as Array<{
+      field: string;
+      value: string;
+      evidenceRefs: string[];
+    }>;
+    expect(fields.map((entry) => entry.field)).toEqual([
+      "supplier",
+      "brand",
+      "sku",
+      "productCost",
+      "tradePrice",
+    ]);
+    expect(fields[0]).toEqual({
+      field: "supplier",
+      value: "Demo Supplier Ltd",
+      evidenceRefs: [
+        "workbook:product-supplier-1",
+        `source_import:${IMPORT_ID}`,
+      ],
+    });
+    expect(result.reply.limitations.map((line) => line.key)).toEqual(
+      expect.arrayContaining([
+        "studio.limit.supplier_not_applied",
+        "studio.limit.supplier_website_unlinked",
+        "studio.limit.supplier_fields_missing",
+      ]),
+    );
+  });
+
+  it("stays partial without a linked workbook row and saves nothing", async () => {
+    const { service, fake } = harness({
+      options: supplierOptions({ platformProductByListing: {} }),
+    });
+    const threadId = await openThread(service);
+    const result = await service.sendMessage(
+      threadId,
+      body({
+        clientMessageId: "client-supplier-missing",
+        text: `compile supplier intel for listing ${SUPPLIER_LISTING_ID}`,
+        skillKey: "supplier.intel_proposal",
+      }),
+    );
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.outputs).toEqual([]);
+    expect(fake.state.outputs).toEqual([]);
+    expect(result.reply.limitations.map((line) => line.key)).toContain(
+      "studio.limit.supplier_workbook_unavailable",
+    );
+  });
+});

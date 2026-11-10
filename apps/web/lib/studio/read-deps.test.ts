@@ -540,4 +540,91 @@ describe("exports.get and imports.list reads", () => {
       },
     ]);
   });
+
+  it("maps only the reviewed supplier workbook cells and receipt", async () => {
+    const getByListingId = vi.fn(async () => ({
+      id: "product-1",
+      listingId: "listing-1",
+      rawRow: {
+        supplier: "  Demo Supplier Ltd  ",
+        brand: "Chateau Demo",
+        sku: "",
+        barcode: "4891234567890",
+        mpn: null,
+        productCost: "120.0",
+        tradePrice: "150.0",
+        nameEn: "Not a supplier field",
+      },
+      sourceImportId: "import-1",
+    }));
+    const repos = {
+      platformProducts: { getByListingId },
+      sourceImports: {
+        getById: vi.fn(async (id: string) =>
+          id === "import-1"
+            ? { id, createdAt: new Date("2026-11-08T10:00:00.000Z") }
+            : null,
+        ),
+      },
+    } as unknown as WorkspaceRepositories;
+
+    await expect(
+      buildStudioReadDeps(repos).getSupplierWorkbook("listing-1"),
+    ).resolves.toEqual({
+      productId: "product-1",
+      values: {
+        supplier: "Demo Supplier Ltd",
+        brand: "Chateau Demo",
+        barcode: "4891234567890",
+        productCost: "120.0",
+        tradePrice: "150.0",
+      },
+      missingFields: ["sku", "mpn"],
+      sourceImport: {
+        importId: "import-1",
+        receivedAt: "2026-11-08T10:00:00.000Z",
+      },
+    });
+  });
+
+  it("returns null without a linked row and keeps a missing receipt honest", async () => {
+    const noRow = {
+      platformProducts: { getByListingId: vi.fn(async () => null) },
+    } as unknown as WorkspaceRepositories;
+    await expect(
+      buildStudioReadDeps(noRow).getSupplierWorkbook("listing-1"),
+    ).resolves.toBeNull();
+
+    const noRawRow = {
+      platformProducts: {
+        getByListingId: vi.fn(async () => ({
+          id: "product-2",
+          listingId: "listing-1",
+          rawRow: null,
+          sourceImportId: null,
+        })),
+      },
+    } as unknown as WorkspaceRepositories;
+    await expect(
+      buildStudioReadDeps(noRawRow).getSupplierWorkbook("listing-1"),
+    ).resolves.toBeNull();
+
+    const noReceipt = {
+      platformProducts: {
+        getByListingId: vi.fn(async () => ({
+          id: "product-3",
+          listingId: "listing-1",
+          rawRow: { supplier: "Demo Supplier Ltd" },
+          sourceImportId: "import-missing",
+        })),
+      },
+      sourceImports: { getById: vi.fn(async () => null) },
+    } as unknown as WorkspaceRepositories;
+    await expect(
+      buildStudioReadDeps(noReceipt).getSupplierWorkbook("listing-1"),
+    ).resolves.toMatchObject({
+      productId: "product-3",
+      sourceImport: null,
+    });
+  });
 });

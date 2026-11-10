@@ -7,6 +7,7 @@ import {
   type ListingCopySnapshot,
   type ProductShotAttemptEvidence,
   type StudioReadDeps,
+  type SupplierWorkbookEvidence,
   type ToolRun,
 } from "./tools";
 import {
@@ -37,6 +38,7 @@ import {
   splitProductShotAssets,
   type ProductShotPrepareContext,
 } from "./product-shot";
+import type { SupplierIntelContext } from "./supplier-intel";
 
 /**
  * Deterministic evidence assembly (plan Task 5, spec section 3.3).
@@ -1240,6 +1242,157 @@ async function buildProductShotPrepare(
   });
 }
 
+/**
+ * Supplier-intel evidence (C1, activated v1.1).
+ *
+ * Reads the listing with `catalog.get` and resolves its linked workbook row
+ * through the workspace read surface: the bulk-form import writes the canonical
+ * row (supplier, identifiers, cost) plus its source-import receipt, so the
+ * finding quotes only stored cells. Website records are workspace-level and not
+ * listing-linked, so they are excluded with an explicit limitation instead of
+ * being guessed as evidence.
+ */
+async function buildSupplierIntel(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  const listingId = input.listingId;
+  if (!listingId) throw new Error("listingId required before build");
+  let listingTitle = "";
+  let listingAvailable = false;
+  const detail = await callTool(pack, {
+    toolId: "catalog.get",
+    rawInput: { listingId },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (detail.state === "done") {
+    const listing = detail.output as {
+      listingId: string;
+      title: string;
+      status: string;
+      activeVersion: { versionId: string; sequence: number } | null;
+    };
+    listingAvailable = true;
+    listingTitle = listing.title;
+    markCoverage(pack, "listing", "present");
+    pushSource(
+      pack,
+      {
+        ref: `listing:${listing.listingId}:${
+          listing.activeVersion ? `v${listing.activeVersion.sequence}` : "none"
+        }`,
+        kind: "listing",
+        label: listing.title.slice(0, 300),
+        refId: listing.listingId,
+        version: listing.activeVersion
+          ? String(listing.activeVersion.sequence)
+          : null,
+        coverage: "present",
+        deepLink: `/listings/${listing.listingId}`,
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.supplier_listing",
+      values: {
+        listingId: listing.listingId,
+        status: listing.status,
+        activeVersion: listing.activeVersion ? "present" : "none",
+      },
+      state: "ok",
+    });
+  } else {
+    pushLimitation(pack, "studio.limit.supplier_listing_unavailable", {
+      listingId,
+    });
+    markCoverage(pack, "listing", "missing");
+  }
+
+  let workbook: SupplierWorkbookEvidence | null = null;
+  try {
+    workbook = await input.deps.getSupplierWorkbook(listingId);
+  } catch {
+    workbook = null;
+  }
+  if (workbook) {
+    markCoverage(pack, "workbook", "present");
+    pushSource(
+      pack,
+      {
+        ref: `workbook:${workbook.productId}`,
+        kind: "workbook",
+        label: "Linked workbook row",
+        refId: workbook.productId,
+        version: null,
+        coverage: "present",
+        deepLink: `/listings/${listingId}`,
+      },
+      input.now,
+    );
+    if (workbook.sourceImport) {
+      markCoverage(pack, "source_import", "present");
+      pushSource(
+        pack,
+        {
+          ref: `source_import:${workbook.sourceImport.importId}`,
+          kind: "source_import",
+          label: "Source import receipt",
+          refId: workbook.sourceImport.importId,
+          version: null,
+          coverage: "present",
+          deepLink: `/listings/${listingId}`,
+        },
+        input.now,
+      );
+    } else {
+      markCoverage(pack, "source_import", "missing");
+      pushLimitation(pack, "studio.limit.supplier_source_import_unavailable");
+    }
+    pushCheck(pack, {
+      key: "studio.check.supplier_fields",
+      values: {
+        present: Object.keys(workbook.values).length,
+        missing: workbook.missingFields.length,
+      },
+      state: workbook.missingFields.length > 0 ? "missing" : "ok",
+    });
+  } else {
+    markCoverage(pack, "workbook", "missing");
+    markCoverage(pack, "source_import", "missing");
+    pushLimitation(pack, "studio.limit.supplier_workbook_unavailable", {
+      listingId,
+    });
+  }
+  if (workbook && workbook.missingFields.length > 0) {
+    pushLimitation(pack, "studio.limit.supplier_fields_missing", {
+      fields: workbook.missingFields.join(","),
+    });
+  }
+  pushLimitation(pack, "studio.limit.supplier_not_applied");
+  pushLimitation(pack, "studio.limit.supplier_website_unlinked");
+
+  const context: SupplierIntelContext = {
+    listingId,
+    listingTitle,
+    workbook,
+    sourceImport: workbook?.sourceImport ?? null,
+    allowedEvidenceRefs: pack.sources.map((source) => source.ref),
+  };
+  pack.context.supplierIntel = context;
+  pack.trace.push({
+    kind: "evidence",
+    toolId: null,
+    state: listingAvailable ? "done" : "unavailable",
+    durationMs: null,
+    detail: translatedLine("studio.trace.supplier_evidence", {
+      fields: workbook ? Object.keys(workbook.values).length : 0,
+      missing: workbook ? workbook.missingFields.length : 7,
+    }),
+  });
+}
+
 export async function buildEvidencePack(
   input: BuildEvidenceInput,
 ): Promise<BuildEvidenceResult> {
@@ -1274,7 +1427,9 @@ export async function buildEvidencePack(
           ? "studio.needs_input.category_listing"
           : input.skill.key === "product_shot.prepare"
             ? "studio.needs_input.product_shot_listing"
-            : "studio.needs_input.copy_listing",
+            : input.skill.key === "supplier.intel_proposal"
+              ? "studio.needs_input.supplier_listing"
+              : "studio.needs_input.copy_listing",
       ),
     };
   const draftAssets = draftAssetIds({
@@ -1306,6 +1461,8 @@ export async function buildEvidencePack(
     await buildCategoryMapProposal(input, pack);
   else if (input.skill.key === "product_shot.prepare")
     await buildProductShotPrepare(input, pack);
+  else if (input.skill.key === "supplier.intel_proposal")
+    await buildSupplierIntel(input, pack);
   else throw new Error(`unsupported pilot skill ${input.skill.key}`);
 
   pushFollowUps(pack, input.skill.key);
