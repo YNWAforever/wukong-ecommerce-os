@@ -309,5 +309,7 @@ quoted workbook fields and unknown list → reload → `/studio/outputs`), on a 
 canonical workbook row and source-import receipt are linked. That exposed and fixed a pre-existing
 server/client boundary bug on `/studio/outputs`: `toOutputStatus` lived in the client output card but
 was called by the server page, so any workspace with artifacts got a 500. It now lives in the
-server-safe `lib/studio/output-status` module. No planned skills remain; C1 is complete. Still
-user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.
+server-safe `lib/studio/output-status` module, and a root-suite guard (`tests/client-boundary.test.mjs`,
+part of `pnpm test`) scans `apps/web` for any server module that imports a function from a
+`"use client"` module and calls it, so the class of 500 cannot silently return. No planned skills
+remain; C1 is complete. Still user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.
