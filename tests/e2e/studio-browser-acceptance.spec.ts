@@ -202,3 +202,45 @@ test("flags-on studio: supplier intel finding renders read-only and persists", a
     fullPage: true,
   });
 });
+
+/**
+ * Route-level smoke for every Studio surface (A4 hardening). The flags-on spec
+ * otherwise exercises only home, one thread, outputs and inbox; a server/client
+ * boundary mistake (like the `/studio/outputs` status-chip 500 fixed in #188)
+ * can hide in an unvisited page. Each surface must answer with its real heading,
+ * and the owner-only settings page must render the A5 usage projection.
+ */
+test("flags-on studio: every Studio surface renders for an owner", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  await signIn(page, origin);
+
+  const surfaces = [
+    { path: "/studio", heading: "Welcome back" },
+    { path: "/studio/threads", heading: "Conversations" },
+    { path: "/studio/outputs", heading: "Outputs" },
+    { path: "/studio/inbox", heading: "Orchestration inbox" },
+    { path: "/studio/connections", heading: "Tools and connections" },
+    { path: "/studio/settings", heading: "Studio settings" },
+  ] as const;
+  for (const surface of surfaces) {
+    const response = await page.goto(surface.path);
+    expect(response?.status(), surface.path).toBeLessThan(400);
+    await expect(
+      page.getByRole("heading", { name: surface.heading, exact: true }),
+    ).toBeVisible({ timeout: 30_000 });
+    // A Next render error shows its own page instead of the surface heading, but
+    // assert the marker directly so a partial page cannot pass silently.
+    await expect(page.getByText(/This page couldn/)).toHaveCount(0);
+  }
+
+  // A5: the settings page's read-only usage projection renders for the owner.
+  await page.goto("/studio/settings");
+  await expect(
+    page.getByRole("heading", { name: "Usage — last 30 days", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/Read-only projection/).first()).toBeVisible();
+});

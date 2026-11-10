@@ -586,10 +586,13 @@ database** (never production, all local):
 4. built the web production bundle and started it with `CONVERSATION_STUDIO_ENABLED=true`
    (AI/MCP flags unset) against that database;
 5. ran the authenticated acceptance spec (`STUDIO_BROWSER_ACCEPTANCE=1`, production build):
-   **2 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
-   execution trace, reload persistence, 390 px layout, threads list, and the **supplier-intel
+   **3 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
+   execution trace, reload persistence, 390 px layout, threads list; the **supplier-intel
    finding** (template fill → send → quoted workbook fields/unknown list/no-write boundary,
-   read-only with no button control, reload persistence, artifact listed on `/studio/outputs`).
+   read-only with no button control, reload persistence, artifact listed on `/studio/outputs`);
+   and a route smoke over every Studio surface (`/studio`, threads, outputs, inbox, connections,
+   owner settings) asserting the real heading renders instead of a server error, plus the A5
+   usage projection on settings.
 
 Post-run evidence in the disposable database: 1 thread, 2 messages, 1 `succeeded` run and audit
 events `studio.thread.created`, `studio.message.received`, `studio.run.completed`. Rollback was
