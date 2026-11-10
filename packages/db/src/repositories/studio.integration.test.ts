@@ -905,6 +905,30 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(approved?.status).toBe("approved");
     expect(approved?.approvedBy).toBe("admin-b");
 
+    // Credential binding and hash pinning bump the generation and return an
+    // approved connection to draft so approval is repeated.
+    const rotated = await db!.forWorkspace(WORKSPACE_B, (repos) =>
+      repos.studio.mcpConnections.updateCredential(
+        connection.id,
+        "v1.iv.ciphertext",
+      ),
+    );
+    expect(rotated?.generation).toBe(2);
+    expect(rotated?.status).toBe("draft");
+    expect(rotated?.credentialEnvelope).toBe("v1.iv.ciphertext");
+    const pinned = await db!.forWorkspace(WORKSPACE_B, (repos) =>
+      repos.studio.mcpConnections.updateSchemaHashes(connection.id, {
+        search: "e".repeat(64),
+      }),
+    );
+    expect(pinned?.generation).toBe(3);
+    expect(pinned?.schemaHashes).toEqual({ search: "e".repeat(64) });
+    const cleared = await db!.forWorkspace(WORKSPACE_B, (repos) =>
+      repos.studio.mcpConnections.updateCredential(connection.id, null),
+    );
+    expect(cleared?.credentialEnvelope).toBeNull();
+    expect(cleared?.generation).toBe(4);
+
     const call = await db!.forWorkspace(WORKSPACE_B, (repos) =>
       repos.studio.mcpCalls.append({
         connectionId: connection.id,

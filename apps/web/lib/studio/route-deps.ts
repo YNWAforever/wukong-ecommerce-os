@@ -1,4 +1,4 @@
-import type { StudioModel } from "@wukong/ai";
+import type { McpClient, McpClientDeps, StudioModel } from "@wukong/ai";
 import type { StudioSettings } from "@wukong/db";
 
 import type { SessionContextPort } from "../session-context-port";
@@ -10,9 +10,8 @@ import type { StudioServiceDeps } from "./turn-service";
  * Route-handler dependency shape (plan Task 6).
  *
  * A route binds the two production ports at the bottom of its file and tests
- * inject fakes for everything, including the clock and the model factory. The
- * flag parsers are the real fail-closed ones from `../studio-flags`; only
- * `env` is injectable so a test never has to mutate `process.env`.
+ * inject fakes for everything, including the clock, the model factory and the
+ * external MCP client used by the admin probe.
  */
 export type StudioRouteDeps = {
   sessionContext: SessionContextPort;
@@ -20,10 +19,13 @@ export type StudioRouteDeps = {
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
   createModel?: (settings: StudioSettings) => StudioModel | null;
+  createClient?: (input: McpClientDeps) => McpClient;
 };
 
 /** Fill in the production flags module around a route's injected ports. */
-export function studioServiceDeps(deps: StudioRouteDeps): StudioServiceDeps {
+export function studioServiceDeps(
+  deps: StudioRouteDeps,
+): StudioServiceDeps & { createClient?: (input: McpClientDeps) => McpClient } {
   return {
     sessionContext: deps.sessionContext,
     getDatabase: deps.getDatabase,
@@ -32,5 +34,6 @@ export function studioServiceDeps(deps: StudioRouteDeps): StudioServiceDeps {
     ...(deps.env ? { env: deps.env } : {}),
     ...(deps.now ? { now: deps.now } : {}),
     ...(deps.createModel ? { createModel: deps.createModel } : {}),
+    ...(deps.createClient ? { createClient: deps.createClient } : {}),
   };
 }

@@ -457,12 +457,20 @@ user-authored prompts or tools in v1.
 - Allowlisting: fixed endpoint, tool-name allowlist, advertised-schema hash re-validated at
   activation (unknown required-field drift fails closed), response projection allowlist (defined
   fields only; raw payloads not retained).
+- Admin workflow (shipped): the workspace admin binds/rotates/clears the encrypted credential, runs
+  an explicit probe (`initialize` + `tools/list` only) that compares live advertised schema hashes
+  with the pinned snapshot and returns the advertised hashes, then pins the advertised hashes before
+  approval. Credential and pin changes bump the generation and return an approved connection to
+  `draft`; every probe writes a digest-only `studio_mcp_calls` row and an audit event. The probe gate
+  is flag + workspace + key but **not** approval, so a draft can be validated before an admin
+  approves it; a disabled connection is never probed.
 - Bounds: 64 KiB decoded response, 12 s deadline, no retry, no auto-pagination; untrusted output
   enters the evidence pack as a labelled `external` source with retrieval time and provider name.
-- **v1 ships the registry, admin UI, client and tests; external connections stay `disabled`.**
-  Turning one on requires an explicit user decision plus credentials. Wrapping existing direct
-  adapters (Tavily, Photoroom, SHOPLINE) in MCP is not automatically justified; the direct adapters
-  stay as they are.
+- **v1 ships the registry, admin UI (including credential binding, probe and hash pinning), client
+  and tests; external connections stay disabled by default and no skill call site consumes one
+  yet.** Turning one on for real requires an explicit user decision plus credentials and a call
+  site. Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not automatically
+  justified; the direct adapters stay as they are.
 
 ### 3.9 Persistence model
 

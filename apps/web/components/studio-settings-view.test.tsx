@@ -47,6 +47,7 @@ function connection(
     generation: 1,
     toolAllowlist: ["catalog.search"],
     schemaHashes: { "catalog.search": "a".repeat(64) },
+    credentialPresent: false,
     approvedBy: null,
     approvedAt: null,
     createdAt: "2026-11-08T10:00:00.000Z",
@@ -64,6 +65,7 @@ function snapshot(
     workspaceEnabled: true,
     encryptionKeyPresent: false,
     approvable: false,
+    probeAvailable: false,
     ...overrides,
   };
 }
@@ -160,11 +162,14 @@ describe("StudioSettingsView", () => {
     expect(html).toContain("External MCP is disabled by default");
     expect(html).toContain("STUDIO_EXTERNAL_MCP_ENABLED");
     expect(html).toContain("STUDIO_MCP_ENCRYPTION_KEY");
-    expect(html).toContain("never connects to or probes an endpoint");
+    expect(html).toContain("explicit admin probe");
     expect(html).toContain("External catalogue");
     expect(html).toContain("Draft");
-    // The approve action is disabled while the gates are closed.
+    // The approve action is disabled while the gates are closed, and so are
+    // the credential/probe actions that share the same three gates.
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Approve<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Probe endpoint<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Save credential<\/button>/);
   });
 
   it("lists the reviewed tool catalogue with kind and role floors", () => {

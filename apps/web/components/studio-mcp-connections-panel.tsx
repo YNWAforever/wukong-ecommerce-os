@@ -6,6 +6,7 @@ import type { Locale } from "../lib/locale";
 import type {
   McpConnectionView,
   McpConnectionsSnapshot,
+  McpProbeResult,
 } from "../lib/studio/mcp-connections";
 import {
   studioSettingsCopy,
@@ -17,11 +18,13 @@ import styles from "./studio.module.css";
 /**
  * Admin external-MCP registry panel (plan Task 13).
  *
- * External connections are disabled by default and this panel never contacts
- * an endpoint: it records a draft, then an explicit admin action can approve
- * or disable it. Approval is only offered when the server says the flag,
- * workspace and encryption key are all in place; the banner explains it
- * otherwise. There is no "connected" indicator because nothing is connected.
+ * External connections are disabled by default. The panel records a draft,
+ * binds the encrypted workspace credential, and offers an explicit admin probe
+ * (`initialize` + `tools/list` only) so advertised schema hashes can be pinned
+ * before approval; those are the only network actions here and they are
+ * disabled until the flag, workspace row and encryption key are all in place.
+ * Approval and disable are separate explicit admin actions. There is no
+ * "connected" indicator because no skill call site consumes a connection.
  */
 
 export type StudioMcpConnectionsPanelProps = {
@@ -35,6 +38,17 @@ const STATUS_COPY: Record<McpConnectionView["status"], StudioSettingsCopyKey> =
     approved: "studio.settings.external.status.approved",
     disabled: "studio.settings.external.status.disabled",
   };
+
+const PROBE_STATUS_COPY: Record<
+  McpProbeResult["status"],
+  StudioSettingsCopyKey
+> = {
+  ok: "studio.settings.external.probeStatus.ok",
+  schema_drift: "studio.settings.external.probeStatus.schema_drift",
+  denied: "studio.settings.external.probeStatus.denied",
+  unavailable: "studio.settings.external.probeStatus.unavailable",
+  timeout: "studio.settings.external.probeStatus.timeout",
+};
 
 function parseAllowlist(value: string): string[] {
   return [
@@ -80,11 +94,18 @@ export function StudioMcpConnectionsPanel({
   const [transport, setTransport] = useState<"http" | "sse">("http");
   const [allowlist, setAllowlist] = useState("");
   const [schemaHashes, setSchemaHashes] = useState("");
+  const [credentialDrafts, setCredentialDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [probeResults, setProbeResults] = useState<
+    Record<string, McpProbeResult>
+  >({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<StudioSettingsCopyKey | null>(null);
   const [notice, setNotice] = useState<StudioSettingsCopyKey | null>(null);
 
   const approvable = snapshot.approvable;
+  const probeAvailable = snapshot.probeAvailable;
 
   async function createConnection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -181,6 +202,136 @@ export function StudioMcpConnectionsPanel({
           ? "studio.settings.external.approved"
           : "studio.settings.external.disabledDone",
       );
+    } catch {
+      setError("studio.settings.external.actionError");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function replaceItem(updated: McpConnectionView) {
+    setItems((current) =>
+      current.map((item) =>
+        item.connectionId === updated.connectionId ? updated : item,
+      ),
+    );
+  }
+
+  async function saveCredential(connectionId: string) {
+    const credential = (credentialDrafts[connectionId] ?? "").trim();
+    if (credential.length === 0) {
+      setError("studio.settings.external.credentialRequired");
+      return;
+    }
+    setBusy(`credential:${connectionId}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `/api/studio/mcp-connections/${connectionId}/credential`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ credential }),
+        },
+      );
+      if (!response.ok) {
+        setError(
+          response.status === 409
+            ? "studio.settings.external.probeBlocked"
+            : "studio.settings.external.actionError",
+        );
+        return;
+      }
+      replaceItem((await response.json()) as McpConnectionView);
+      setCredentialDrafts((current) => ({ ...current, [connectionId]: "" }));
+      setProbeResults((current) => {
+        const next = { ...current };
+        delete next[connectionId];
+        return next;
+      });
+      setNotice("studio.settings.external.credentialSaved");
+    } catch {
+      setError("studio.settings.external.actionError");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function clearCredential(connectionId: string) {
+    setBusy(`clear:${connectionId}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `/api/studio/mcp-connections/${connectionId}/credential`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        setError("studio.settings.external.actionError");
+        return;
+      }
+      replaceItem((await response.json()) as McpConnectionView);
+      setNotice("studio.settings.external.credentialCleared");
+    } catch {
+      setError("studio.settings.external.actionError");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function probeConnection(connectionId: string) {
+    setBusy(`probe:${connectionId}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `/api/studio/mcp-connections/${connectionId}/probe`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        setError(
+          response.status === 409
+            ? "studio.settings.external.probeBlocked"
+            : "studio.settings.external.probeError",
+        );
+        return;
+      }
+      const result = (await response.json()) as McpProbeResult;
+      setProbeResults((current) => ({ ...current, [connectionId]: result }));
+    } catch {
+      setError("studio.settings.external.probeError");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function pinAdvertisedHashes(connectionId: string) {
+    const result = probeResults[connectionId];
+    if (!result) return;
+    const hashes: Record<string, string> = {};
+    for (const tool of result.tools) {
+      if (tool.allowlisted) hashes[tool.name] = tool.advertisedHash;
+    }
+    if (Object.keys(hashes).length === 0) return;
+    setBusy(`pin:${connectionId}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `/api/studio/mcp-connections/${connectionId}/schemas`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ schemaHashes: hashes }),
+        },
+      );
+      if (!response.ok) {
+        setError("studio.settings.external.actionError");
+        return;
+      }
+      replaceItem((await response.json()) as McpConnectionView);
+      setNotice("studio.settings.external.pinnedDone");
     } catch {
       setError("studio.settings.external.actionError");
     } finally {
@@ -337,6 +488,130 @@ export function StudioMcpConnectionsPanel({
                   </li>
                 ))}
               </ul>
+              <label>
+                {copy("studio.settings.external.credential")}
+                <input
+                  className={styles["studio-composer-textarea"]}
+                  type="password"
+                  name={`connection-credential-${item.connectionId}`}
+                  value={credentialDrafts[item.connectionId] ?? ""}
+                  placeholder={copy(
+                    "studio.settings.external.credentialPlaceholder",
+                  )}
+                  autoComplete="off"
+                  disabled={!probeAvailable || busy !== null}
+                  onChange={(event) =>
+                    setCredentialDrafts((current) => ({
+                      ...current,
+                      [item.connectionId]: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <p className={styles["studio-connection-state"]}>
+                {item.credentialPresent
+                  ? copy("studio.settings.external.credentialPresent")
+                  : copy("studio.settings.external.credentialAbsent")}
+              </p>
+              <div className={styles["studio-composer-actions"]}>
+                <button
+                  type="button"
+                  className={styles["studio-secondary-button"]}
+                  disabled={!probeAvailable || busy !== null}
+                  title={
+                    probeAvailable
+                      ? undefined
+                      : copy("studio.settings.external.probeBlocked")
+                  }
+                  onClick={() => void saveCredential(item.connectionId)}
+                >
+                  {busy === `credential:${item.connectionId}`
+                    ? copy("studio.settings.external.savingCredential")
+                    : copy("studio.settings.external.saveCredential")}
+                </button>
+                <button
+                  type="button"
+                  className={styles["studio-secondary-button"]}
+                  disabled={
+                    !probeAvailable || !item.credentialPresent || busy !== null
+                  }
+                  onClick={() => void clearCredential(item.connectionId)}
+                >
+                  {busy === `clear:${item.connectionId}`
+                    ? copy("studio.settings.external.clearingCredential")
+                    : copy("studio.settings.external.clearCredential")}
+                </button>
+                <button
+                  type="button"
+                  className={styles["studio-secondary-button"]}
+                  disabled={
+                    !probeAvailable ||
+                    item.status === "disabled" ||
+                    busy !== null
+                  }
+                  title={
+                    probeAvailable && item.status !== "disabled"
+                      ? copy("studio.settings.external.probeHint")
+                      : copy("studio.settings.external.probeBlocked")
+                  }
+                  onClick={() => void probeConnection(item.connectionId)}
+                >
+                  {busy === `probe:${item.connectionId}`
+                    ? copy("studio.settings.external.probing")
+                    : copy("studio.settings.external.probe")}
+                </button>
+              </div>
+              {probeResults[item.connectionId] ? (
+                <div>
+                  <h4>
+                    {copy("studio.settings.external.probeTitle")} ·{" "}
+                    {copy(
+                      PROBE_STATUS_COPY[
+                        probeResults[item.connectionId]!.status
+                      ],
+                    )}
+                  </h4>
+                  <ul>
+                    {probeResults[item.connectionId]!.tools.map((tool) => (
+                      <li key={tool.name}>
+                        <code>{tool.name}</code>:{" "}
+                        {copy("studio.settings.external.probeAdvertised")}{" "}
+                        <code>{tool.advertisedHash.slice(0, 16)}…</code> ·{" "}
+                        {tool.pinnedHash === null
+                          ? copy("studio.settings.external.probeNotPinned")
+                          : `${copy("studio.settings.external.probePinned")} `}
+                        {tool.pinnedHash === null ? null : (
+                          <code>{tool.pinnedHash.slice(0, 16)}…</code>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {probeResults[item.connectionId]!.missingAllowlisted.length >
+                  0 ? (
+                    <p>
+                      {copy("studio.settings.external.probeMissingTools")}{" "}
+                      {probeResults[item.connectionId]!.missingAllowlisted.join(
+                        ", ",
+                      )}
+                    </p>
+                  ) : null}
+                  {probeResults[item.connectionId]!.missingPins.length > 0 ||
+                  probeResults[item.connectionId]!.drift.length > 0 ? (
+                    <button
+                      type="button"
+                      className={styles["studio-secondary-button"]}
+                      disabled={busy !== null}
+                      onClick={() =>
+                        void pinAdvertisedHashes(item.connectionId)
+                      }
+                    >
+                      {busy === `pin:${item.connectionId}`
+                        ? copy("studio.settings.external.pinning")
+                        : copy("studio.settings.external.pinAdvertised")}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               <p>
                 {copy("studio.settings.external.approvedBy")}:{" "}
                 {item.approvedBy ?? copy("studio.settings.workspace.notSet")} ·{" "}

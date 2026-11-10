@@ -494,6 +494,29 @@ export type StudioRepository = {
       status: StudioMcpConnectionStatus,
       approvedBy?: string | null,
     ): Promise<StudioMcpConnection | null>;
+    /**
+     * Bind (or clear, with `null`) the encrypted credential envelope.
+     *
+     * A credential change bumps the generation and returns an approved
+     * connection to `draft`: the approval decision was made for the old
+     * generation, so it must be repeated. A disabled connection stays disabled.
+     * The envelope is opaque ciphertext; this repository never decrypts it.
+     */
+    updateCredential(
+      id: string,
+      credentialEnvelope: string | null,
+    ): Promise<StudioMcpConnection | null>;
+    /**
+     * Replace the pinned `{tool -> sha256(inputSchema)}` snapshot.
+     *
+     * Pinning new hashes is also a generation change and returns an approved
+     * connection to `draft` for the same reason as `updateCredential`; a
+     * disabled connection stays disabled.
+     */
+    updateSchemaHashes(
+      id: string,
+      schemaHashes: Record<string, unknown>,
+    ): Promise<StudioMcpConnection | null>;
   };
   mcpCalls: {
     append(input: {
@@ -1382,6 +1405,41 @@ export function createStudioRepository(
             status=${status},
             approved_by=case when ${status}='approved' then ${approvedBy} else approved_by end,
             approved_at=case when ${status}='approved' then now() else approved_at end,
+            updated_at=now()
+          where workspace_id=${workspaceId} and id=${id}::uuid
+          returning *
+        `);
+        return rows[0]
+          ? readMcpConnection(rows[0] as Record<string, unknown>)
+          : null;
+      },
+      async updateCredential(id, credentialEnvelope) {
+        scope.assertOpen();
+        if (
+          credentialEnvelope !== null &&
+          (credentialEnvelope.length < 1 || credentialEnvelope.length > 8192)
+        )
+          throw new Error("credential envelope length is invalid");
+        const rows = await transaction.execute(sql`
+          update studio_mcp_connections set
+            credential_envelope=${credentialEnvelope},
+            generation=generation + 1,
+            status=case when status='approved' then 'draft' else status end,
+            updated_at=now()
+          where workspace_id=${workspaceId} and id=${id}::uuid
+          returning *
+        `);
+        return rows[0]
+          ? readMcpConnection(rows[0] as Record<string, unknown>)
+          : null;
+      },
+      async updateSchemaHashes(id, schemaHashes) {
+        scope.assertOpen();
+        const rows = await transaction.execute(sql`
+          update studio_mcp_connections set
+            schema_hashes=${JSON.stringify(schemaHashes)}::jsonb,
+            generation=generation + 1,
+            status=case when status='approved' then 'draft' else status end,
             updated_at=now()
           where workspace_id=${workspaceId} and id=${id}::uuid
           returning *

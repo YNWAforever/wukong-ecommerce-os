@@ -14,16 +14,16 @@ export const STUDIO_SETTINGS_COPY = {
   "studio.settings.eyebrow": ["工作室管理", "STUDIO ADMIN"],
   "studio.settings.title": ["工作室設定", "Studio settings"],
   "studio.settings.lede": [
-    "管理工作區的 MCP 權杖、外部 MCP 連線登錄與工具目錄。此頁不會對外連線。",
-    "Manage workspace MCP tokens, the external MCP connection registry and the tool catalogue. This page makes no outbound connection.",
+    "管理工作區的 MCP 權杖、外部 MCP 連線登錄與工具目錄。唯一的對外呼叫是管理員明確探測已登錄端點。",
+    "Manage workspace MCP tokens, the external MCP connection registry and the tool catalogue. The only outbound call is an explicit admin probe of a registered endpoint.",
   ],
   "studio.settings.adminOnly": [
     "只有工作區管理員可以開啟工作室設定。",
     "Only a workspace administrator can open Studio settings.",
   ],
   "studio.settings.noLiveConnection": [
-    "沒有即時連線指標：此頁不會測試、呼叫或連線任何外部伺服器。",
-    "No live connection indicator: this page never tests, calls or connects to an external server.",
+    "沒有即時連線指標：除非管理員明確探測已登錄端點，否則不會呼叫任何伺服器。",
+    "No live connection indicator: the page never calls a server unless an admin explicitly probes a registered endpoint.",
   ],
 
   // -- workspace state ------------------------------------------------------
@@ -165,12 +165,12 @@ export const STUDIO_SETTINGS_COPY = {
     "External MCP connections",
   ],
   "studio.settings.external.lede": [
-    "登錄經管理員核准的外部伺服器與工具允許清單；即使已核准，外部傳輸仍須部署旗標開啟。",
-    "Records admin-approved external servers and tool allowlists; even when approved, external transport still needs the deployment flag.",
+    "登錄經管理員核准的外部伺服器與工具允許清單；只有明確的探測操作才會連線端點。",
+    "Records admin-approved external servers and tool allowlists; only an explicit probe contacts an endpoint.",
   ],
   "studio.settings.external.disabledBanner": [
-    "外部 MCP 預設停用。此頁只管理登錄資料，不會對外連線或探測端點。",
-    "External MCP is disabled by default. This page only manages registry records and never connects to or probes an endpoint.",
+    "外部 MCP 預設停用。此頁只管理登錄資料；僅在按下探測時才會連線端點，且旗標、工作區與金鑰必須全部就緒。",
+    "External MCP is disabled by default. This page manages registry records; it only contacts an endpoint when you explicitly probe, and only with the flag, workspace and key all in place.",
   ],
   "studio.settings.external.flagOff": [
     "部署旗標 STUDIO_EXTERNAL_MCP_ENABLED 未開啟，因此無法核准連線。",
@@ -242,6 +242,86 @@ export const STUDIO_SETTINGS_COPY = {
   "studio.settings.external.labelRequired": [
     "請輸入連線名稱。",
     "Enter a connection label.",
+  ],
+  "studio.settings.external.credential": [
+    "工作區憑證（Bearer，加密儲存）",
+    "Workspace credential (bearer, stored encrypted)",
+  ],
+  "studio.settings.external.credentialPlaceholder": [
+    "貼上權杖；儲存後不會再顯示",
+    "Paste a token; it is never shown again",
+  ],
+  "studio.settings.external.saveCredential": ["儲存憑證", "Save credential"],
+  "studio.settings.external.savingCredential": ["正在儲存…", "Saving…"],
+  "studio.settings.external.clearCredential": ["清除憑證", "Clear credential"],
+  "studio.settings.external.clearingCredential": ["正在清除…", "Clearing…"],
+  "studio.settings.external.credentialPresent": [
+    "已儲存憑證",
+    "Credential stored",
+  ],
+  "studio.settings.external.credentialAbsent": [
+    "未儲存憑證",
+    "No credential stored",
+  ],
+  "studio.settings.external.credentialSaved": [
+    "憑證已加密儲存；核准世代已重設。",
+    "Credential stored encrypted; the approval generation was reset.",
+  ],
+  "studio.settings.external.credentialRequired": [
+    "請輸入憑證。",
+    "Enter a credential.",
+  ],
+  "studio.settings.external.credentialCleared": [
+    "憑證已清除。",
+    "Credential cleared.",
+  ],
+  "studio.settings.external.probe": ["探測端點", "Probe endpoint"],
+  "studio.settings.external.probing": ["正在探測…", "Probing…"],
+  "studio.settings.external.probeHint": [
+    "只呼叫 initialize 與 tools/list，不會呼叫任何工具。",
+    "Calls initialize and tools/list only; no tool is invoked.",
+  ],
+  "studio.settings.external.probeBlocked": [
+    "探測需要部署旗標、工作區與加密金鑰全部就緒。",
+    "Probing needs the deployment flag, workspace and encryption key all in place.",
+  ],
+  "studio.settings.external.probeTitle": ["探測結果", "Probe result"],
+  "studio.settings.external.probeAdvertised": ["公告雜湊", "Advertised"],
+  "studio.settings.external.probePinned": ["已釘選", "Pinned"],
+  "studio.settings.external.probeNotPinned": ["未釘選", "Not pinned"],
+  "studio.settings.external.probeMissingTools": [
+    "缺少的允許清單工具：",
+    "Missing allowlisted tools:",
+  ],
+  "studio.settings.external.pinAdvertised": [
+    "釘選公告雜湊",
+    "Pin advertised hashes",
+  ],
+  "studio.settings.external.pinning": ["正在釘選…", "Pinning…"],
+  "studio.settings.external.pinnedDone": [
+    "已釘選公告雜湊；核准世代已重設。",
+    "Advertised hashes pinned; the approval generation was reset.",
+  ],
+  "studio.settings.external.probeError": [
+    "探測未完成，請檢查端點與憑證。",
+    "The probe did not complete. Check the endpoint and credential.",
+  ],
+  "studio.settings.external.probeStatus.ok": ["結構相符", "Schema matches"],
+  "studio.settings.external.probeStatus.schema_drift": [
+    "結構已變動",
+    "Schema drifted",
+  ],
+  "studio.settings.external.probeStatus.denied": [
+    "允許清單工具未提供",
+    "Allowlisted tool missing",
+  ],
+  "studio.settings.external.probeStatus.unavailable": [
+    "端點無法使用",
+    "Endpoint unavailable",
+  ],
+  "studio.settings.external.probeStatus.timeout": [
+    "端點逾時",
+    "Endpoint timed out",
   ],
 
   // -- editable workspace settings (A1) -------------------------------------

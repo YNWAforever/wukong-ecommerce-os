@@ -1191,6 +1191,40 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           );
           return connection;
         },
+        updateCredential: async (
+          id: string,
+          credentialEnvelope: string | null,
+        ) => {
+          state.writes.push("mcpConnections.updateCredential");
+          const connection = state.mcpConnections.find(
+            (entry) => entry.id === id,
+          );
+          if (!connection) return null;
+          connection.credentialEnvelope = credentialEnvelope;
+          connection.generation += 1;
+          if (connection.status === "approved") connection.status = "draft";
+          connection.updatedAt = new Date(
+            FIXED_NOW.getTime() + sequenceCounter,
+          );
+          return connection;
+        },
+        updateSchemaHashes: async (
+          id: string,
+          schemaHashes: Record<string, unknown>,
+        ) => {
+          state.writes.push("mcpConnections.updateSchemaHashes");
+          const connection = state.mcpConnections.find(
+            (entry) => entry.id === id,
+          );
+          if (!connection) return null;
+          connection.schemaHashes = { ...schemaHashes };
+          connection.generation += 1;
+          if (connection.status === "approved") connection.status = "draft";
+          connection.updatedAt = new Date(
+            FIXED_NOW.getTime() + sequenceCounter,
+          );
+          return connection;
+        },
       },
     },
     memberships: {

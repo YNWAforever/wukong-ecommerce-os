@@ -1,10 +1,22 @@
-import type { StudioMcpConnection } from "@wukong/db";
-import { approvedEndpoint } from "@wukong/ai";
+import type { StudioMcpCallStatus, StudioMcpConnection } from "@wukong/db";
+import {
+  approvedEndpoint,
+  createMcpClient,
+  schemaHash,
+  type ExternalMcpTool,
+  type McpClient,
+  type McpClientDeps,
+  type McpClientStatus,
+  type McpToolListResult,
+} from "@wukong/ai";
 import { z } from "zod";
 
 import { ApiError } from "../route-support";
 import {
+  decryptStudioMcpCredential,
+  encryptStudioMcpCredential,
   hasStudioMcpEncryptionKey,
+  readStudioMcpEncryptionKey,
   STUDIO_MCP_ENCRYPTION_KEY_ENV,
 } from "./mcp-credentials";
 import {
@@ -14,19 +26,23 @@ import {
 } from "./session";
 
 /**
- * External MCP connection registry (plan Task 13, spec §3.8).
+ * External MCP connection registry and admin workflow (plan Task 13, spec
+ * §3.8).
  *
  * The registry is the reviewed place where an admin records an external
  * server, its allowlisted tools and the sha256 hashes of the schemas that were
- * pinned at activation. It is deliberately inert in v1:
+ * pinned at activation. It is disabled by default:
  *
  *  - `STUDIO_EXTERNAL_MCP_ENABLED` must be exactly `"true"` AND the workspace
  *    Studio row must be enabled before a connection may be approved;
  *  - the credential-encryption key must be configured before approval;
  *  - every allowlisted tool must have a recorded schema hash;
- *  - nothing in this module performs a transport call. The outbound client
- *    (`@wukong/ai` `createMcpClient`) additionally takes a computed `enabled`
- *    gate and pins the schema hash again before every call.
+ *  - the only transport call is the explicit admin probe (`initialize` +
+ *    `tools/list`), which requires flag + workspace + key but not approval.
+ *    The outbound client (`@wukong/ai` `createMcpClient`) additionally takes a
+ *    computed `enabled` gate and pins the schema hash again before every tool
+ *    call, so an approved connection is still dormant without a reviewed call
+ *    site.
  *
  * No method returns the credential envelope, and no audit/log line carries the
  * endpoint (which may hold a query string) or a credential.
@@ -58,6 +74,29 @@ export type UpdateMcpConnectionBody = z.infer<
   typeof updateMcpConnectionBodySchema
 >;
 
+/**
+ * Set (or rotate) the workspace-owned bearer credential.
+ *
+ * The plaintext exists only inside this request and the encryption helper; it
+ * is never returned, audited, logged or stored. An empty credential is a 400 —
+ * clearing is a separate explicit action.
+ */
+export const setMcpCredentialBodySchema = z.strictObject({
+  credential: z.string().min(1).max(4096),
+});
+export type SetMcpCredentialBody = z.infer<typeof setMcpCredentialBodySchema>;
+
+/** Pin (or re-pin) the advertised input-schema hashes for allowlisted tools. */
+export const pinMcpSchemaHashesBodySchema = z.strictObject({
+  schemaHashes: z.record(
+    z.string().regex(TOOL_NAME),
+    z.string().regex(SHA256_HEX),
+  ),
+});
+export type PinMcpSchemaHashesBody = z.infer<
+  typeof pinMcpSchemaHashesBodySchema
+>;
+
 export type McpConnectionView = {
   connectionId: string;
   label: string;
@@ -67,10 +106,41 @@ export type McpConnectionView = {
   generation: number;
   toolAllowlist: string[];
   schemaHashes: Record<string, unknown>;
+  /** True when an encrypted credential envelope is stored (never the value). */
+  credentialPresent: boolean;
   approvedBy: string | null;
   approvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** One tool advertised by the endpoint, compared with the pinned snapshot. */
+export type McpProbeTool = {
+  name: string;
+  allowlisted: boolean;
+  /** sha256 of the live advertised input schema (computed by the client). */
+  advertisedHash: string;
+  pinnedHash: string | null;
+  /** `null` means "not pinned yet"; otherwise advertised vs pinned equality. */
+  match: boolean | null;
+};
+
+/**
+ * Outcome of an explicit admin probe (`initialize` + `tools/list` only).
+ *
+ * `tools/list` is a read; this probe never calls a tool. Status is `ok` when
+ * every allowlisted tool is advertised with a matching pinned hash, otherwise
+ * `denied` (a tool is missing), `schema_drift` (a hash changed) or the client's
+ * transport status. Unpinned tools are reported in `missingPins` so the admin
+ * can pin exactly what the endpoint advertised.
+ */
+export type McpProbeResult = {
+  connectionId: string;
+  status: McpClientStatus;
+  tools: McpProbeTool[];
+  missingPins: string[];
+  drift: string[];
+  missingAllowlisted: string[];
 };
 
 export type McpConnectionsSnapshot = {
@@ -83,6 +153,8 @@ export type McpConnectionsSnapshot = {
   encryptionKeyPresent: boolean;
   /** Approval is possible only when all three gates are true. */
   approvable: boolean;
+  /** Probing (admin diagnostic) shares the same three deployment gates. */
+  probeAvailable: boolean;
 };
 
 /**
@@ -113,6 +185,24 @@ export function externalMcpTransportAllowed(input: {
   );
 }
 
+/**
+ * Probe gate: flag + workspace + encryption key. Deliberately weaker than
+ * `externalMcpTransportAllowed`: a draft may be probed so the admin can pin the
+ * advertised schemas *before* approval. A disabled connection is never probed.
+ * The shipped state is false on all three gates, so nothing calls out.
+ */
+export function externalMcpProbeAllowed(input: {
+  env: NodeJS.ProcessEnv;
+  settings: { enabled: boolean } | null;
+  status: StudioMcpConnection["status"];
+}): boolean {
+  return (
+    externalMcpEnabled(input.env, input.settings) &&
+    hasStudioMcpEncryptionKey(input.env) &&
+    input.status !== "disabled"
+  );
+}
+
 function connectionView(row: StudioMcpConnection): McpConnectionView {
   return {
     connectionId: row.id,
@@ -123,6 +213,7 @@ function connectionView(row: StudioMcpConnection): McpConnectionView {
     generation: row.generation,
     toolAllowlist: [...row.toolAllowlist],
     schemaHashes: { ...row.schemaHashes },
+    credentialPresent: row.credentialEnvelope !== null,
     approvedBy: row.approvedBy,
     approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
@@ -144,11 +235,64 @@ function snapshotFor(
     workspaceEnabled,
     encryptionKeyPresent,
     approvable: externalFlagOn && workspaceEnabled && encryptionKeyPresent,
+    probeAvailable: externalFlagOn && workspaceEnabled && encryptionKeyPresent,
+  };
+}
+
+/** The MCP client's `timeout` is recorded as `unavailable` in the ledger. */
+function ledgerStatus(status: McpClientStatus): StudioMcpCallStatus {
+  return status === "timeout" ? "unavailable" : status;
+}
+
+/** Compare the live advertised tools with the pinned snapshot. */
+function probeResult(
+  row: StudioMcpConnection,
+  advertised: readonly ExternalMcpTool[],
+  pinned: Record<string, unknown>,
+): McpProbeResult {
+  const advertisedByName = new Map(
+    advertised.map((tool) => [tool.name, tool] as const),
+  );
+  const tools: McpProbeTool[] = advertised.map((tool) => {
+    const raw = pinned[tool.name];
+    const pinnedHash = typeof raw === "string" ? raw : null;
+    return {
+      name: tool.name,
+      allowlisted: row.toolAllowlist.includes(tool.name),
+      advertisedHash: tool.schemaHash,
+      pinnedHash,
+      match: pinnedHash === null ? null : pinnedHash === tool.schemaHash,
+    };
+  });
+  const missingPins = row.toolAllowlist.filter(
+    (tool) => typeof pinned[tool] !== "string",
+  );
+  const drift = tools
+    .filter((tool) => tool.match === false)
+    .map((tool) => tool.name);
+  const missingAllowlisted = row.toolAllowlist.filter(
+    (tool) => !advertisedByName.has(tool),
+  );
+  const status: McpClientStatus =
+    missingAllowlisted.length > 0
+      ? "denied"
+      : drift.length > 0
+        ? "schema_drift"
+        : "ok";
+  return {
+    connectionId: row.id,
+    status,
+    tools,
+    missingPins,
+    drift,
+    missingAllowlisted,
   };
 }
 
 export type McpConnectionServiceDeps = StudioSessionDeps & {
   now?: () => Date;
+  /** Injected for tests; production uses the reviewed `@wukong/ai` client. */
+  createClient?: (input: McpClientDeps) => McpClient;
 };
 
 export function createMcpConnectionService(deps: McpConnectionServiceDeps) {
@@ -187,6 +331,32 @@ export function createMcpConnectionService(deps: McpConnectionServiceDeps) {
       result[tool] = hash;
     }
     return result;
+  }
+
+  /**
+   * The shared admin + deployment gate for credential, pinning and probe
+   * actions. Every one of these is unreachable while external MCP is disabled,
+   * the workspace Studio row is off or the encryption key is absent.
+   */
+  async function requireExternalAdmin() {
+    const { session, settings } = await requireStudioSession(deps, "admin");
+    const env = environment();
+    if (!externalMcpEnabled(env, settings)) {
+      throw new ApiError(
+        409,
+        "external_mcp_disabled",
+        "External MCP is disabled.",
+      );
+    }
+    const key = readStudioMcpEncryptionKey(env);
+    if (!key) {
+      throw new ApiError(
+        409,
+        "mcp_encryption_unavailable",
+        `External MCP requires ${STUDIO_MCP_ENCRYPTION_KEY_ENV}.`,
+      );
+    }
+    return { session, key };
   }
 
   return {
@@ -345,6 +515,235 @@ export function createMcpConnectionService(deps: McpConnectionServiceDeps) {
       return body.status === "approved"
         ? this.approveConnection(connectionId)
         : this.disableConnection(connectionId);
+    },
+
+    /**
+     * Store (or rotate) the workspace-owned credential as an opaque envelope.
+     *
+     * Plaintext never leaves this call; the view only says whether one exists.
+     * A rotation bumps the generation and an approved connection returns to
+     * `draft` so the approval decision is repeated for the new generation.
+     */
+    async setCredential(
+      connectionId: string,
+      body: SetMcpCredentialBody,
+    ): Promise<McpConnectionView> {
+      const { session, key } = await requireExternalAdmin();
+      if (!UUID.safeParse(connectionId).success) throw studioNotFound();
+      const envelope = await encryptStudioMcpCredential(body.credential, key);
+      const updated = await database().forWorkspace(
+        session.workspaceId,
+        async (repos) => {
+          const existing = await repos.studio.mcpConnections.get(connectionId);
+          if (!existing) return null;
+          const row = await repos.studio.mcpConnections.updateCredential(
+            connectionId,
+            envelope,
+          );
+          if (!row) return null;
+          await repos.audit.write({
+            workspaceId: session.workspaceId,
+            actorId: session.actorId,
+            entityId: row.id,
+            action: "studio.mcp.connection.credential_set",
+            metadata: { connectionId: row.id, generation: row.generation },
+          });
+          return row;
+        },
+      );
+      if (!updated) throw studioNotFound();
+      return connectionView(updated);
+    },
+
+    /** Remove the stored credential; no plaintext or envelope is returned. */
+    async clearCredential(connectionId: string): Promise<McpConnectionView> {
+      const { session } = await requireExternalAdmin();
+      if (!UUID.safeParse(connectionId).success) throw studioNotFound();
+      const updated = await database().forWorkspace(
+        session.workspaceId,
+        async (repos) => {
+          const existing = await repos.studio.mcpConnections.get(connectionId);
+          if (!existing) return null;
+          const row = await repos.studio.mcpConnections.updateCredential(
+            connectionId,
+            null,
+          );
+          if (!row) return null;
+          await repos.audit.write({
+            workspaceId: session.workspaceId,
+            actorId: session.actorId,
+            entityId: row.id,
+            action: "studio.mcp.connection.credential_cleared",
+            metadata: { connectionId: row.id, generation: row.generation },
+          });
+          return row;
+        },
+      );
+      if (!updated) throw studioNotFound();
+      return connectionView(updated);
+    },
+
+    /**
+     * Pin the advertised schema hashes collected by an admin probe.
+     *
+     * Only allowlisted tools may be pinned. Pinning is a generation change and
+     * an approved connection returns to `draft`, exactly like a credential
+     * rotation.
+     */
+    async pinSchemaHashes(
+      connectionId: string,
+      body: PinMcpSchemaHashesBody,
+    ): Promise<McpConnectionView> {
+      const { session } = await requireExternalAdmin();
+      if (!UUID.safeParse(connectionId).success) throw studioNotFound();
+      const updated = await database().forWorkspace(
+        session.workspaceId,
+        async (repos) => {
+          const existing = await repos.studio.mcpConnections.get(connectionId);
+          if (!existing) return null;
+          const hashes = validatedHashes(
+            body.schemaHashes,
+            existing.toolAllowlist,
+          );
+          const row = await repos.studio.mcpConnections.updateSchemaHashes(
+            connectionId,
+            hashes,
+          );
+          if (!row) return null;
+          await repos.audit.write({
+            workspaceId: session.workspaceId,
+            actorId: session.actorId,
+            entityId: row.id,
+            action: "studio.mcp.connection.schemas_pinned",
+            metadata: {
+              connectionId: row.id,
+              toolCount: Object.keys(hashes).length,
+              generation: row.generation,
+            },
+          });
+          return row;
+        },
+      );
+      if (!updated) throw studioNotFound();
+      return connectionView(updated);
+    },
+
+    /**
+     * Explicit admin probe: call `initialize` + `tools/list` only.
+     *
+     * A draft may be probed so the admin can collect and pin the advertised
+     * schema hashes before approving; a disabled connection never is. This is
+     * the only outbound call in the module and it is unreachable while the
+     * global flag, workspace row or encryption key is missing. The ledger
+     * records digests, status and latency only; no endpoint, credential or
+     * payload is written.
+     */
+    async probeConnection(connectionId: string): Promise<McpProbeResult> {
+      const { session } = await requireExternalAdmin();
+      if (!UUID.safeParse(connectionId).success) throw studioNotFound();
+      const key = readStudioMcpEncryptionKey(environment());
+      if (!key) {
+        throw new ApiError(
+          409,
+          "mcp_encryption_unavailable",
+          `External MCP requires ${STUDIO_MCP_ENCRYPTION_KEY_ENV}.`,
+        );
+      }
+      const row = await database().forWorkspace(session.workspaceId, (repos) =>
+        repos.studio.mcpConnections.get(connectionId),
+      );
+      if (!row) throw studioNotFound();
+      if (row.status === "disabled") {
+        throw new ApiError(
+          409,
+          "connection_disabled",
+          "This connection is disabled.",
+        );
+      }
+      let credential: string | null = null;
+      if (row.credentialEnvelope) {
+        try {
+          credential = await decryptStudioMcpCredential(
+            row.credentialEnvelope,
+            key,
+          );
+        } catch {
+          throw new ApiError(
+            409,
+            "mcp_credential_unreadable",
+            "The stored credential could not be decrypted.",
+          );
+        }
+      }
+      const clock = deps.now ?? (() => new Date());
+      const startedAt = clock();
+      const client = (deps.createClient ?? createMcpClient)({
+        endpointUrl: row.endpointUrl,
+        toolAllowlist: row.toolAllowlist,
+        schemaHashes: row.schemaHashes as Record<string, string>,
+        credential,
+        enabled: true,
+      });
+      let listed: McpToolListResult;
+      try {
+        listed = await client.listTools();
+      } catch {
+        listed = { status: "unavailable" };
+      }
+      const latencyMs = Math.max(0, clock().getTime() - startedAt.getTime());
+      const pinned = row.schemaHashes;
+      const result: McpProbeResult =
+        listed.status === "ok"
+          ? probeResult(row, listed.tools, pinned)
+          : {
+              connectionId: row.id,
+              status: listed.status,
+              tools: [],
+              missingPins: [],
+              drift: [],
+              missingAllowlisted: [],
+            };
+      await database().forWorkspace(session.workspaceId, async (repos) => {
+        await repos.studio.mcpCalls.append({
+          connectionId: row.id,
+          toolName: "tools/list",
+          requestDigest: schemaHash({
+            method: "tools/list",
+            connectionId: row.id,
+          }),
+          responseDigest:
+            listed.status === "ok"
+              ? schemaHash(
+                  listed.tools.map((tool) => ({
+                    name: tool.name,
+                    schemaHash: tool.schemaHash,
+                  })),
+                )
+              : null,
+          status:
+            listed.status === "ok"
+              ? ledgerStatus(result.status)
+              : ledgerStatus(listed.status),
+          errorCode: listed.status === "ok" ? null : listed.status,
+          latencyMs,
+          caller: "external_mcp",
+        });
+        await repos.audit.write({
+          workspaceId: session.workspaceId,
+          actorId: session.actorId,
+          entityId: row.id,
+          action: "studio.mcp.connection.probed",
+          metadata: {
+            connectionId: row.id,
+            generation: row.generation,
+            outcome: result.status,
+            toolCount: result.tools.length,
+            driftCount: result.drift.length,
+            missingPinCount: result.missingPins.length,
+          },
+        });
+      });
+      return result;
     },
   };
 }
