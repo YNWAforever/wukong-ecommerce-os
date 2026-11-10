@@ -145,6 +145,10 @@ the token, so two concurrent calls can both pass at the boundary — the limit i
 deliberately approximate under concurrency. The panel shows each token's quotas next to its actual
 minute/month usage from the ledger.
 
+Creation also stops at **100 active tokens per workspace** (`409 token_limit_reached`); revoke or
+rotate an existing token instead. Rotation is exempt from the count check so it can exceed the cap
+by one transiently and never dead-ends on the last token.
+
 ### Rotation
 
 `Rotate` (or `POST /api/studio/tokens/<id>/rotate`) creates a replacement token with the same label,

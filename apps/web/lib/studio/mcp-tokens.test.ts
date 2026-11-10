@@ -7,6 +7,7 @@ import {
   createMcpTokenBodySchema,
   createMcpTokenService,
   hashMcpTokenSecret,
+  MCP_TOKEN_MAX_ACTIVE,
   type McpTokenServiceDeps,
 } from "./mcp-tokens.js";
 import {
@@ -373,5 +374,40 @@ describe("MCP token quotas (B4)", () => {
     await expect(
       service.rotateToken("00000000-0000-4000-8000-000000000000"),
     ).rejects.toMatchObject({ status: 404, code: "not_found" });
+  });
+
+  it("caps active tokens per workspace, while rotation stays available at the cap", async () => {
+    const atCap = fixture({
+      options: {
+        apiTokens: Array.from({ length: MCP_TOKEN_MAX_ACTIVE }, () =>
+          fakeApiToken(),
+        ),
+      },
+    });
+    await expect(atCap.service.createToken(createBody)).rejects.toMatchObject({
+      status: 409,
+      code: "token_limit_reached",
+    });
+    expect(atCap.fake.state.apiTokens).toHaveLength(MCP_TOKEN_MAX_ACTIVE);
+    expect(atCap.fake.state.audits).toEqual([]);
+
+    const belowCap = fixture({
+      options: {
+        apiTokens: Array.from({ length: MCP_TOKEN_MAX_ACTIVE - 1 }, () =>
+          fakeApiToken(),
+        ),
+      },
+    });
+    const created = await belowCap.service.createToken(createBody);
+    expect(created.token).toMatch(/^wuk_/);
+    expect(belowCap.fake.state.apiTokens).toHaveLength(MCP_TOKEN_MAX_ACTIVE);
+
+    const [existing] = atCap.fake.state.apiTokens;
+    const rotated = await atCap.service.rotateToken(existing!.id);
+    expect(rotated.tokenId).not.toBe(existing!.id);
+    expect(atCap.fake.state.apiTokens).toHaveLength(MCP_TOKEN_MAX_ACTIVE + 1);
+    expect(
+      atCap.fake.state.apiTokens.filter((token) => token.revokedAt === null),
+    ).toHaveLength(MCP_TOKEN_MAX_ACTIVE);
   });
 });
