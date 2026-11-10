@@ -395,6 +395,9 @@ node <repo>/node_modules/vitest/vitest.mjs run --config ../../vitest.integration
 
 ## Escalation notes
 
+- Incident playbooks (activation rollback, provider/cost incidents, MCP token compromise, failed
+  migration, release rollback and evidence collection) live in
+  [studio-incident-response.md](./studio-incident-response.md).
 - Any use of a real provider key, external MCP server, SHOPLINE write, production migration or
   deployment needs separate explicit approval and its own recorded acceptance run.
 - Stop and record rather than improvising: if a turn ever appears to write canonical listing data
