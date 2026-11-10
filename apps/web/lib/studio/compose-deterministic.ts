@@ -1,12 +1,17 @@
 import type { SkillDefinition } from "@wukong/core";
 
 import {
+  productShotHandoffFromContext,
+  type ProductShotPrepareContext,
+} from "./product-shot";
+import {
   coverageRecord,
+  draftDispatchSchema,
   translatedLine,
   turnReplySchema,
-  draftDispatchSchema,
   type EvidencePack,
   type NeedsInput,
+  type StudioDispatch,
   type StudioTurnReply,
   type TranslatedValues,
 } from "./types";
@@ -181,18 +186,43 @@ export function composeDeterministicReply(input: {
         current: String(current?.current ?? "unknown"),
       }),
     );
+  } else if (skill.key === "product_shot.prepare") {
+    const context = pack.context.productShotPrepare as
+      ProductShotPrepareContext | undefined;
+    sections.push(
+      translatedLine("studio.answer.product_shot_prepare", {
+        sources: context?.eligibleAssetIds.length ?? 0,
+        state: context?.state ?? "unknown",
+      }),
+    );
   }
 
-  const dispatch = draftDispatchSchema.safeParse(pack.context.draftDispatch);
-  const parsedDispatch = dispatch.success ? dispatch.data : null;
-  // A draft turn is only "answered" when the prepared dispatch is actually
-  // ready. A partial asset resolution stays visibly partial.
+  let dispatch: StudioDispatch | null = null;
+  const productShotContext = pack.context.productShotPrepare as
+    ProductShotPrepareContext | undefined;
+  if (skill.key === "product_shot.prepare") {
+    dispatch = productShotContext
+      ? productShotHandoffFromContext(productShotContext)
+      : null;
+  } else {
+    const parsed = draftDispatchSchema.safeParse(pack.context.draftDispatch);
+    dispatch = parsed.success ? parsed.data : null;
+  }
+  // A draft is only "answered" when the prepared dispatch is actually ready and
+  // nothing is missing; a product-shot handoff is "answered" once it is ready
+  // because its standing handoff limitation is expected, not a failure.
   const replyStatus =
     skill.key === "listing.draft_from_sources"
-      ? parsedDispatch?.ready === true && pack.limitations.length === 0
+      ? dispatch?.kind === "listing_draft" &&
+        dispatch.ready === true &&
+        pack.limitations.length === 0
         ? "answered"
         : "partial"
-      : status;
+      : skill.key === "product_shot.prepare"
+        ? dispatch?.kind === "product_shot_handoff" && dispatch.ready === true
+          ? "answered"
+          : "partial"
+        : status;
 
   return turnReplySchema.parse({
     status: replyStatus,
@@ -204,7 +234,7 @@ export function composeDeterministicReply(input: {
       coverage: coverageRecord(pack.coverage),
     },
     outputs: [],
-    dispatch: parsedDispatch,
+    dispatch,
     analysis: null,
     traceSummary: { stepCount: pack.trace.length },
     limitations: pack.limitations,

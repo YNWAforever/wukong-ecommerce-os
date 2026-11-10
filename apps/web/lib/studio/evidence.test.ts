@@ -138,6 +138,12 @@ function baseDeps(overrides: Partial<StudioReadDeps> = {}): StudioReadDeps {
         },
       ];
     },
+    async listListingAssets() {
+      return [];
+    },
+    async getProductShotAttempt() {
+      return null;
+    },
     ...overrides,
   };
 }
@@ -1013,5 +1019,192 @@ describe("category.map_proposal evidence (C1)", () => {
       "studio.followup.category_review",
     );
     expect(composeNeedsInputReply).toBeTypeOf("function");
+  });
+});
+
+describe("product_shot.prepare evidence (C1 v1.1)", () => {
+  const productShot = skill("product_shot.prepare");
+
+  it("asks for a listing id with the product-shot-specific needs-input copy", async () => {
+    const result = await buildEvidencePack({
+      skill: productShot,
+      deps: baseDeps(),
+      role: "operator",
+      now,
+      query: "prepare the product shot",
+    });
+    expect(result.status).toBe("needs_input");
+    if (result.status !== "needs_input")
+      throw new Error("expected needs_input");
+    expect(result.question.key).toBe("studio.needs_input.product_shot_listing");
+  });
+
+  it("reads the listing, usable source assets and the persisted review state", async () => {
+    const result = await buildEvidencePack({
+      skill: productShot,
+      deps: baseDeps({
+        listListingAssets: async () => [
+          { assetId: "asset-png", contentType: "image/png", role: "source" },
+          { assetId: "asset-jpeg", contentType: "image/jpeg", role: "source" },
+          {
+            assetId: "asset-cutout",
+            contentType: "image/png",
+            role: "derived",
+          },
+          {
+            assetId: "asset-pdf",
+            contentType: "application/pdf",
+            role: "source",
+          },
+        ],
+        getProductShotAttempt: async () => ({
+          state: "candidate_ready",
+          sourceAssetId: "asset-png",
+          candidateReady: true,
+        }),
+      }),
+      role: "operator",
+      now,
+      query: "prepare the product shot",
+      listingId: LISTING_A,
+    });
+    expect(result.status).toBe("complete");
+    if (result.status !== "complete") throw new Error("expected complete");
+    const pack: EvidencePack = result.pack;
+    expect(pack.coverage.get("listing")).toBe("present");
+    expect(
+      pack.checks.find(
+        (check) => check.key === "studio.check.product_shot_sources",
+      ),
+    ).toMatchObject({
+      values: { sources: 2, derived: 1, ineligible: 1 },
+      state: "ok",
+    });
+    expect(
+      pack.checks.find(
+        (check) => check.key === "studio.check.product_shot_state",
+      ),
+    ).toMatchObject({
+      values: { state: "candidate_ready", candidate: true },
+      state: "ok",
+    });
+    const context = pack.context.productShotPrepare as {
+      listingId: string;
+      listingTitle: string;
+      eligibleAssetIds: string[];
+      state: string | null;
+      candidateReady: boolean;
+      ready: boolean;
+    };
+    expect(context).toMatchObject({
+      listingId: LISTING_A,
+      listingTitle: "Margaux 2019",
+      eligibleAssetIds: ["asset-png", "asset-jpeg"],
+      state: "candidate_ready",
+      candidateReady: true,
+      ready: true,
+    });
+    expect(pack.limitations.map((line) => line.key)).toEqual([
+      "studio.limit.product_shot_handoff",
+    ]);
+    expect(
+      pack.trace.some(
+        (step) => step.detail.key === "studio.trace.product_shot_evidence",
+      ),
+    ).toBe(true);
+
+    const reply = composeDeterministicReply({ skill: productShot, pack });
+    expect(reply.status).toBe("answered");
+    expect(
+      reply.records.sections.find(
+        (line) => line.key === "studio.answer.product_shot_prepare",
+      )?.values,
+    ).toMatchObject({ sources: 2, state: "candidate_ready" });
+    expect(reply.dispatch).toEqual({
+      kind: "product_shot_handoff",
+      listingId: LISTING_A,
+      assetIds: ["asset-png", "asset-jpeg"],
+      state: "candidate_ready",
+      ready: true,
+    });
+    expect(reply.followUps.map((line) => line.key)).toContain(
+      "studio.followup.product_shot_review",
+    );
+  });
+
+  it("stays partial and handoff-not-ready when no usable source image exists", async () => {
+    const result = await buildEvidencePack({
+      skill: productShot,
+      deps: baseDeps({
+        listListingAssets: async () => [
+          {
+            assetId: "asset-pdf",
+            contentType: "application/pdf",
+            role: "source",
+          },
+        ],
+        getProductShotAttempt: async () => null,
+      }),
+      role: "operator",
+      now,
+      query: "prepare the product shot",
+      listingId: LISTING_A,
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    const reply = composeDeterministicReply({
+      skill: productShot,
+      pack: result.pack,
+    });
+    expect(reply.status).toBe("partial");
+    expect(reply.dispatch).toMatchObject({
+      kind: "product_shot_handoff",
+      ready: false,
+      assetIds: [],
+      state: null,
+    });
+    expect(reply.limitations.map((line) => line.key)).toEqual(
+      expect.arrayContaining([
+        "studio.limit.product_shot_no_source",
+        "studio.limit.product_shot_state_unknown",
+      ]),
+    );
+  });
+
+  it("reports an unreadable listing and a failed asset read honestly", async () => {
+    const result = await buildEvidencePack({
+      skill: productShot,
+      deps: baseDeps({
+        listListingAssets: async () => {
+          throw new Error("asset store unavailable");
+        },
+        getProductShotAttempt: async () => {
+          throw new Error("attempt read unavailable");
+        },
+      }),
+      role: "operator",
+      now,
+      query: "prepare the missing listing",
+      listingId: "missing-listing",
+    });
+    if (result.status !== "complete") throw new Error("expected complete");
+    expect(result.pack.coverage.get("listing")).toBe("missing");
+    const keys = result.pack.limitations.map((line) => line.key);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "studio.limit.product_shot_listing_unavailable",
+        "studio.limit.product_shot_assets_unavailable",
+        "studio.limit.product_shot_state_unknown",
+      ]),
+    );
+    const reply = composeDeterministicReply({
+      skill: productShot,
+      pack: result.pack,
+    });
+    expect(reply.status).toBe("partial");
+    expect(reply.dispatch).toMatchObject({
+      kind: "product_shot_handoff",
+      listingId: "missing-listing",
+      ready: false,
+    });
   });
 });

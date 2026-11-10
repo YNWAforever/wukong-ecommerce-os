@@ -535,6 +535,10 @@ export const STUDIO_COPY = {
     "已讀取商品與 {candidates} 個相似目錄項目。",
     "Read the listing and {candidates} similar catalog row(s).",
   ],
+  "studio.trace.product_shot_evidence": [
+    "已讀取圖片審核狀態與 {sources} 張來源圖片。",
+    "Read the image-review state and {sources} source image(s).",
+  ],
   "studio.trace.dispatch.done": [
     "已建立商品草稿 {listingId}；佇列狀態：{queueState}。",
     "Created listing draft {listingId}; queue state: {queueState}.",
@@ -661,6 +665,10 @@ export const STUDIO_COPY = {
     "分類建議 {suggestions} 個；已略過 {dropped} 個無依據、重複或等於目前分類的建議。",
     "{suggestions} category suggestion(s); {dropped} ungrounded, duplicate or current-category suggestion(s) dropped.",
   ],
+  "studio.answer.product_shot_prepare": [
+    "已準備 {sources} 張來源圖片供圖片審核；目前狀態：{state}。",
+    "Prepared {sources} source image(s) for image review; current state: {state}.",
+  ],
 
   // -- evidence checks ------------------------------------------------------
   "studio.check.catalog_matches": [
@@ -722,6 +730,14 @@ export const STUDIO_COPY = {
   "studio.check.category_catalog_candidates": [
     "相似目錄項目：{candidates} 個；結果已截斷：{truncated}。",
     "Similar catalog rows: {candidates}; truncated: {truncated}.",
+  ],
+  "studio.check.product_shot_sources": [
+    "來源圖片：{sources} 張可用；衍生素材 {derived} 個；不適用素材 {ineligible} 個。",
+    "Source images: {sources} usable; {derived} derived asset(s); {ineligible} ineligible asset(s).",
+  ],
+  "studio.check.product_shot_state": [
+    "圖片審核狀態：{state}；已有候選圖：{candidate}。",
+    "Image review state: {state}; candidate ready: {candidate}.",
   ],
 
   // -- honest read limits ---------------------------------------------------
@@ -813,6 +829,26 @@ export const STUDIO_COPY = {
     "已略過 {count} 個沒有依據或重複的分類建議。",
     "{count} category suggestion(s) were dropped because their evidence did not resolve or they duplicated another path.",
   ],
+  "studio.limit.product_shot_handoff": [
+    "圖片處理與核准在既有圖片審核畫面進行；此回合只準備交接，不呼叫外部服務。",
+    "Image processing and approval happen in the existing image review; this turn only prepares the handoff and calls no external service.",
+  ],
+  "studio.limit.product_shot_listing_unavailable": [
+    "未能讀取商品 {listingId} 的記錄；未準備圖片交接。",
+    "The record for listing {listingId} could not be read; no image handoff was prepared.",
+  ],
+  "studio.limit.product_shot_assets_unavailable": [
+    "未能讀取商品素材；未以零值代替。",
+    "Listing assets could not be read; no zero is substituted.",
+  ],
+  "studio.limit.product_shot_no_source": [
+    "找不到可用的來源圖片（PNG、JPEG 或 WebP）；請先在商品頁上傳。",
+    "No usable source image (PNG, JPEG or WebP) was found; upload one on the listing first.",
+  ],
+  "studio.limit.product_shot_state_unknown": [
+    "尚無圖片審核嘗試；目前狀態顯示為未知。",
+    "No image-review attempt exists yet; the current state is shown as unknown.",
+  ],
 
   // -- needs input and follow-ups ------------------------------------------
   "studio.needs_input.catalog_query": [
@@ -830,6 +866,10 @@ export const STUDIO_COPY = {
   "studio.needs_input.category_listing": [
     "請提供要建議分類的商品（貼上商品識別碼）。",
     "Provide the listing to propose a category for (paste its listing id).",
+  ],
+  "studio.needs_input.product_shot_listing": [
+    "請提供要準備圖片的商品（貼上商品識別碼）。",
+    "Provide the listing to prepare images for (paste its listing id).",
   ],
   "studio.followup.explain_status": [
     "解釋商品目前的狀態",
@@ -858,6 +898,10 @@ export const STUDIO_COPY = {
   "studio.followup.category_review": [
     "在審核畫面核對分類建議",
     "Review the category suggestions in the review workspace",
+  ],
+  "studio.followup.product_shot_review": [
+    "在既有圖片審核畫面繼續處理",
+    "Continue in the existing image review",
   ],
 
   // -- records answer / evidence -------------------------------------------
@@ -1298,6 +1342,55 @@ export const STUDIO_COPY = {
     "找不到此對話。",
     "This conversation could not be found.",
   ],
+
+  // -- product-shot handoff card (C1) ---------------------------------------
+  "studio.productShotHandoff.title": [
+    "產品圖片準備",
+    "Product-shot preparation",
+  ],
+  "studio.productShotHandoff.intro": [
+    "此回合只準備交接；圖片處理與核准在既有圖片審核畫面完成，Studio 不會呼叫外部服務。",
+    "This turn only prepares a handoff; image processing and approval happen in the existing image review, and Studio calls no external service.",
+  ],
+  "studio.productShotHandoff.sources": [
+    "可用來源圖片：{count} 張",
+    "Usable source images: {count}",
+  ],
+  "studio.productShotHandoff.state": [
+    "圖片審核狀態：{state}",
+    "Image review state: {state}",
+  ],
+  "studio.productShotHandoff.stateUnknown": ["未知", "Unknown"],
+  "studio.productShotHandoff.ready": [
+    "已準備交接；請在既有畫面確認並繼續。",
+    "Handoff is ready; confirm and continue in the existing screen.",
+  ],
+  "studio.productShotHandoff.notReady": [
+    "尚未準備交接：沒有可用的來源圖片。",
+    "Handoff is not ready: there is no usable source image.",
+  ],
+  "studio.productShotHandoff.open": ["開啟圖片審核", "Open image review"],
+  "studio.productShotHandoff.note": [
+    "接手後仍須由操作員在既有畫面確認；此卡片不會送出任何請求。",
+    "An operator must still confirm in the existing screen; this card sends no request.",
+  ],
+  "studio.productShotHandoff.stateLabel.queued": ["排隊中", "Queued"],
+  "studio.productShotHandoff.stateLabel.processing": ["處理中", "Processing"],
+  "studio.productShotHandoff.stateLabel.cutout_ready": [
+    "去背完成",
+    "Cutout ready",
+  ],
+  "studio.productShotHandoff.stateLabel.candidate_ready": [
+    "候選圖待審核",
+    "Candidate ready for review",
+  ],
+  "studio.productShotHandoff.stateLabel.approved": ["已核准", "Approved"],
+  "studio.productShotHandoff.stateLabel.failed": ["失敗", "Failed"],
+  "studio.productShotHandoff.stateLabel.outcome_unknown": [
+    "結果未知",
+    "Outcome unknown",
+  ],
+  "studio.productShotHandoff.stateLabel.other": ["{state}", "{state}"],
 
   // -- dispatch card (plan Task 10) -----------------------------------------
   "studio.dispatch.title": ["建立商品草稿", "Create listing draft"],

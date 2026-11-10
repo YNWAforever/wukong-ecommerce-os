@@ -15,7 +15,7 @@ const EXPECTED_STATUS = {
   "listing.copy_proposal": "pilot",
   "listing.draft_from_sources": "pilot",
   "merchant.audit": "pilot",
-  "product_shot.prepare": "planned",
+  "product_shot.prepare": "pilot",
   "category.map_proposal": "pilot",
   "supplier.intel_proposal": "planned",
   "customer.reply_draft": "blocked",
@@ -29,6 +29,7 @@ const EXECUTABLE_KEYS = [
   "listing.copy_proposal",
   "listing.draft_from_sources",
   "merchant.audit",
+  "product_shot.prepare",
 ];
 
 function parseDefinition(value: unknown): boolean {
@@ -148,6 +149,8 @@ describe("SKILL_DEFINITIONS", () => {
     expect(getSkill("listing.draft_from_sources")?.version).toBe("1.1.0");
     expect(getSkill("category.map_proposal")?.version).toBe("1.1.0");
     expect(getSkill("category.map_proposal")?.status).toBe("pilot");
+    expect(getSkill("product_shot.prepare")?.version).toBe("1.1.0");
+    expect(getSkill("product_shot.prepare")?.status).toBe("pilot");
     expect(getSkill("catalog.missing")).toBeUndefined();
     expect(getSkill("")).toBeUndefined();
   });

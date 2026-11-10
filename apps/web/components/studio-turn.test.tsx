@@ -227,6 +227,32 @@ describe("StudioTurn", () => {
     expect(html).toContain("Loading artifact…");
   });
 
+  it("renders a product-shot handoff card instead of the draft dispatch card", () => {
+    const html = renderAssistant(
+      reply({
+        status: "partial",
+        skillKey: "product_shot.prepare",
+        skillVersion: "1.1.0",
+        outputs: [],
+        dispatch: {
+          kind: "product_shot_handoff",
+          listingId: "22222222-2222-4222-8222-222222222222",
+          assetIds: [],
+          state: null,
+          ready: false,
+        },
+      }),
+      { threadId: "thread-1" },
+    );
+
+    expect(html).toContain("Product-shot preparation");
+    expect(html).toContain("Handoff is not ready");
+    expect(html).toContain(
+      'href="/listings/22222222-2222-4222-8222-222222222222"',
+    );
+    expect(html).not.toContain("Review and confirm");
+  });
+
   it("renders nothing for a system/tool message rather than inventing a turn", () => {
     const html = renderToStaticMarkup(
       <StudioTurn
