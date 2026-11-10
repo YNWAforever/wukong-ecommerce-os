@@ -233,3 +233,14 @@ with deterministic evidence and a labelled narrative. All ad-platform writes are
 of scope, and it lists the five operator decisions (provider, credential ownership,
 read-only confirmation, data policy, pilot/budget) required before implementation.
 No code or schema change accompanies it either.
+
+### C1 product-shot prepare activation (PR #181)
+
+`product_shot.prepare` is now **pilot v1.1.0** as a deterministic prepare/handoff skill (PR #181). It
+reads the listing, its source assets and the persisted image-review attempt, then records a
+`product_shot_handoff` dispatch with usable source image ids and the current state; it never calls the
+provider, mints no signed URL and writes nothing. `assets.list` is executable server-side (and for the
+hosted MCP `tools/call`), and the thread renders a read-only handoff card linked to the existing gated
+screen. `supplier.intel_proposal` remains the only planned skill; C1 is otherwise complete. Still
+user-gated: A2 production migration window, A3 live model credential/budget, C3 external MCP decision,
+plus the P3.2/C5 operator decisions.
