@@ -221,3 +221,15 @@ budget/audit/RLS guarantees, and lists the operator decisions required before
 implementation (skills, cadences, notifications, cron host, activation window).
 No code or schema change accompanies it; implementation starts only after those
 decisions.
+
+### C5 design proposal
+
+The ads/marketing connector (Ads-Copilot direction) now has a reviewed design
+proposal: [`2026-11-10-ads-marketing-connector-design.md`](../specs/2026-11-10-ads-marketing-connector-design.md).
+It recommends a **read-only** external-MCP connection behind a default-off
+`STUDIO_ADS_CONNECTOR_ENABLED` flag, reusing schema pinning, encrypted credentials,
+quotas and the public-host SSRF guard, plus an `ads.performance_review` skill/artifact
+with deterministic evidence and a labelled narrative. All ad-platform writes are out
+of scope, and it lists the five operator decisions (provider, credential ownership,
+read-only confirmation, data policy, pilot/budget) required before implementation.
+No code or schema change accompanies it either.
