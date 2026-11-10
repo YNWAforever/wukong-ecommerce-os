@@ -329,6 +329,10 @@ jobs:
           openssl req -newkey rsa:2048 -nodes -keyout node_modules/.photoroom-services/certs/private.key -out node_modules/.photoroom-services/certs/local.csr -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
           openssl x509 -req -in node_modules/.photoroom-services/certs/local.csr -CA .wrangler/caddy-data/caddy/pki/authorities/local/root.crt -CAkey .wrangler/caddy-data/caddy/pki/authorities/local/root.key -set_serial 1 -days 1 -copy_extensions copy -out node_modules/.photoroom-services/certs/public.crt
           openssl verify -CAfile .wrangler/caddy-data/caddy/pki/authorities/local/root.crt node_modules/.photoroom-services/certs/public.crt
+          # A previous Playwright step's detached harness can survive its step and keep
+          # 49217/49218 bound; clear it before this mode starts its own web server.
+          pkill -f "tests/e2e/real-stack-server.mjs" || true
+          pkill -f "next start --hostname 127.0.0.1 --port 4921" || true
           pnpm exec playwright test tests/e2e/product-shot.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
       - name: Playwright Wrangler Queue acceptance (fake AI/mock SHOPLINE)
         env:
@@ -349,7 +353,12 @@ jobs:
           AUTH_EMAIL_FROM: ci@example.com
           AUTH_SMTP_URL: smtp://127.0.0.1:1026
           SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-        run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line --retries=0
+        run: |
+          # A previous Playwright step's detached harness can survive its step and keep
+          # 49217/49218 bound; clear it before this mode starts its own web server.
+          pkill -f "tests/e2e/real-stack-server.mjs" || true
+          pkill -f "next start --hostname 127.0.0.1 --port 4921" || true
+          pnpm exec playwright test --project=chromium --workers=1 --reporter=line --retries=0
       - name: Verify the completed Opak audit by draft
         run: |
           DRAFT_ID="$(cat test-results/real-stack-draft-id.txt)"
@@ -372,6 +381,10 @@ jobs:
         run: |
           DATABASE_ADMIN_URL="$TEST_DATABASE_ADMIN_URL" DATABASE_URL="$TEST_DATABASE_URL" pnpm --filter @wukong/db db:migrate
           node --test tests/e2e/wine-topology.test.mjs
+          # A previous Playwright step's detached harness can survive its step and keep
+          # 49217/49218 bound; clear it before this mode starts its own web server.
+          pkill -f "tests/e2e/real-stack-server.mjs" || true
+          pkill -f "next start --hostname 127.0.0.1 --port 4921" || true
           pnpm exec playwright test tests/e2e/wine-enrichment.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
       - name: Upload wine acceptance evidence
         if: always()
