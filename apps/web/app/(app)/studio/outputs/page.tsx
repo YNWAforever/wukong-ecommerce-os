@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 
-import {
-  StudioOutputCard,
-  toOutputStatus,
-} from "../../../../components/studio-output-card";
+import { StudioOutputCard } from "../../../../components/studio-output-card";
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../../lib/locale";
 import {
   authSessionContext,
@@ -17,6 +14,7 @@ import {
   studioOutputListQuerySchema,
   type StudioOutputListQuery,
 } from "../../../../lib/studio/contracts";
+import { toOutputStatus } from "../../../../lib/studio/output-status";
 import { renderStudioLine } from "../../../../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../../../../lib/studio-copy";
 import styles from "../../../../components/studio.module.css";

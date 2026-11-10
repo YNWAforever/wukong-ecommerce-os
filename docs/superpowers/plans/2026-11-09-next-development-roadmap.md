@@ -303,5 +303,11 @@ surface, persists a versioned `wukong-supplier-intel/v1` finding with present va
 missing-field list, and states its boundaries: nothing applied, no supplier record written, and
 workspace-level website records excluded because they are not listing-linked. Without a linked row
 the turn is partial and saves no artifact. `studio-home` picks the new pilot status up from the
-registry, so the supplier template is now interactive with starter text. No planned skills remain;
-C1 is complete. Still user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.
+registry, so the supplier template is now interactive with starter text. The authenticated flags-on
+CI acceptance now also drives this path end to end (template fill → send → read-only finding with
+quoted workbook fields and unknown list → reload → `/studio/outputs`), on a seeded listing whose
+canonical workbook row and source-import receipt are linked. That exposed and fixed a pre-existing
+server/client boundary bug on `/studio/outputs`: `toOutputStatus` lived in the client output card but
+was called by the server page, so any workspace with artifacts got a 500. It now lives in the
+server-safe `lib/studio/output-status` module. No planned skills remain; C1 is complete. Still
+user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.

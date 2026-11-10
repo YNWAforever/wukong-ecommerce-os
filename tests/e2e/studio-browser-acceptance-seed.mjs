@@ -38,6 +38,80 @@ export const STUDIO_BROWSER_ACCEPTANCE_EMAIL =
 /** Local-only fixture password; matches the committed Playwright spec. */
 export const STUDIO_BROWSER_ACCEPTANCE_PASSWORD =
   "Local-only studio browser password 1!";
+/**
+ * Fixed synthetic listing linked to a bulk-form workbook row, so the
+ * deterministic supplier-intel finding can be exercised through the browser.
+ * The spec duplicates these ids (it must not import this module: running the
+ * seed as a module side effect from Playwright would touch the database).
+ */
+export const STUDIO_BROWSER_ACCEPTANCE_SUPPLIER_LISTING_ID =
+  "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a01";
+const SUPPLIER_LISTING_ID = STUDIO_BROWSER_ACCEPTANCE_SUPPLIER_LISTING_ID;
+const SUPPLIER_VERSION_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a02";
+const SUPPLIER_CONNECTION_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a03";
+const SUPPLIER_IMPORT_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a04";
+const SUPPLIER_PRODUCT_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a05";
+const SUPPLIER_RAW_ROW = {
+  supplier: "Demo Supplier Ltd",
+  brand: "Chateau Demo",
+  sku: "E2E-SUP-001",
+  barcode: "",
+  mpn: null,
+  productCost: "120.0",
+  tradePrice: "150.0",
+  nameEn: "Supplier-linked wine",
+  nameZh: "供應商連結酒",
+};
+/**
+ * `facts_prefill` is parsed by `listingFactsSchema` on every read, so it must be
+ * a complete facts object (nullable fields present), not an empty object.
+ */
+const SUPPLIER_FACTS_PREFILL = {
+  sku: "E2E-SUP-001",
+  producer: null,
+  productType: "wine",
+  country: null,
+  region: null,
+  vintage: null,
+  grapeVarieties: [],
+  volumeMl: null,
+  abvPercent: null,
+  packQuantity: 1,
+  priceHkd: null,
+  stockQuantity: null,
+  criticScores: [],
+  awards: [],
+};
+const SUPPLIER_LISTING_CONTENT = {
+  sku: "E2E-SUP-001",
+  producer: null,
+  productType: "wine",
+  country: null,
+  region: null,
+  vintage: null,
+  grapeVarieties: [],
+  volumeMl: null,
+  abvPercent: null,
+  packQuantity: 1,
+  priceHkd: null,
+  stockQuantity: null,
+  criticScores: [],
+  awards: [],
+  title: { en: "Supplier-linked wine", "zh-Hant": "供應商連結酒" },
+  description: {
+    en: "Synthetic supplier fixture",
+    "zh-Hant": "合成供應商測試資料",
+  },
+  seo: {
+    title: { en: "Supplier-linked wine", "zh-Hant": "供應商連結酒" },
+    description: {
+      en: "Synthetic supplier fixture",
+      "zh-Hant": "合成供應商測試資料",
+    },
+  },
+  tags: [],
+  imageAssetIds: [],
+};
 
 const WORKSPACE_ID = STUDIO_BROWSER_ACCEPTANCE_WORKSPACE_ID;
 const USER_ID = STUDIO_BROWSER_ACCEPTANCE_USER_ID;
@@ -61,6 +135,10 @@ const ARGON2_OPTIONS = {
 const sql = postgres(DATABASE_URL, { max: 1 });
 try {
   const passwordHash = await hash(PASSWORD, ARGON2_OPTIONS);
+  const supplierListingContentJson = sql.json(SUPPLIER_LISTING_CONTENT);
+  const supplierRawRowJson = sql.json(SUPPLIER_RAW_ROW);
+  const supplierFactsPrefillJson = sql.json(SUPPLIER_FACTS_PREFILL);
+  const sha256 = (character) => character.repeat(64);
   await sql.begin(async (tx) => {
     // Upsert rather than delete-and-recreate: the Studio message/run tables
     // are append-only by trigger, so deleting this workspace after a previous
@@ -93,6 +171,53 @@ try {
       ON CONFLICT (workspace_id) DO UPDATE SET
         enabled = true, updated_by = excluded.updated_by, updated_at = now()
     `;
+
+    // Supplier-intel fixture: a listing whose canonical bulk-form row and
+    // source-import receipt are linked, exactly the shape the importer writes.
+    await tx`
+      INSERT INTO shopline_connections (id, workspace_id, shop_domain, encrypted_access_token)
+      VALUES (${SUPPLIER_CONNECTION_ID}, ${WORKSPACE_ID}, 'studio-supplier-e2e.local', 'fixture-not-a-token')
+      ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    `;
+    await tx`
+      INSERT INTO source_imports (id, workspace_id, connection_id, filename, workbook_sha256, header_contract_sha256, sheet_name, row_count, merchant_attested_export_at, importer_id, spec_version)
+      VALUES (
+        ${SUPPLIER_IMPORT_ID}, ${WORKSPACE_ID}, ${SUPPLIER_CONNECTION_ID},
+        'studio-supplier-e2e.xlsx', ${sha256("a")}, ${sha256("b")},
+        'Products', 1, now(), ${USER_ID}, 'wukong-bulk-form/v1'
+      )
+      ON CONFLICT (id) DO UPDATE SET filename = excluded.filename
+    `;
+    await tx`
+      INSERT INTO listing_drafts (id, workspace_id, target, status, note)
+      VALUES (${SUPPLIER_LISTING_ID}, ${WORKSPACE_ID}, 'shopline', 'in_review', 'Studio supplier e2e fixture')
+      ON CONFLICT (id) DO UPDATE SET
+        status = excluded.status, note = excluded.note
+    `;
+    await tx`
+      INSERT INTO listing_versions (id, workspace_id, listing_id, sequence, content, created_by)
+      VALUES (${SUPPLIER_VERSION_ID}, ${WORKSPACE_ID}, ${SUPPLIER_LISTING_ID}, 1, ${supplierListingContentJson}, ${USER_ID})
+      ON CONFLICT (listing_id, sequence) DO UPDATE SET content = excluded.content
+    `;
+    await tx`
+      UPDATE listing_drafts SET active_version_id = ${SUPPLIER_VERSION_ID}
+      WHERE id = ${SUPPLIER_LISTING_ID} AND workspace_id = ${WORKSPACE_ID}
+    `;
+    await tx`
+      INSERT INTO platform_products (id, workspace_id, connection_id, remote_product_id, sku, listing_id, spec_version, raw_row, facts_prefill, content_digest, origin, source_import_id)
+      VALUES (
+        ${SUPPLIER_PRODUCT_ID}, ${WORKSPACE_ID}, ${SUPPLIER_CONNECTION_ID},
+        'e2e-supplier-product', 'E2E-SUP-001', ${SUPPLIER_LISTING_ID},
+        'wukong-bulk-form/v1', ${supplierRawRowJson}, ${supplierFactsPrefillJson},
+        ${sha256("c")}, 'import', ${SUPPLIER_IMPORT_ID}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        raw_row = excluded.raw_row,
+        facts_prefill = excluded.facts_prefill,
+        listing_id = excluded.listing_id,
+        origin = excluded.origin,
+        source_import_id = excluded.source_import_id
+    `;
   });
   console.log(
     JSON.stringify({
@@ -101,6 +226,7 @@ try {
       userId: USER_ID,
       email: EMAIL,
       studioEnabled: true,
+      supplierListingId: SUPPLIER_LISTING_ID,
     }),
   );
 } finally {

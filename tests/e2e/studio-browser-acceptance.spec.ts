@@ -123,3 +123,82 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
     fullPage: true,
   });
 });
+
+/**
+ * Supplier-intel acceptance (C1 v1.1). Mirrors the seed's linked workbook row:
+ * the deterministic finding must quote the stored cells, list the unknown ones,
+ * state its boundaries, render read-only and survive a reload. No model is
+ * configured, so any provider call would fail the turn.
+ */
+test("flags-on studio: supplier intel finding renders read-only and persists", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  // Must match STUDIO_BROWSER_ACCEPTANCE_SUPPLIER_LISTING_ID in the seed.
+  const listingId = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a01";
+  await signIn(page, origin);
+
+  await page.goto("/studio");
+  await expect(page.getByText("Start a conversation")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // The supplier template is pilot-interactive through the registry.
+  const supplierCard = page
+    .getByRole("listitem")
+    .filter({ hasText: "Supplier intel" });
+  await expect(supplierCard).toHaveAttribute("data-interactive", "true");
+  await supplierCard.getByRole("button", { name: "Fill the composer" }).click();
+
+  const composer = page.getByRole("textbox", { name: "Message" });
+  await expect(composer).toHaveValue(
+    "Compile supplier intel from the linked workbook row: ",
+  );
+  await composer.fill(
+    `Compile supplier intel from the linked workbook row: ${listingId}`,
+  );
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.waitForURL(/\/studio\/t\/[0-9a-f-]{36}$/, { timeout: 90_000 });
+
+  const finding = page.locator('[data-finding-kind="supplier_intel"]');
+  await expect(finding).toBeVisible({ timeout: 30_000 });
+  await expect(finding).toContainText("Supplier intelligence");
+  await expect(finding).toContainText("Demo Supplier Ltd");
+  await expect(finding).toContainText("Chateau Demo");
+  await expect(finding).toContainText("120.0");
+  await expect(finding).toContainText("150.0");
+  await expect(finding).toContainText("workbook:");
+  await expect(finding).toContainText("source_import:");
+  await expect(finding).toContainText("Unknown fields: Barcode, MPN");
+  await expect(finding).toContainText(
+    "Not applied — Studio only saves a read-only finding; no supplier or listing record is written.",
+  );
+  await expect(finding).toContainText(`Listing ${listingId}`);
+  // Read-only: the finding card offers no button control.
+  await expect(finding.getByRole("button")).toHaveCount(0);
+  await expect(
+    finding.getByRole("link", { name: "Open in the review workspace" }),
+  ).toHaveAttribute("href", `/listings/${listingId}`);
+
+  // Reload restores the persisted finding and its quoted values.
+  await page.reload();
+  await expect(
+    page.locator('[data-finding-kind="supplier_intel"]'),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.locator('[data-finding-kind="supplier_intel"]'),
+  ).toContainText("Demo Supplier Ltd");
+
+  // The persisted artifact is listed on the outputs page with its version.
+  await page.goto("/studio/outputs");
+  await expect(page.getByText(/Supplier intel/).first()).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await page.screenshot({
+    path: "test-results/studio-supplier-finding-acceptance.png",
+    fullPage: true,
+  });
+});
