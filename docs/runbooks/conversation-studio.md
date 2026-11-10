@@ -581,21 +581,25 @@ database** (never production, all local):
 1. created an empty local Postgres database (`wukong_activation_dry_run`);
 2. replayed the full migration set through `0057_studio_mcp_token_quotas.sql` with the normal
    `@wukong/db db:migrate` runner (`DATABASE_URL` runtime role + `DATABASE_ADMIN_URL` admin role);
-3. seeded a workspace, owner user/credential, invite-eligibility row and enabled
-   `studio_workspace_settings` row with `tests/e2e/studio-browser-acceptance-seed.mjs`;
+3. seeded a workspace, owner user/credential, a second **viewer** member for the authorization
+   acceptance, invite-eligibility rows and an enabled `studio_workspace_settings` row with
+   `tests/e2e/studio-browser-acceptance-seed.mjs`;
 4. built the web production bundle and started it with `CONVERSATION_STUDIO_ENABLED=true`
    (AI/MCP flags unset) against that database;
 5. ran the authenticated acceptance spec (`STUDIO_BROWSER_ACCEPTANCE=1`, production build):
-   **3 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
+   **4 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
    execution trace, reload persistence, 390 px layout, threads list; the **supplier-intel
    finding** (template fill → send → quoted workbook fields/unknown list/no-write boundary,
    read-only with no button control, reload persistence, artifact listed on `/studio/outputs`);
-   and a route smoke over every Studio surface (`/studio`, threads, outputs, inbox, connections,
+   a route smoke over every Studio surface (`/studio`, threads, outputs, inbox, connections,
    owner settings) asserting the real heading renders instead of a server error, plus the A5
-   usage projection on settings.
+   usage projection on settings; and the **viewer authorization** boundary (shell "New
+   conversation" and composer Send disabled with the honest role note, every read surface still
+   rendering, `/studio/settings` rendering the not-found boundary with no admin content).
 
-Post-run evidence in the disposable database: 1 thread, 2 messages, 1 `succeeded` run and audit
-events `studio.thread.created`, `studio.message.received`, `studio.run.completed`. Rollback was
+Post-run evidence in the disposable database: 2 threads with their user+assistant messages (4
+messages), 2 `succeeded` runs and audit events `studio.thread.created`, `studio.message.received`,
+`studio.run.completed`. Rollback was
 also rehearsed (`UPDATE studio_workspace_settings SET enabled=false`) and returned the workspace to
 disabled before dropping the database. The exact commands are the A2 activation commands above; only
 the **production** execution (real connection/credentials/migration window) remains gated on the

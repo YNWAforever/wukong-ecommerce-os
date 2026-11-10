@@ -14,6 +14,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const enabled = process.env.STUDIO_BROWSER_ACCEPTANCE === "1";
 const EMAIL = "studio-browser-e2e@local.invalid";
+const VIEWER_EMAIL = "studio-browser-viewer@local.invalid";
 const PASSWORD = "Local-only studio browser password 1!";
 
 test.skip(
@@ -21,12 +22,12 @@ test.skip(
   "Set STUDIO_BROWSER_ACCEPTANCE=1 against a seeded local app.",
 );
 
-async function signIn(page: Page, baseURL: string) {
+async function signIn(page: Page, baseURL: string, email = EMAIL) {
   await page
     .context()
     .addCookies([{ name: "locale", value: "en", url: baseURL }]);
   await page.goto("/signin");
-  await page.getByLabel("Email address").fill(EMAIL);
+  await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in with password" }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/signin"), {
@@ -243,4 +244,75 @@ test("flags-on studio: every Studio surface renders for an owner", async ({
     page.getByRole("heading", { name: "Usage — last 30 days", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/Read-only projection/).first()).toBeVisible();
+});
+
+/**
+ * Authorization acceptance: a viewer is read-only. The Studio itself is visible
+ * to every member once enabled, but creating conversations/sending requires
+ * operator or higher, and `/studio/settings` answers 404 to a non-administrator
+ * instead of advertising the admin surface. Both are unit-covered; this proves
+ * the composed browser behaviour (disabled controls, honest note, 404 boundary).
+ */
+test("flags-on studio: a viewer is read-only and admin settings stay hidden", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  await signIn(page, origin, VIEWER_EMAIL);
+
+  // Home renders, but the shell and composer are honestly disabled for a reader.
+  await page.goto("/studio");
+  await expect(
+    page.getByRole("heading", { name: "Welcome back", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByRole("button", { name: "New conversation", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText(
+      "An operator or higher role is required to create conversations.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText(
+      "Your role can read only; sending requires operator or higher.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+
+  // Every read surface stays available to the viewer.
+  const readSurfaces = [
+    { path: "/studio/threads", heading: "Conversations" },
+    { path: "/studio/outputs", heading: "Outputs" },
+    { path: "/studio/inbox", heading: "Orchestration inbox" },
+    { path: "/studio/connections", heading: "Tools and connections" },
+  ] as const;
+  for (const surface of readSurfaces) {
+    const response = await page.goto(surface.path);
+    expect(response?.status(), surface.path).toBeLessThan(400);
+    await expect(
+      page.getByRole("heading", { name: surface.heading, exact: true }),
+    ).toBeVisible({ timeout: 30_000 });
+  }
+
+  // Admin settings are not advertised to a reader: the surface renders the
+  // Studio not-found boundary, never the admin form or its data. Next may report
+  // HTTP 200 for a streamed not-found response, so assert the rendered boundary
+  // and the absence of admin-only content, not just the status code.
+  const settings = await page.goto("/studio/settings");
+  expect(settings?.status(), "/studio/settings").toBeLessThan(500);
+  await expect(
+    page.getByRole("heading", { name: "Studio page not found", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByRole("heading", { name: "Studio settings", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Hosted MCP tokens", { exact: false }),
+  ).toHaveCount(0);
 });
