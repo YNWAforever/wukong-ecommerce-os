@@ -588,25 +588,29 @@ database** (never production, all local):
    `STUDIO_MCP_SERVER_ENABLED=true` (AI flag unset; the hosted MCP flag is on only so the token
    acceptance can call `/api/mcp`) against that database;
 5. ran the authenticated acceptance spec (`STUDIO_BROWSER_ACCEPTANCE=1`, production build):
-   **6 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
+   **7 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
    execution trace, reload persistence, 390 px layout, threads list; the **supplier-intel
    finding** (template fill → send → quoted workbook fields/unknown list/no-write boundary,
    read-only with no button control, reload persistence, artifact listed on `/studio/outputs`);
-   a route smoke over every Studio surface (`/studio`, threads, outputs, inbox, connections,
-   owner settings) asserting the real heading renders instead of a server error, plus the A5
-   usage projection on settings; the **viewer authorization** boundary (shell "New
-   conversation" and composer Send disabled with the honest role note, every read surface still
-   rendering, `/studio/settings` rendering the not-found boundary with no admin content); the
-   **A1 settings write path** (owner saves a budget and one allowed skill through
-   `PATCH /api/studio/settings`, sees the server readback notice, a fresh reload shows the
-   canonicalised saved values, then the fixture values are restored); and the **B4 hosted MCP**
-   path (owner mints a read token in settings, a JSON-RPC client calls `initialize`/`tools/list`/
-   `tools/call` over `POST /api/mcp`, the 3rd call in the minute hits the 2/min quota, rotation
-   invalidates the old plaintext immediately, and revoke answers 401).
+   the **B2 copy-proposal handoff** (the listing review page renders the read-only Studio proposal
+   banner from a saved artifact — field ids plus current/proposed values, an honest "not applied"
+   note, no apply/save/publish control, dismiss removes the query parameter, and an unknown
+   `studioOutput` id fails closed without a banner or error); a route smoke over every Studio
+   surface (`/studio`, threads, outputs, inbox, connections, owner settings) asserting the real
+   heading renders instead of a server error, plus the A5 usage projection on settings; the
+   **viewer authorization** boundary (shell "New conversation" and composer Send disabled with the
+   honest role note, every read surface still rendering, `/studio/settings` rendering the
+   not-found boundary with no admin content); the **A1 settings write path** (owner saves a budget
+   and one allowed skill through `PATCH /api/studio/settings`, sees the server readback notice, a
+   fresh reload shows the canonicalised saved values, then the fixture values are restored); and
+   the **B4 hosted MCP** path (owner mints a read token in settings, a JSON-RPC client calls
+   `initialize`/`tools/list`/`tools/call` over `POST /api/mcp`, the 3rd call in the minute hits
+   the 2/min quota, rotation invalidates the old plaintext immediately, and revoke answers 401).
 
 Post-run evidence in the disposable database: 2 threads with their user+assistant messages (4
 messages), 2 `succeeded` runs, one rotated-then-revoked hosted MCP token with `studio.mcp.call`
-ledger/audit rows, and audit events `studio.thread.created`, `studio.message.received`,
+ledger/audit rows, one saved `copy_proposal` artifact read (never written) by the listing banner,
+and audit events `studio.thread.created`, `studio.message.received`,
 `studio.run.completed`. Rollback was
 also rehearsed (`UPDATE studio_workspace_settings SET enabled=false`) and returned the workspace to
 disabled before dropping the database. The exact commands are the A2 activation commands above; only

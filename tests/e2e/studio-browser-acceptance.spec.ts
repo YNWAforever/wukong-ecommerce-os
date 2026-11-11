@@ -16,6 +16,9 @@ const enabled = process.env.STUDIO_BROWSER_ACCEPTANCE === "1";
 const EMAIL = "studio-browser-e2e@local.invalid";
 const VIEWER_EMAIL = "studio-browser-viewer@local.invalid";
 const PASSWORD = "Local-only studio browser password 1!";
+/** Duplicated from the seed module (export values must not run in Playwright). */
+const SUPPLIER_LISTING_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a01";
+const HANDOFF_OUTPUT_ID = "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a06";
 
 test.skip(
   !enabled,
@@ -202,6 +205,61 @@ test("flags-on studio: supplier intel finding renders read-only and persists", a
     path: "test-results/studio-supplier-finding-acceptance.png",
     fullPage: true,
   });
+});
+
+/**
+ * B2 handoff acceptance: a saved copy_proposal artifact renders the read-only
+ * banner on the existing listing review page, is dismissible, and fails closed
+ * for a foreign or unknown `studioOutput` id. The banner must never apply the
+ * proposal; only copy/dismiss actions are allowed.
+ */
+test("flags-on studio: copy-proposal handoff renders read-only and fails closed", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(120_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  await signIn(page, origin);
+
+  // The valid artifact opens the banner above the existing review form.
+  await page.goto(
+    `/listings/${SUPPLIER_LISTING_ID}?studioOutput=${HANDOFF_OUTPUT_ID}`,
+  );
+  const banner = page.locator('[data-studio-handoff="true"]');
+  await expect(banner).toBeVisible({ timeout: 30_000 });
+  await expect(banner).toHaveAttribute("data-output-id", HANDOFF_OUTPUT_ID);
+  await expect(
+    banner.getByRole("heading", { name: "Studio proposal", exact: true }),
+  ).toBeVisible();
+  await expect(banner.getByText(/not applied/i).first()).toBeVisible();
+  await expect(banner.locator('[data-field="title.en"]')).toContainText(
+    "Chateau Demo 2020 acceptance proposal",
+  );
+  await expect(banner.locator('[data-field="description.en"]')).toContainText(
+    "A fuller acceptance description proposed by Studio.",
+  );
+
+  // Display-only: no apply/save/publish control exists in the banner.
+  await expect(
+    banner.getByRole("button", { name: /apply|save|publish/i }),
+  ).toHaveCount(0);
+
+  // Dismissing drops the query parameter and the banner without any write.
+  await banner
+    .getByRole("link", { name: "Dismiss proposal", exact: true })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/listings/${SUPPLIER_LISTING_ID}$`));
+  await expect(page.locator('[data-studio-handoff="true"]')).toHaveCount(0);
+
+  // Fail closed: a well-formed but unknown output id renders the page without
+  // the banner instead of erroring.
+  await page.goto(
+    `/listings/${SUPPLIER_LISTING_ID}?studioOutput=11111111-1111-4111-8111-111111111112`,
+  );
+  await expect(
+    page.getByRole("heading", { name: "Studio proposal", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/This page couldn/)).toHaveCount(0);
 });
 
 /**
