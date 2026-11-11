@@ -12,10 +12,8 @@ jobs:
   verify:
     # Pinned despite `ubuntu-latest`: Playwright 1.55 does not support Chromium
     # on ubuntu26.04, which `ubuntu-latest` now resolves to, so install fails
-    # before any test runs. 22.04 is the oldest still-supported runner that the
-    # pinned Playwright installs cleanly on. Bump both together (Playwright +
-    # this label).
-    runs-on: ubuntu-22.04
+    # before any test runs. Bump both together (Playwright + this label).
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
       postgres:
@@ -240,7 +238,13 @@ jobs:
       - name: Verify sharp's native library is bundled
         run: node --test tests/sharp-native-bundling.test.mjs tests/pdf-worker-bundling.test.mjs
       - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        # Browser binary only. `--with-deps` shells out to apt, and GitHub's
+        # Ubuntu mirrors intermittently fail DNS resolution on the runner
+        # ("Temporary failure resolving 'azure.archive.ubuntu.com'"), which made
+        # this step flaky across every runner image. The GitHub-hosted image
+        # already carries Chrome's system libraries, so the bundled Chromium
+        # launches without that apt step.
+        run: pnpm exec playwright install chromium
       - name: Studio flags-on browser acceptance
         env:
           DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong
