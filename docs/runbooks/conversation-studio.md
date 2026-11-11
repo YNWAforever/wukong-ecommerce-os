@@ -584,18 +584,27 @@ database** (never production, all local):
 3. seeded a workspace, owner user/credential, a second **viewer** member for the authorization
    acceptance, invite-eligibility rows and an enabled `studio_workspace_settings` row with
    `tests/e2e/studio-browser-acceptance-seed.mjs`;
-4. built the web production bundle and started it with `CONVERSATION_STUDIO_ENABLED=true` and
-   `STUDIO_MCP_SERVER_ENABLED=true` (AI flag unset; the hosted MCP flag is on only so the token
-   acceptance can call `/api/mcp`) against that database;
+4. built the web production bundle and started it with `CONVERSATION_STUDIO_ENABLED=true`,
+   `STUDIO_MCP_SERVER_ENABLED=true` and the local object-storage env (`S3_BUCKET`,
+   `S3_ENDPOINT=http://127.0.0.1:9010`, region/keys/force-path-style from `docker compose up -d
+minio`, bucket `wukong-ci` created once) against that database. AI flag unset; the hosted MCP
+   flag is on only so the token acceptance can call `/api/mcp`. The `minio` service's
+   `MINIO_API_CORS_ALLOW_ORIGIN` includes this app origin so the composer attachment acceptance can
+   PUT the presigned upload from the browser;
 5. ran the authenticated acceptance spec (`STUDIO_BROWSER_ACCEPTANCE=1`, production build):
-   **7 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
+   **8 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
    execution trace, reload persistence, 390 px layout, threads list; the **supplier-intel
    finding** (template fill → send → quoted workbook fields/unknown list/no-write boundary,
    read-only with no button control, reload persistence, artifact listed on `/studio/outputs`);
-   the **B2 copy-proposal handoff** (the listing review page renders the read-only Studio proposal
-   banner from a saved artifact — field ids plus current/proposed values, an honest "not applied"
-   note, no apply/save/publish control, dismiss removes the query parameter, and an unknown
-   `studioOutput` id fails closed without a banner or error); a route smoke over every Studio
+   the **B1 composer attachment** path (a real 1×1 PNG uploads through
+   `POST /api/assets/presign` → presigned PUT to local S3 → `POST /api/assets/finalize` and shows
+   `Uploaded`, an unsupported `text/plain` file is rejected before any upload with the honest
+   reason and can be removed, and the sent turn persists exactly one finalized
+   `attachmentAssetIds` entry that survives a reload); the **B2 copy-proposal handoff** (the
+   listing review page renders the read-only Studio proposal banner from a saved artifact — field
+   ids plus current/proposed values, an honest "not applied" note, no apply/save/publish control,
+   dismiss removes the query parameter, and an unknown `studioOutput` id fails closed without a
+   banner or error); a route smoke over every Studio
    surface (`/studio`, threads, outputs, inbox, connections, owner settings) asserting the real
    heading renders instead of a server error, plus the A5 usage projection on settings; the
    **viewer authorization** boundary (shell "New conversation" and composer Send disabled with the
@@ -607,10 +616,11 @@ database** (never production, all local):
    `initialize`/`tools/list`/`tools/call` over `POST /api/mcp`, the 3rd call in the minute hits
    the 2/min quota, rotation invalidates the old plaintext immediately, and revoke answers 401).
 
-Post-run evidence in the disposable database: 2 threads with their user+assistant messages (4
-messages), 2 `succeeded` runs, one rotated-then-revoked hosted MCP token with `studio.mcp.call`
-ledger/audit rows, one saved `copy_proposal` artifact read (never written) by the listing banner,
-and audit events `studio.thread.created`, `studio.message.received`,
+Post-run evidence in the disposable database: 3 threads with their user+assistant messages (6
+messages), 3 `succeeded` runs, one source asset stored in the local bucket and finalized into the
+operator message's `attachmentAssetIds`, one rotated-then-revoked hosted MCP token with
+`studio.mcp.call` ledger/audit rows, one saved `copy_proposal` artifact read (never written) by the
+listing banner, and audit events `studio.thread.created`, `studio.message.received`,
 `studio.run.completed`. Rollback was
 also rehearsed (`UPDATE studio_workspace_settings SET enabled=false`) and returned the workspace to
 disabled before dropping the database. The exact commands are the A2 activation commands above; only

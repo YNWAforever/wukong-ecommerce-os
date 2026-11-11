@@ -43,7 +43,9 @@ services:
     environment:
       MINIO_ROOT_USER: wukong
       MINIO_ROOT_PASSWORD: wukong-secret
-      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:49217
+      # Real-stack app (49217) and the flags-on Studio acceptance (49300) both
+      # upload from the browser straight to this endpoint, so both are allowed.
+      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:49217,http://127.0.0.1:49300
     ports: ["9010:9000", "9011:9001"]
   minio-tls:
     image: caddy:2-alpine
