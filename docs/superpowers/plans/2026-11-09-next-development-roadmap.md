@@ -323,7 +323,10 @@ readback, fixture values restored); and the **B4 hosted MCP** path with the depl
 `POST /api/mcp`, the 3rd call hits the 2/min quota, rotation invalidates the old plaintext, revoke
 answers 401), the **B2 copy-proposal handoff** (listing review page renders the read-only
 proposal banner from a saved artifact with current/proposed values and no apply control, dismiss
-removes the query parameter, unknown id fails closed), and the **B1 composer attachment** path (a
-real PNG uploads through presign → S3 PUT → finalize, an unsupported type is rejected with the
-honest reason, and the sent turn persists the finalized asset id across a reload). No planned skills
+removes the query parameter, unknown id fails closed), the saved artifact's **JSON and PDF
+exports** (real downloads carrying the previewed version digest, unsigned receipt without a
+signing key, stale digest 409, missing digest 400, unknown id 404), and the **B1 composer
+attachment** path (a real PNG uploads through presign → S3 PUT → finalize, an unsupported type is
+rejected with the honest reason, and the sent turn persists the finalized asset id across a
+reload). No planned skills
 remain; C1 is complete. Still user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.
