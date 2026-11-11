@@ -328,5 +328,7 @@ exports** (real downloads carrying the previewed version digest, unsigned receip
 signing key, stale digest 409, missing digest 400, unknown id 404), and the **B1 composer
 attachment** path (a real PNG uploads through presign → S3 PUT → finalize, an unsupported type is
 rejected with the honest reason, and the sent turn persists the finalized asset id across a
-reload). No planned skills
+reload), and the **draft-from-sources dispatch** (nothing is created before the explicit review and
+confirm, the created listing opens in the existing screen, the queue outcome is reported honestly,
+and an asset-set replay returns the same listing instead of a duplicate). No planned skills
 remain; C1 is complete. Still user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.

@@ -22,7 +22,10 @@ const { hash } = requireFromWeb("@node-rs/argon2");
  * Not imported by the app; run once against a disposable local (or the CI
  * job's migrated) `wukong` database, then throw it away. Repeating it is safe:
  * the workspace, user, membership and Studio-settings rows are upserted, and
- * only the invite-eligibility and credential rows are replaced. The read-only
+ * only the invite-eligibility and credential rows are replaced. The workspace
+ * profile is a complete `workspaceProfileSchema` value: the canonical intake
+ * path parses it, so a `{ name }`-only profile fails every create with a
+ * ZodError. The read-only
  * handoff artifact's version is append-only by trigger, so it is inserted once
  * and never rewritten — recreate the disposable database after changing that
  * fixture. It never deletes the workspace, because the Studio message/run
@@ -35,6 +38,22 @@ const { hash } = requireFromWeb("@node-rs/argon2");
  */
 
 export const STUDIO_BROWSER_ACCEPTANCE_WORKSPACE_ID = "ws_studio_browser_e2e";
+/**
+ * A complete workspace profile. The intake path (and the shell's workspace
+ * chrome) parses `workspaces.requireProfile()` with `workspaceProfileSchema`,
+ * so the minimal `{ name }` shape failed every canonical create with a
+ * ZodError. These are the schema's required fields with neutral values.
+ */
+const WORKSPACE_PROFILE = {
+  name: "Studio Browser E2E",
+  currency: "HKD",
+  locales: ["en", "zh-Hant"],
+  tone: "Plain and factual.",
+  claimPolicy: [],
+  requiredFields: [],
+  sourcePreferences: { allowedDomains: [] },
+  brandBackgroundColor: null,
+};
 export const STUDIO_BROWSER_ACCEPTANCE_USER_ID = "user_studio_browser_e2e";
 export const STUDIO_BROWSER_ACCEPTANCE_EMAIL =
   "studio-browser-e2e@local.invalid";
@@ -207,7 +226,7 @@ try {
     // credential account) are deleted.
     await tx`
       INSERT INTO workspaces (id, name, profile)
-      VALUES (${WORKSPACE_ID}, 'Studio Browser E2E', ${sql.json({ name: "Studio Browser E2E" })})
+      VALUES (${WORKSPACE_ID}, 'Studio Browser E2E', ${sql.json(WORKSPACE_PROFILE)})
       ON CONFLICT (id) DO UPDATE SET name = excluded.name, profile = excluded.profile
     `;
     await tx`
