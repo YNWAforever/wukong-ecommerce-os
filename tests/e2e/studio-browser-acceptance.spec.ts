@@ -208,6 +208,104 @@ test("flags-on studio: supplier intel finding renders read-only and persists", a
 });
 
 /**
+ * B1 attachment acceptance: the composer uploads a real image through the
+ * existing presign → PUT → finalize stack (local S3), rejects an unsupported
+ * type before uploading, and the sent turn persists the finalized asset id in
+ * the operator message. The fixture file is a 1×1 PNG; no bytes leave local
+ * object storage.
+ */
+test("flags-on studio: composer attachment uploads and persists with the turn", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  await signIn(page, origin);
+  await page.goto("/studio");
+  await expect(page.getByText("Start a conversation")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  const fileInput = page.locator('input[type="file"]');
+  await fileInput.setInputFiles({
+    name: "acceptance.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    ),
+  });
+  const attachmentList = page.getByRole("list", { name: "Attached files" });
+  const uploadedChip = attachmentList.locator('li[data-state="uploaded"]');
+  await expect(uploadedChip).toContainText("acceptance.png", {
+    timeout: 60_000,
+  });
+  await expect(uploadedChip.getByRole("status")).toHaveText("Uploaded");
+
+  // An unsupported type is rejected by the shared media policy before any
+  // network call; the honest reason is rendered and the file can be removed.
+  await fileInput.setInputFiles({
+    name: "notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("not an attachable file"),
+  });
+  const rejectedChip = attachmentList.locator(
+    'li[data-state="unsupported_type"]',
+  );
+  await expect(rejectedChip).toContainText("notes.txt");
+  await expect(
+    page.getByText("Unsupported file type. Use JPG, PNG, WebP or PDF.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await rejectedChip
+    .getByRole("button", { name: "Remove", exact: true })
+    .click();
+  await expect(rejectedChip).toHaveCount(0);
+
+  // Send with the uploaded attachment and the deterministic records question.
+  await page.getByRole("textbox", { name: "Message" }).fill("margaux");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.waitForURL(/\/studio\/t\/[0-9a-f-]{36}$/, { timeout: 90_000 });
+  const threadUrl = page.url();
+  const threadId = new URL(threadUrl).pathname.split("/").pop()!;
+
+  // The persisted operator message carries exactly the finalized asset id, and
+  // the attachment is not left in the composer after a successful send.
+  const detail = await page.request.get(
+    `${origin}/api/studio/threads/${threadId}`,
+  );
+  expect(detail.ok()).toBe(true);
+  const body = (await detail.json()) as {
+    messages: Array<{ role: string; content: Record<string, unknown> }>;
+  };
+  const operatorMessage = body.messages.find((m) => m.role === "operator");
+  expect(operatorMessage).toBeTruthy();
+  const attachmentAssetIds = operatorMessage?.content.attachmentAssetIds;
+  expect(Array.isArray(attachmentAssetIds)).toBe(true);
+  expect(attachmentAssetIds).toHaveLength(1);
+  expect(typeof (attachmentAssetIds as unknown[])[0]).toBe("string");
+  expect(attachmentAssetIds).not.toContain("acceptance.png");
+  await expect(page.getByRole("list", { name: "Attached files" })).toHaveCount(
+    0,
+  );
+
+  // Reload keeps the turn; the attachment id is part of the persisted content.
+  await page.reload();
+  await expect(page.getByText("Your message")).toBeVisible({
+    timeout: 60_000,
+  });
+  const reloaded = await page.request.get(
+    `${origin}/api/studio/threads/${threadId}`,
+  );
+  const reloadedBody = (await reloaded.json()) as {
+    messages: Array<{ role: string; content: Record<string, unknown> }>;
+  };
+  const persisted = reloadedBody.messages.find((m) => m.role === "operator");
+  expect(persisted?.content.attachmentAssetIds).toEqual(attachmentAssetIds);
+});
+
+/**
  * B2 handoff acceptance: a saved copy_proposal artifact renders the read-only
  * banner on the existing listing review page, is dismissible, and fails closed
  * for a foreign or unknown `studioOutput` id. The banner must never apply the
