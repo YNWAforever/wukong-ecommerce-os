@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
@@ -358,6 +359,102 @@ test("flags-on studio: copy-proposal handoff renders read-only and fails closed"
     page.getByRole("heading", { name: "Studio proposal", exact: true }),
   ).toHaveCount(0);
   await expect(page.getByText(/This page couldn/)).toHaveCount(0);
+});
+
+/**
+ * B2 export acceptance: the saved copy-proposal artifact exports JSON and PDF
+ * through the previewed-digest route. Both downloads are real responses; the
+ * JSON receipt is unsigned without a signing key, and stale/missing digests and
+ * unknown artifacts fail closed.
+ */
+test("flags-on studio: saved artifact exports JSON and PDF for the previewed digest", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(120_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  await signIn(page, origin);
+
+  await page.goto("/studio/outputs");
+  const card = page.locator(`details[data-output-id="${HANDOFF_OUTPUT_ID}"]`);
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  expect(await card.locator("summary").textContent()).toContain(
+    "Copy proposal",
+  );
+  await card.locator("summary").click();
+  await expect(
+    card.getByRole("link", { name: "Download JSON", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByText("Copy proposal acceptance")).toBeVisible();
+  await expect(card.getByText("Saved", { exact: true }).first()).toBeVisible();
+
+  // The digest the card previewed is the server's current version digest.
+  const detailResponse = await page.request.get(
+    `${origin}/api/studio/outputs/${HANDOFF_OUTPUT_ID}`,
+  );
+  expect(detailResponse.ok()).toBe(true);
+  const detail = (await detailResponse.json()) as {
+    versions: Array<{ revision: number; contentDigest: string }>;
+  };
+  const latest = detail.versions.reduce((current, version) =>
+    version.revision > current.revision ? version : current,
+  );
+
+  // JSON export: real download, canonical packet, digest and status intact.
+  const [jsonDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Download JSON", exact: true }).click(),
+  ]);
+  expect(jsonDownload.suggestedFilename()).toBe(
+    `studio-output-${HANDOFF_OUTPUT_ID}-r${latest.revision}.json`,
+  );
+  const jsonPath = await jsonDownload.path();
+  expect(jsonPath).not.toBeNull();
+  const packet = JSON.parse(readFileSync(jsonPath as string, "utf8")) as Record<
+    string,
+    unknown
+  > & {
+    output: Record<string, unknown>;
+    payload: Record<string, unknown>;
+  };
+  expect(packet.schemaVersion).toBe("wukong-studio-output-export/v1");
+  expect(packet.output.outputId).toBe(HANDOFF_OUTPUT_ID);
+  expect(packet.output.kind).toBe("copy_proposal");
+  expect(packet.output.status).toBe("saved");
+  expect(packet.output.revision).toBe(latest.revision);
+  expect(packet.payload.listingId).toBe(SUPPLIER_LISTING_ID);
+  expect(packet.payloadSha256).toBe(latest.contentDigest);
+  expect(packet.signed).toBe(false);
+  expect(packet.receipt).toBeUndefined();
+
+  // PDF export: real download that starts with the PDF magic bytes.
+  const [pdfDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Download PDF", exact: true }).click(),
+  ]);
+  expect(pdfDownload.suggestedFilename()).toBe(
+    `studio-output-${HANDOFF_OUTPUT_ID}-r${latest.revision}.pdf`,
+  );
+  const pdfPath = await pdfDownload.path();
+  expect(pdfPath).not.toBeNull();
+  const pdfBytes = readFileSync(pdfPath as string);
+  expect(pdfBytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+  expect(pdfBytes.byteLength).toBeGreaterThan(1000);
+
+  // Fail closed: a stale digest is refused, a missing digest is a bad request,
+  // and an unknown artifact id is the same 404 as any other Studio read.
+  const stale = await page.request.get(
+    `${origin}/api/studio/outputs/${HANDOFF_OUTPUT_ID}/export?digest=${"a".repeat(64)}`,
+  );
+  expect(stale.status()).toBe(409);
+  const missingDigest = await page.request.get(
+    `${origin}/api/studio/outputs/${HANDOFF_OUTPUT_ID}/export`,
+  );
+  expect(missingDigest.status()).toBe(400);
+  const unknown = await page.request.get(
+    `${origin}/api/studio/outputs/11111111-1111-4111-8111-111111111112/export?digest=${latest.contentDigest}`,
+  );
+  expect(unknown.status()).toBe(404);
 });
 
 /**

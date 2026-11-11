@@ -592,7 +592,7 @@ minio`, bucket `wukong-ci` created once) against that database. AI flag unset; t
    `MINIO_API_CORS_ALLOW_ORIGIN` includes this app origin so the composer attachment acceptance can
    PUT the presigned upload from the browser;
 5. ran the authenticated acceptance spec (`STUDIO_BROWSER_ACCEPTANCE=1`, production build):
-   **8 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
+   **9 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
    execution trace, reload persistence, 390 px layout, threads list; the **supplier-intel
    finding** (template fill → send → quoted workbook fields/unknown list/no-write boundary,
    read-only with no button control, reload persistence, artifact listed on `/studio/outputs`);
@@ -604,7 +604,12 @@ minio`, bucket `wukong-ci` created once) against that database. AI flag unset; t
    listing review page renders the read-only Studio proposal banner from a saved artifact — field
    ids plus current/proposed values, an honest "not applied" note, no apply/save/publish control,
    dismiss removes the query parameter, and an unknown `studioOutput` id fails closed without a
-   banner or error); a route smoke over every Studio
+   banner or error); the **B2 export** path (the saved artifact's expanded card downloads real
+   JSON and PDF files through `GET /api/studio/outputs/<id>/export?digest=…`; the JSON packet
+   carries the schema version, artifact identity, `payloadSha256` equal to the previewed version
+   digest and an unsigned receipt because no signing key is configured, the PDF starts with
+   `%PDF-`, and a stale digest is 409, a missing digest is 400, and an unknown artifact is 404); a
+   route smoke over every Studio
    surface (`/studio`, threads, outputs, inbox, connections, owner settings) asserting the real
    heading renders instead of a server error, plus the A5 usage projection on settings; the
    **viewer authorization** boundary (shell "New conversation" and composer Send disabled with the
@@ -620,7 +625,8 @@ Post-run evidence in the disposable database: 3 threads with their user+assistan
 messages), 3 `succeeded` runs, one source asset stored in the local bucket and finalized into the
 operator message's `attachmentAssetIds`, one rotated-then-revoked hosted MCP token with
 `studio.mcp.call` ledger/audit rows, one saved `copy_proposal` artifact read (never written) by the
-listing banner, and audit events `studio.thread.created`, `studio.message.received`,
+listing banner and exported as JSON and PDF from that same version digest (response-only; no new
+rows), and audit events `studio.thread.created`, `studio.message.received`,
 `studio.run.completed`. Rollback was
 also rehearsed (`UPDATE studio_workspace_settings SET enabled=false`) and returned the workspace to
 disabled before dropping the database. The exact commands are the A2 activation commands above; only

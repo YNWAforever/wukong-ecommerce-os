@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
 /**
@@ -21,10 +22,12 @@ const { hash } = requireFromWeb("@node-rs/argon2");
  * Not imported by the app; run once against a disposable local (or the CI
  * job's migrated) `wukong` database, then throw it away. Repeating it is safe:
  * the workspace, user, membership and Studio-settings rows are upserted, and
- * only the invite-eligibility and credential rows are replaced. It never
- * deletes the workspace, because the Studio message/run tables are append-only
- * by trigger and a delete cascade from a previous run would raise. Prints ids
- * only (never the password or its hash).
+ * only the invite-eligibility and credential rows are replaced. The read-only
+ * handoff artifact's version is append-only by trigger, so it is inserted once
+ * and never rewritten — recreate the disposable database after changing that
+ * fixture. It never deletes the workspace, because the Studio message/run
+ * tables are append-only by trigger and a delete cascade from a previous run
+ * would raise. Prints ids only (never the password or its hash).
  *
  * Connection precedence: `BROWSER_E2E_DATABASE_ADMIN_URL` (local convention),
  * then `DATABASE_ADMIN_URL` (the CI job already sets this), then the disposable
@@ -89,6 +92,23 @@ const HANDOFF_PAYLOAD = {
   limitations: ["Synthetic acceptance artifact; review before applying."],
   asOf: "2026-11-11T00:00:00.000Z",
 };
+/**
+ * The export route re-hashes the persisted payload and refuses a mismatch, so
+ * the seeded version must carry the digest the app actually computes. This is
+ * the same sorted-keys canonicalisation as `lib/studio/output-service.ts`
+ * (the seed cannot import the TypeScript module).
+ */
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const keys = Object.keys(value).sort();
+  return `{${keys
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+    .join(",")}}`;
+}
+const HANDOFF_CONTENT_DIGEST = createHash("sha256")
+  .update(canonicalJson(HANDOFF_PAYLOAD))
+  .digest("hex");
 const SUPPLIER_RAW_ROW = {
   supplier: "Demo Supplier Ltd",
   brand: "Chateau Demo",
@@ -290,12 +310,9 @@ try {
       INSERT INTO studio_output_versions (id, workspace_id, output_id, revision, payload, content_digest, as_of, scope, created_by)
       VALUES (
         ${HANDOFF_VERSION_ID}, ${WORKSPACE_ID}, ${HANDOFF_OUTPUT_ID}, 1,
-        ${sql.json(HANDOFF_PAYLOAD)}, ${sha256("d")}, now(), ${sql.json({})}, ${USER_ID}
+        ${sql.json(HANDOFF_PAYLOAD)}, ${HANDOFF_CONTENT_DIGEST}, now(), ${sql.json({})}, ${USER_ID}
       )
-      ON CONFLICT (workspace_id, id) DO UPDATE SET
-        payload = excluded.payload,
-        content_digest = excluded.content_digest,
-        as_of = excluded.as_of
+      ON CONFLICT (workspace_id, id) DO NOTHING
     `;
   });
   console.log(
