@@ -59,6 +59,36 @@ const SUPPLIER_VERSION_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a02";
 const SUPPLIER_CONNECTION_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a03";
 const SUPPLIER_IMPORT_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a04";
 const SUPPLIER_PRODUCT_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a05";
+/**
+ * Fixed read-only copy-proposal artifact for the B2 handoff acceptance. The
+ * payload names the supplier fixture listing, so `/listings/<id>?studioOutput=`
+ * resolves the banner exactly as a real `copy_proposal` output would.
+ */
+export const STUDIO_BROWSER_ACCEPTANCE_HANDOFF_OUTPUT_ID =
+  "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a06";
+const HANDOFF_OUTPUT_ID = STUDIO_BROWSER_ACCEPTANCE_HANDOFF_OUTPUT_ID;
+const HANDOFF_VERSION_ID = "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a07";
+const HANDOFF_PAYLOAD = {
+  listingId: SUPPLIER_LISTING_ID,
+  activeVersionId: SUPPLIER_VERSION_ID,
+  activeVersionSequence: 1,
+  fields: [
+    {
+      field: "title.en",
+      current: null,
+      proposed: "Chateau Demo 2020 acceptance proposal",
+      evidenceRefs: [],
+    },
+    {
+      field: "description.en",
+      current: "Original acceptance description",
+      proposed: "A fuller acceptance description proposed by Studio.",
+      evidenceRefs: [],
+    },
+  ],
+  limitations: ["Synthetic acceptance artifact; review before applying."],
+  asOf: "2026-11-11T00:00:00.000Z",
+};
 const SUPPLIER_RAW_ROW = {
   supplier: "Demo Supplier Ltd",
   brand: "Chateau Demo",
@@ -242,6 +272,31 @@ try {
         origin = excluded.origin,
         source_import_id = excluded.source_import_id
     `;
+
+    // B2 handoff fixture: one saved copy_proposal artifact and its latest
+    // version, so the listing review page can resolve the read-only banner.
+    await tx`
+      INSERT INTO studio_outputs (id, workspace_id, kind, title, status, current_version, created_by)
+      VALUES (
+        ${HANDOFF_OUTPUT_ID}, ${WORKSPACE_ID}, 'copy_proposal',
+        'Copy proposal acceptance', 'saved', 1, ${USER_ID}
+      )
+      ON CONFLICT (workspace_id, id) DO UPDATE SET
+        title = excluded.title,
+        status = excluded.status,
+        current_version = excluded.current_version
+    `;
+    await tx`
+      INSERT INTO studio_output_versions (id, workspace_id, output_id, revision, payload, content_digest, as_of, scope, created_by)
+      VALUES (
+        ${HANDOFF_VERSION_ID}, ${WORKSPACE_ID}, ${HANDOFF_OUTPUT_ID}, 1,
+        ${sql.json(HANDOFF_PAYLOAD)}, ${sha256("d")}, now(), ${sql.json({})}, ${USER_ID}
+      )
+      ON CONFLICT (workspace_id, id) DO UPDATE SET
+        payload = excluded.payload,
+        content_digest = excluded.content_digest,
+        as_of = excluded.as_of
+    `;
   });
   console.log(
     JSON.stringify({
@@ -253,6 +308,7 @@ try {
       viewerEmail: VIEWER_EMAIL,
       studioEnabled: true,
       supplierListingId: SUPPLIER_LISTING_ID,
+      handoffOutputId: HANDOFF_OUTPUT_ID,
     }),
   );
 } finally {
