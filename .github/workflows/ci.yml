@@ -248,6 +248,9 @@ jobs:
           AUTH_EMAIL_FROM: ci@example.com
           AUTH_SMTP_URL: smtp://127.0.0.1:1026
           CONVERSATION_STUDIO_ENABLED: "true"
+          # Hosted MCP acceptance: the owner mints a token and a JSON-RPC
+          # client calls read tools over /api/mcp (quota/rotate/revoke).
+          STUDIO_MCP_SERVER_ENABLED: "true"
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:49300
           STUDIO_BROWSER_ACCEPTANCE: "1"
         run: |

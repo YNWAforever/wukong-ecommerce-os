@@ -584,10 +584,11 @@ database** (never production, all local):
 3. seeded a workspace, owner user/credential, a second **viewer** member for the authorization
    acceptance, invite-eligibility rows and an enabled `studio_workspace_settings` row with
    `tests/e2e/studio-browser-acceptance-seed.mjs`;
-4. built the web production bundle and started it with `CONVERSATION_STUDIO_ENABLED=true`
-   (AI/MCP flags unset) against that database;
+4. built the web production bundle and started it with `CONVERSATION_STUDIO_ENABLED=true` and
+   `STUDIO_MCP_SERVER_ENABLED=true` (AI flag unset; the hosted MCP flag is on only so the token
+   acceptance can call `/api/mcp`) against that database;
 5. ran the authenticated acceptance spec (`STUDIO_BROWSER_ACCEPTANCE=1`, production build):
-   **5 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
+   **6 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
    execution trace, reload persistence, 390 px layout, threads list; the **supplier-intel
    finding** (template fill → send → quoted workbook fields/unknown list/no-write boundary,
    read-only with no button control, reload persistence, artifact listed on `/studio/outputs`);
@@ -595,13 +596,17 @@ database** (never production, all local):
    owner settings) asserting the real heading renders instead of a server error, plus the A5
    usage projection on settings; the **viewer authorization** boundary (shell "New
    conversation" and composer Send disabled with the honest role note, every read surface still
-   rendering, `/studio/settings` rendering the not-found boundary with no admin content); and the
+   rendering, `/studio/settings` rendering the not-found boundary with no admin content); the
    **A1 settings write path** (owner saves a budget and one allowed skill through
    `PATCH /api/studio/settings`, sees the server readback notice, a fresh reload shows the
-   canonicalised saved values, then the fixture values are restored).
+   canonicalised saved values, then the fixture values are restored); and the **B4 hosted MCP**
+   path (owner mints a read token in settings, a JSON-RPC client calls `initialize`/`tools/list`/
+   `tools/call` over `POST /api/mcp`, the 3rd call in the minute hits the 2/min quota, rotation
+   invalidates the old plaintext immediately, and revoke answers 401).
 
 Post-run evidence in the disposable database: 2 threads with their user+assistant messages (4
-messages), 2 `succeeded` runs and audit events `studio.thread.created`, `studio.message.received`,
+messages), 2 `succeeded` runs, one rotated-then-revoked hosted MCP token with `studio.mcp.call`
+ledger/audit rows, and audit events `studio.thread.created`, `studio.message.received`,
 `studio.run.completed`. Rollback was
 also rehearsed (`UPDATE studio_workspace_settings SET enabled=false`) and returned the workspace to
 disabled before dropping the database. The exact commands are the A2 activation commands above; only

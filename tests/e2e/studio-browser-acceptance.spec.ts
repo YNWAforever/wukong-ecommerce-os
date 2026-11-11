@@ -377,3 +377,168 @@ test("flags-on studio: the owner saves workspace settings and reads them back", 
   await expect(budget).toHaveValue("");
   await expect(gapSkill).not.toBeChecked();
 });
+
+/**
+ * B4 hosted-MCP acceptance: the owner mints a workspace token in the admin
+ * settings UI, a real MCP client calls the reviewed read tools over
+ * `POST /api/mcp` with that token, the per-minute quota rejects the next call,
+ * rotation invalidates the old plaintext, and revoke closes the endpoint.
+ *
+ * Requires `STUDIO_MCP_SERVER_ENABLED=true` on the app under test (the CI step
+ * and the local runbook set it). Everything stays read-only: dispatch tools are
+ * never advertised and the token is only ever held in the test process.
+ */
+test("flags-on studio: hosted MCP token is quota-limited, rotatable and revocable", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(240_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  const listingId = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a01";
+  const PROTOCOL_VERSION = "2026-07-28";
+  await signIn(page, origin);
+
+  async function mcp(token: string, body: unknown) {
+    const response = await page.request.post(`${origin}/api/mcp`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      data: body,
+    });
+    return { status: response.status(), body: await response.json() };
+  }
+
+  await page.goto("/studio/settings");
+  const tokens = page.locator(
+    'section[aria-labelledby="studio-settings-tokens"]',
+  );
+  await expect(tokens.getByText("API tokens", { exact: true })).toBeVisible();
+
+  // Unique label keeps reruns on a disposable database unambiguous.
+  const tokenLabel = `Acceptance MCP token ${Date.now()}`;
+
+  // Create a read-scoped token with the smallest honest per-minute quota.
+  await tokens.getByLabel("Label", { exact: true }).fill(tokenLabel);
+  await tokens
+    .getByLabel("Calls per minute (1–600)", { exact: true })
+    .fill("2");
+  await tokens
+    .getByRole("button", { name: "Create token", exact: true })
+    .click();
+  const plaintext = tokens.locator("code").first();
+  await expect(plaintext).toBeVisible({ timeout: 30_000 });
+  const firstToken = (await plaintext.textContent())?.trim() ?? "";
+  expect(firstToken.startsWith("wuk_")).toBe(true);
+
+  // A real JSON-RPC client: initialize, list, then call reviewed read tools.
+  const init = await mcp(firstToken, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: PROTOCOL_VERSION,
+      clientInfo: { name: "studio-acceptance", version: "1.0.0" },
+    },
+  });
+  expect(init.status).toBe(200);
+  expect(init.body.result.protocolVersion).toBe(PROTOCOL_VERSION);
+  expect(init.body.result.serverInfo.name).toBe("wukong-eommerce-studio");
+
+  const list = await mcp(firstToken, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/list",
+    params: {},
+  });
+  const names: string[] = list.body.result.tools.map(
+    (tool: { name: string }) => tool.name,
+  );
+  expect(names).toContain("catalog.get");
+  expect(names).toContain("catalog.search");
+  // Dispatch and propose require a scope this token does not have.
+  expect(names).not.toContain("listing.create_draft");
+  expect(names).not.toContain("listing.propose_copy");
+  for (const tool of list.body.result.tools as Array<{
+    description: string;
+  }>) {
+    expect(tool.description).toContain("never writes, approves or publishes");
+  }
+
+  const detail = await mcp(firstToken, {
+    jsonrpc: "2.0",
+    id: 3,
+    method: "tools/call",
+    params: { name: "catalog.get", arguments: { listingId } },
+  });
+  expect(detail.body.result.isError).toBeFalsy();
+  const detailText = detail.body.result.content[0].text as string;
+  expect(detailText).toContain(listingId);
+  expect(detailText).not.toContain(firstToken);
+
+  const search = await mcp(firstToken, {
+    jsonrpc: "2.0",
+    id: 4,
+    method: "tools/call",
+    params: { name: "catalog.search", arguments: { query: "Demo" } },
+  });
+  expect(search.body.result.isError).toBeFalsy();
+
+  // The third tool call in the minute exceeds quota=2; the server says so.
+  const limited = await mcp(firstToken, {
+    jsonrpc: "2.0",
+    id: 5,
+    method: "tools/call",
+    params: { name: "catalog.get", arguments: { listingId } },
+  });
+  expect(limited.status).toBe(200);
+  expect(limited.body.error.code).toBe(-32029);
+
+  // The list never reveals the plaintext again, even after a fresh render.
+  await page.reload();
+  await expect(tokens.getByText(tokenLabel)).toBeVisible();
+  await expect(tokens.locator("code").filter({ hasText: "wuk_" })).toHaveCount(
+    0,
+  );
+
+  // Rotate through the UI: the old plaintext must stop working immediately.
+  const row = tokens.locator("tbody tr").first();
+  await row.getByRole("button", { name: "Rotate", exact: true }).click();
+  await row
+    .getByRole("button", { name: "Confirm rotate", exact: true })
+    .click();
+  await expect(tokens.locator("code").first()).toContainText("wuk_");
+  const secondToken =
+    (await tokens.locator("code").first().textContent())?.trim() ?? "";
+  expect(secondToken).not.toBe(firstToken);
+  expect(secondToken.startsWith("wuk_")).toBe(true);
+
+  const oldAfterRotate = await mcp(firstToken, {
+    jsonrpc: "2.0",
+    id: 6,
+    method: "tools/list",
+    params: {},
+  });
+  expect(oldAfterRotate.status).toBe(401);
+  const newAfterRotate = await mcp(secondToken, {
+    jsonrpc: "2.0",
+    id: 7,
+    method: "tools/list",
+    params: {},
+  });
+  expect(newAfterRotate.status).toBe(200);
+
+  // Revoke the replacement; the endpoint answers 401 from then on.
+  const activeRow = tokens.locator("tbody tr").first();
+  await activeRow.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(activeRow.getByText("Revoked", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  const revokedCall = await mcp(secondToken, {
+    jsonrpc: "2.0",
+    id: 8,
+    method: "tools/list",
+    params: {},
+  });
+  expect(revokedCall.status).toBe(401);
+});
