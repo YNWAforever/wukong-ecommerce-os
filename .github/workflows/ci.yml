@@ -10,7 +10,10 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Pinned despite `ubuntu-latest`: Playwright 1.55 does not support Chromium
+    # on ubuntu26.04, which `ubuntu-latest` now resolves to, so install fails
+    # before any test runs. Bump both together (Playwright + this label).
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
       postgres:
