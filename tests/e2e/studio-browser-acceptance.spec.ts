@@ -307,6 +307,130 @@ test("flags-on studio: composer attachment uploads and persists with the turn", 
 });
 
 /**
+ * Dispatch acceptance: the only Studio path that creates canonical listing
+ * data. An uploaded source must make the draft dispatch ready; the operator
+ * reviews and confirms explicitly, the created draft reports the honest queue
+ * outcome, and replaying the same asset set returns the same listing instead of
+ * creating a duplicate.
+ */
+test("flags-on studio: confirmed draft-from-sources dispatch creates one listing", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  await signIn(page, origin);
+  await page.goto("/studio");
+  await expect(page.getByText("Start a conversation")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // One real uploaded source asset, exactly as B1 produces it.
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "dispatch-source.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    ),
+  });
+  await expect(
+    page.locator('li[data-state="uploaded"]', {
+      hasText: "dispatch-source.png",
+    }),
+  ).toContainText("dispatch-source.png", { timeout: 60_000 });
+
+  // Fill the listing-draft template (it never sends), then note the intent.
+  const templateCard = page
+    .locator('[data-interactive="true"]')
+    .filter({ hasText: "Listing draft" })
+    .first();
+  await templateCard.getByRole("button", { name: "Fill the composer" }).click();
+  const composer = page.getByRole("textbox", { name: "Message" });
+  const intent = `${await composer.inputValue()}acceptance dispatch source`;
+  await composer.fill(intent);
+  await expect(
+    page.getByText("listing.draft_from_sources").first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.waitForURL(/\/studio\/t\/[0-9a-f-]{36}$/, { timeout: 90_000 });
+  const threadId = new URL(page.url()).pathname.split("/").pop()!;
+
+  // The deterministic turn prepares a dispatch; nothing has been created yet.
+  const dispatchCard = page.getByRole("region", {
+    name: "Create listing draft",
+  });
+  await expect(dispatchCard).toBeVisible({ timeout: 60_000 });
+  await expect(dispatchCard).toContainText("1 source asset(s)");
+  const before = (await (
+    await page.request.get(`${origin}/api/studio/threads/${threadId}`)
+  ).json()) as {
+    messages: Array<{ role: string; content: Record<string, unknown> }>;
+  };
+  const operatorMessage = before.messages.find((m) => m.role === "operator");
+  const assetIds = operatorMessage?.content.attachmentAssetIds as
+    string[] | undefined;
+  expect(assetIds).toHaveLength(1);
+
+  // Explicit confirmation is required; the button opens a review panel.
+  await dispatchCard
+    .getByRole("button", { name: "Review and confirm", exact: true })
+    .click();
+  const confirmPanel = dispatchCard.getByRole("group", {
+    name: "Confirm create draft",
+  });
+  await expect(confirmPanel).toBeVisible();
+  await confirmPanel
+    .getByRole("button", { name: "Confirm create draft", exact: true })
+    .click();
+
+  await expect(dispatchCard).toContainText("Listing draft created.", {
+    timeout: 60_000,
+  });
+  await expect(dispatchCard).toContainText(
+    /Queued into the existing listing pipeline|The draft exists, but processing has not started/,
+  );
+  const openListing = dispatchCard.getByRole("link", {
+    name: "Open the listing",
+    exact: true,
+  });
+  const listingHref = await openListing.getAttribute("href");
+  expect(listingHref).toMatch(/^\/listings\/[0-9a-f-]{36}$/);
+  const listingId = listingHref!.split("/").pop()!;
+
+  // The canonical listing really exists and was created from this turn.
+  const listing = await page.request.get(`${origin}/api/listings/${listingId}`);
+  expect(listing.ok()).toBe(true);
+
+  // Replaying the same source set returns the same listing (no duplicate).
+  const replay = await page.request.post(
+    `${origin}/api/studio/dispatch/listing-draft`,
+    {
+      data: {
+        threadId,
+        assetIds,
+        skillKey: "listing.draft_from_sources",
+        confirmed: true,
+      },
+    },
+  );
+  expect(replay.ok()).toBe(true);
+  const replayBody = (await replay.json()) as {
+    listingId: string;
+    replayed: boolean;
+  };
+  expect(replayBody.listingId).toBe(listingId);
+  expect(replayBody.replayed).toBe(true);
+
+  // The created draft opens in the existing review screen.
+  await page.goto(`/listings/${listingId}`);
+  await expect(page.getByRole("heading").first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByText(/server error|This page couldn/)).toHaveCount(0);
+});
+
+/**
  * B2 handoff acceptance: a saved copy_proposal artifact renders the read-only
  * banner on the existing listing review page, is dismissible, and fails closed
  * for a foreign or unknown `studioOutput` id. The banner must never apply the
