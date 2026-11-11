@@ -587,15 +587,18 @@ database** (never production, all local):
 4. built the web production bundle and started it with `CONVERSATION_STUDIO_ENABLED=true`
    (AI/MCP flags unset) against that database;
 5. ran the authenticated acceptance spec (`STUDIO_BROWSER_ACCEPTANCE=1`, production build):
-   **4 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
+   **5 passed** — sign-in, Studio home, deterministic records answer, checks/follow-ups,
    execution trace, reload persistence, 390 px layout, threads list; the **supplier-intel
    finding** (template fill → send → quoted workbook fields/unknown list/no-write boundary,
    read-only with no button control, reload persistence, artifact listed on `/studio/outputs`);
    a route smoke over every Studio surface (`/studio`, threads, outputs, inbox, connections,
    owner settings) asserting the real heading renders instead of a server error, plus the A5
-   usage projection on settings; and the **viewer authorization** boundary (shell "New
+   usage projection on settings; the **viewer authorization** boundary (shell "New
    conversation" and composer Send disabled with the honest role note, every read surface still
-   rendering, `/studio/settings` rendering the not-found boundary with no admin content).
+   rendering, `/studio/settings` rendering the not-found boundary with no admin content); and the
+   **A1 settings write path** (owner saves a budget and one allowed skill through
+   `PATCH /api/studio/settings`, sees the server readback notice, a fresh reload shows the
+   canonicalised saved values, then the fixture values are restored).
 
 Post-run evidence in the disposable database: 2 threads with their user+assistant messages (4
 messages), 2 `succeeded` runs and audit events `studio.thread.created`, `studio.message.received`,

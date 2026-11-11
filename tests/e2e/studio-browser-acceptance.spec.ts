@@ -316,3 +316,64 @@ test("flags-on studio: a viewer is read-only and admin settings stay hidden", as
     page.getByText("Hosted MCP tokens", { exact: false }),
   ).toHaveCount(0);
 });
+
+/**
+ * A1 activation-control acceptance: the owner settings form saves through the
+ * real `PATCH /api/studio/settings` route and the page then reads the saved
+ * values back from the database. Toggling enabled is deliberately avoided
+ * (other specs depend on the workspace staying enabled and the CLI activation
+ * path is dry-run documented); a budget value and one allowed skill prove the
+ * write, validation and readback path. The fixture values are restored before
+ * the test ends.
+ */
+test("flags-on studio: the owner saves workspace settings and reads them back", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  await signIn(page, origin);
+
+  const budget = page.getByLabel("Monthly model budget (USD)");
+  const gapSkill = page.getByRole("checkbox", {
+    name: /Review approval and export gaps \(catalog\.gap_review\)/,
+  });
+  const saveButton = page.getByRole("button", {
+    name: "Save settings",
+    exact: true,
+  });
+
+  await page.goto("/studio/settings");
+  await expect(budget).toHaveValue("");
+  await expect(gapSkill).not.toBeChecked();
+
+  // Write: budget + one allowed skill, then wait for the server readback notice.
+  await budget.fill("42.5");
+  await gapSkill.check();
+  await saveButton.click();
+  await expect(
+    page.getByText("Saved; the values below are read back from the server.", {
+      exact: false,
+    }),
+  ).toBeVisible({ timeout: 30_000 });
+
+  // Persistence is proven by a fresh server render, not by the client state.
+  // The server readback canonicalises money to 6 decimals, which is itself
+  // evidence that the value came from the database rather than the draft.
+  await page.reload();
+  await expect(budget).toHaveValue("42.500000", { timeout: 30_000 });
+  await expect(gapSkill).toBeChecked();
+
+  // Restore the seeded shape so this spec leaves the workspace as it found it.
+  await budget.fill("");
+  await gapSkill.uncheck();
+  await saveButton.click();
+  await expect(
+    page.getByText("Saved; the values below are read back from the server.", {
+      exact: false,
+    }),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+  await expect(budget).toHaveValue("");
+  await expect(gapSkill).not.toBeChecked();
+});
