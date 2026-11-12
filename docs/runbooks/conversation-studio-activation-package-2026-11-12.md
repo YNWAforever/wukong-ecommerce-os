@@ -1,8 +1,10 @@
 # Conversation Studio — production activation package (2026-11-12)
 
-Status: **prepared, not executed.** Every Studio flag is off in production, no live model call,
-external MCP connection, SHOPLINE write or workspace activation has been performed. This package is
-the operator handoff for the remaining A2/A3/C3 work; it changes nothing by itself.
+Status: **prepared, not executed for production.** Every Studio flag is off in production, no live
+model call, external MCP connection, SHOPLINE write or workspace activation has been performed. A
+read-only preview-branch dry run has been performed (section 8): it is blocked because the only
+surviving non-primary Neon branch predates the Studio migrations. This package is the operator
+handoff for the remaining A2/A3/C3 work; it changes nothing by itself.
 
 ## 1. Current production posture
 
@@ -126,7 +128,51 @@ Notes for the production window:
 - No production database, credential or flag was used. The authenticated production acceptance
   (step 5 of the sequence) is still unperformed and remains part of the A2 decision.
 
-## 8. Evidence index
+## 8. Preview-branch dry-run record (2026-11-12)
+
+Authorization for this round was explicitly **read-only preflight** on a preview/branch database — no
+migrations, no settings writes, no deployment flags, no model calls. The dry run therefore verifies
+readiness reporting against a real remote branch, not the activation itself.
+
+Target: the Neon project `weathered-lake-51694428`, existing non-primary branch
+`codex/recovery-rehearsal-20260916` (`br-proud-smoke-atewisu1`, created 2026-09-16, endpoint
+`ep-damp-bar-atgdojx6.c-9.us-east-1.aws.neon.tech`, database `neondb`). The admin connection URL was
+read through the Neon CLI into `DATABASE_ADMIN_URL` only; it was never printed, committed or reused
+against the production endpoint.
+
+Result: **`blocked`, exit 2** — the branch is a September snapshot that predates the Studio
+migrations:
+
+- missing tables: `studio_workspace_settings`, `studio_threads`, `studio_messages`, `studio_runs`,
+  `studio_run_events`, `studio_outputs`, `studio_output_versions`, `studio_budget_reservations`,
+  `studio_mcp_connections`, `studio_mcp_calls`, `studio_api_tokens`
+- missing functions: `studio_resolve_api_token`, `studio_resolve_api_token_limits`
+- missing role: `wukong_mcp_token_lookup` (created by migration `0055`); `wukong_app` and
+  `wukong_image_lookup` are present and safe (no `SUPERUSER`/`BYPASSRLS`)
+
+So the branch needs the full replay-safe `db:migrate` before it can rehearse activation; running it
+was not authorised this round.
+
+### Preview isolation finding (needs an operator decision)
+
+The preview and production Vercel environments resolve to the **same Neon endpoint** (`neondb` on the
+project's `main` branch): the preview `DATABASE_URL` (`Preview, Development` scope) has the production
+endpoint, and the production `POSTGRES_URL`/`DATABASE_URL_UNPOOLED` resolve to that same endpoint.
+The only branch-scoped preview `DATABASE_URL` points at `codex/opak-isolated-staging-20261002`, a
+branch that **no longer exists** in the Neon project.
+
+Consequences:
+
+- A preview deployment is **not** a safe rehearsal target today; exercising activation or mutating
+  acceptance there would touch production data.
+- Recommendation before the next A2 attempt: create a dedicated Neon branch (per rehearsal, or a
+  preview branch) and set the preview-scoped `DATABASE_URL` to it, then run `db:migrate` and the
+  preflight there first. That is a configuration change in the operator's control, and it also
+  protects future preview testing.
+- The read-only preflight itself is safe to point at any such branch; only `--confirm` mutations
+  need the production window.
+
+## 9. Evidence index
 
 - Runbook: [conversation-studio.md](./conversation-studio.md) (enablement, activation CLI with
   `--preflight`, observability, local acceptance reproduction, rollback).
