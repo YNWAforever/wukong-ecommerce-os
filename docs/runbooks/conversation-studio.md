@@ -69,8 +69,43 @@ Without a model the Studio is fully deterministic: records answers, gap reviews,
 merchant audit and copy-proposal _targets_ work; live analysis and copy proposals stay off with an
 honest "model required/not configured" notice.
 
-To enable live turns, an authorised operator sets the workspace AI columns (same strict
-all-or-none set the repository enforces):
+To enable live turns, an authorised owner/admin uses the audited admin surface — **not** hand-written
+SQL — once Studio is enabled (A2) and the deterministic acceptance has passed:
+
+1. Sign in and open `/studio/settings`, then edit the workspace card: choose the provider/model from
+   the reviewed registry, enter the matching pricing version and token limits, a monthly budget and a
+   run ceiling, then save. The server validates the strict all-or-none set, refuses unreviewed pairs
+   and budget bounds, reads the row back, and writes a `studio.settings.updated` audit event with the
+   before/after summary (the same action the activation CLI writes during bootstrap).
+2. Set `CONVERSATION_STUDIO_AI_ENABLED=true` in the deployment environment and redeploy. Leave it off
+   until the workspace columns are configured; the turn fails closed otherwise.
+
+The API equivalent (all fields are required, `ai` is optional/nullable):
+
+```json
+PATCH /api/studio/settings
+{
+  "enabled": true,
+  "allowedSkills": [],
+  "monthlyBudgetUsd": "5.000000",
+  "runCeilingUsd": "1.000000",
+  "retentionDays": null,
+  "defaultHome": false,
+  "ai": {
+    "provider": "opencode-go",
+    "model": "deepseek-v4.1-flash",
+    "pricingVersion": "<reviewed-version>",
+    "maxInputTokens": 1048576,
+    "inputUsdPerMillion": "0.3000",
+    "outputUsdPerMillion": "1.2000",
+    "maxOutputTokens": 4096
+  }
+}
+```
+
+Fallback only for a window where the admin surface is still unreachable (Studio disabled): the same
+columns can be set with SQL, but that path bypasses the strict validation and the audit event, so it
+must be followed by a normal admin save or recorded manually in the activation log:
 
 ```sql
 update studio_workspace_settings set
