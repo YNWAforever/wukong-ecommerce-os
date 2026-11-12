@@ -124,6 +124,34 @@ test("builds workspace packages before running migrations", () => {
   );
 });
 
+test("proves migrations apply and replay as a non-superuser owner before the main migration path", () => {
+  const gateName = "- name: Prove migrations replay as a non-superuser owner";
+  const gate = workflow
+    .split(gateName)[1]
+    ?.split("- name: Apply migrations")[0];
+
+  assert.ok(gate, "Neon has no superuser; CI must replay migrations as one");
+  assert.match(gate, /CREATE ROLE wukong_migration_ci LOGIN[^\n]*NOSUPERUSER/);
+  assert.match(gate, /CREATEROLE/);
+  assert.match(
+    gate,
+    /CREATE DATABASE wukong_migration_ci OWNER wukong_migration_ci/,
+  );
+  assert.match(
+    gate,
+    /DATABASE_URL="\$MIGRATION_DATABASE_URL" DATABASE_ADMIN_URL="\$MIGRATION_DATABASE_URL" pnpm --filter @wukong\/db db:migrate/,
+  );
+  assert.equal(
+    (gate.match(/db:migrate/g) ?? []).length,
+    2,
+    "the gate must apply and then immediately replay the migrations",
+  );
+  assert.ok(
+    workflow.indexOf(gateName) < workflow.indexOf("- name: Apply migrations"),
+    "the non-superuser gate must create the lookup roles before the superuser path",
+  );
+});
+
 test("builds dependency packages before workspace verification tasks", () => {
   for (const task of ["lint", "typecheck", "test"]) {
     assert.deepEqual(
