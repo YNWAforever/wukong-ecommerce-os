@@ -88,6 +88,13 @@ off for the first activation and needs its own approval (C3).
 | C3               | **External MCP**: which provider/endpoint is approved, who owns its credential, and `STUDIO_MCP_ENCRYPTION_KEY`                                           | external connection approval + transport flag               | Registry stays read-only; no external connection exists                      |
 | P3.2 / B5.2 / C5 | scheduled-run host+skills+cadences+notifications, streaming/long-turn presentation, connector sequence                                                    | next phase implementation                                   | No scheduled runs, streaming or new connectors                               |
 
+On 2026-11-13 the operator approved the production window (A2), selected OpenCode Go /
+`deepseek-v4.1-flash` (A3), and asked for a provider evaluation checklist (C3). Execution sheets:
+[live-model onboarding](./conversation-studio-live-model-onboarding-2026-11-12.md) and
+[external MCP provider evaluation](./conversation-studio-external-mcp-provider-evaluation-2026-11-12.md).
+A2 execution is waiting on the production admin URL, which the operator will place in a gitignored
+`.env.production.local`; no production mutation has happened yet.
+
 ## 5. Rollback
 
 - **Web**: set the Studio flags off and redeploy (or promote the previous production deployment).
