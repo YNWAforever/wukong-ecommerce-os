@@ -33,9 +33,11 @@ flag, env var or provider call is involved.
 
 The current operator handoff — posture, exact activation sequence, required decisions and rollback —
 is [conversation-studio-activation-package-2026-11-12.md](./conversation-studio-activation-package-2026-11-12.md).
-As of 2026-11-13 the operator approved the production window (full deterministic activation); it has
-**not** been executed because the production admin URL has not been provided, and nothing is activated
-in production yet. Companion sheets: [live-model onboarding](./conversation-studio-live-model-onboarding-2026-11-12.md)
+As of 2026-11-13 the deterministic activation is **live on production** (section 10 of that package):
+migrations through `0057` applied, `ws_opak` enabled with one audited `studio.settings.updated` row,
+`CONVERSATION_STUDIO_ENABLED=true` deployed. Authenticated owner acceptance is pending, and
+`CONVERSATION_STUDIO_AI_ENABLED`, `STUDIO_MCP_SERVER_ENABLED`, `STUDIO_EXTERNAL_MCP_ENABLED` and
+`STUDIO_MCP_ENCRYPTION_KEY` remain off. Companion sheets: [live-model onboarding](./conversation-studio-live-model-onboarding-2026-11-12.md)
 (A3, OpenCode Go selected) and [external MCP provider evaluation](./conversation-studio-external-mcp-provider-evaluation-2026-11-12.md)
 (C3).
 

@@ -1,10 +1,15 @@
 # Conversation Studio — production activation package (2026-11-12)
 
-Status: **prepared, not executed for production.** Every Studio flag is off in production, no live
-model call, external MCP connection, SHOPLINE write or workspace activation has been performed. A
-read-only preview-branch dry run has been performed (section 8): it is blocked because the only
-surviving non-primary Neon branch predates the Studio migrations. This package is the operator
-handoff for the remaining A2/A3/C3 work; it changes nothing by itself.
+Status: **executed for production on 2026-11-13 — deterministic activation only.** The operator
+approved the A2 production window on 2026-11-13. The production admin URL was obtained through the
+already-authenticated Neon CLI for that approved window (never printed, committed or echoed) because
+the operator-supplied `.env.production.local` was not present. Migrations `0054`–`0057` were applied,
+`ws_opak` was enabled with one audited `studio.settings.updated` row, and
+`CONVERSATION_STUDIO_ENABLED=true` was added to production and redeployed (section 10). Every other
+Studio flag is off: `CONVERSATION_STUDIO_AI_ENABLED`, `STUDIO_MCP_SERVER_ENABLED`,
+`STUDIO_EXTERNAL_MCP_ENABLED` and `STUDIO_MCP_ENCRYPTION_KEY` remain unset, and no live model call,
+external MCP connection, SHOPLINE write or authenticated acceptance has happened. Sections 2–8 keep
+the prepared sequence and the rehearsal/dry-run evidence; section 10 is the dated production record.
 
 ## 1. Current production posture
 
@@ -92,8 +97,11 @@ On 2026-11-13 the operator approved the production window (A2), selected OpenCod
 `deepseek-v4.1-flash` (A3), and asked for a provider evaluation checklist (C3). Execution sheets:
 [live-model onboarding](./conversation-studio-live-model-onboarding-2026-11-12.md) and
 [external MCP provider evaluation](./conversation-studio-external-mcp-provider-evaluation-2026-11-12.md).
-A2 execution is waiting on the production admin URL, which the operator will place in a gitignored
-`.env.production.local`; no production mutation has happened yet.
+The approved A2 window was executed the same day: migrations applied, `ws_opak` enabled with an
+audited row, production flag deployed (`dpl_B54p7dNZPvs3MQGLpyRLUga4hagk`), section 10 records it.
+The admin URL was read through the authenticated Neon CLI for the window because `.env.production.local`
+was not present; it was never printed or committed. Authenticated owner acceptance (step 5) is the
+remaining A2 action.
 
 ## 5. Rollback
 
@@ -250,6 +258,41 @@ write, which is the fail-closed parsing the preflight/live guards rely on.
   #200 CI preflight step, #201 activation package, #202 local rehearsal, #203 preview dry run,
   #204 preflight role report, #205 SET-ROLE migration replay fix, #206 non-superuser CI replay gate,
   #207 audited activation write, #208 live-model runbook (audited admin surface), #209 assets decode
-  timeout, #210 preflight activation-history field, #211 A3/C3 execution sheets.
+  timeout, #210 preflight activation-history field, #211 A3/C3 execution sheets, #212 local
+  full-sequence rehearsal record.
 - Database-posture evidence: migration apply + immediate replay as the non-superuser Neon owner
-  (section 8), and the same sequence enforced on every CI run by the non-superuser replay gate.
+  (section 8), the same sequence enforced on every CI run by the non-superuser replay gate, and the
+  production activation record in section 10 (migrations `0054`–`0057`, one audited enable, production
+  flag deployment).
+
+## 10. Production activation record (2026-11-13)
+
+Authorization: the operator approved the **full deterministic activation** scope on 2026-11-13
+(migrations `0054`–`0057`, audited enable of the pilot workspace, `CONVERSATION_STUDIO_ENABLED=true`
+and redeploy, route verification). The admin URL was read through the already-authenticated Neon CLI
+into `DATABASE_ADMIN_URL` for the window only; it was never printed, committed or reused. A Neon
+snapshot branch `br-damp-star-atrov2jg` was created from `main` before the first migration as the
+pre-window rollback reference.
+
+| Step                                  | Observed result                                                                                                                                                                                                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read-only preflight before migrations | **`blocked`**, exit 2: 11 Studio tables missing, resolver functions missing, `wukong_mcp_token_lookup` missing; `wukong_app` present and safe; `ws_opak` exists with one `operator` member; `studioSettings:null`, `lastActivation:null` |
+| `db:migrate` against production       | exit 0, **60 migration files** applied/replayed idempotently, including `0054`–`0057`; no failure line                                                                                                                                   |
+| Preflight after migrations            | **`ready`**, exit 0: schema/roles/functions ok, settings absent, `lastActivation:null`                                                                                                                                                   |
+| Audited enable                        | `outcome:"ok"`, `enabled:true`, `audited:true`, actor `user_opak_operator` (role `operator`)                                                                                                                                             |
+| Audit readback                        | exactly one `studio.settings.updated`: `before.enabled:null` → `after.enabled:true`, `source:"studio-activation-cli"`, at `2026-11-12T20:21:02.212Z`; settings row `updated_by` set                                                      |
+| Function ownership after migrations   | `studio_resolve_api_token` and `studio_resolve_api_token_limits` owned by `wukong_mcp_token_lookup` (the SET-ROLE replay path works on the Neon owner)                                                                                   |
+| Production environment                | `CONVERSATION_STUDIO_ENABLED=true` added to Vercel Production (Encrypted)                                                                                                                                                                |
+| Production deployment                 | `dpl_B54p7dNZPvs3MQGLpyRLUga4hagk` **Ready**, aliased to `wukong-ecommerce-os.vercel.app`                                                                                                                                                |
+| Route smoke                           | `/signin` 200, `/studio` 307 (auth redirect), `/` 307, `/api/studio/settings` 401 (auth boundary), `/api/mcp` 405 (hosted MCP still off)                                                                                                 |
+| Flags intentionally left off/unset    | `CONVERSATION_STUDIO_AI_ENABLED`, `STUDIO_MCP_SERVER_ENABLED`, `STUDIO_EXTERNAL_MCP_ENABLED`, `STUDIO_MCP_ENCRYPTION_KEY`; no model call, no external MCP, no SHOPLINE write                                                             |
+
+Remaining A2 action: **authenticated owner acceptance** (step 5 above) — sign in as the pilot owner,
+open `/studio`, ask a deterministic records question, check the trace/evidence/limitations, reload to
+confirm persistence, open `/studio/outputs` and `/studio/settings`, confirm no model call and no
+write. Record ids/counts only, then append the outcome here.
+
+Rollback: `CONVERSATION_STUDIO_ENABLED` off and redeploy (or promote the previous production
+deployment); `pnpm studio:activate -- --workspace-id ws_opak --owner-email <owner> --disable
+--allow-remote --confirm` (audited) to disable the workspace row. Migrations are additive and stay;
+the pre-window snapshot branch is `br-damp-star-atrov2jg` if a database restore is ever needed.
