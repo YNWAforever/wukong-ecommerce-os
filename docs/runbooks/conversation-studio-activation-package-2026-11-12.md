@@ -71,6 +71,12 @@ Hosted MCP (`STUDIO_MCP_SERVER_ENABLED=true`) is a separate, later decision: it 
 `wuk_…` bearer tokens and should be enabled only after the deterministic Studio acceptance and a token
 ownership decision.
 
+Live model (**A3**) is likewise a follow-on step, not part of the first activation: keep
+`CONVERSATION_STUDIO_AI_ENABLED` off, configure the workspace model, pricing and budget through the
+audited admin settings surface (see `conversation-studio.md`), then flip the flag, redeploy and rerun
+the acceptance with a model-backed turn. External MCP transport (`STUDIO_EXTERNAL_MCP_ENABLED`) stays
+off for the first activation and needs its own approval (C3).
+
 ## 4. Decisions the operator must supply
 
 | ID               | Decision                                                                                                                                                  | Needed to proceed                                           | Consequence if withheld                                                      |
@@ -210,4 +216,8 @@ flag points at it, so nothing is activated for users.
 - Release record: [conversation-studio-release-2026-11-09.md](./conversation-studio-release-2026-11-09.md).
 - Recent merge chain (all PR CI green, main CI green): #193 hosted-MCP acceptance, #194 handoff,
   #195 attachments + CI fixes, #196 exports, #197 dispatch, #198 preflight, #199 role posture,
-  #200 CI preflight step.
+  #200 CI preflight step, #201 activation package, #202 local rehearsal, #203 preview dry run,
+  #204 preflight role report, #205 SET-ROLE migration replay fix, #206 non-superuser CI replay gate,
+  #207 audited activation write.
+- Database-posture evidence: migration apply + immediate replay as the non-superuser Neon owner
+  (section 8), and the same sequence enforced on every CI run by the non-superuser replay gate.
