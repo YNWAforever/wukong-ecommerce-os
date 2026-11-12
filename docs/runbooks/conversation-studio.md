@@ -31,6 +31,10 @@ flag, env var or provider call is involved.
 
 ## Enablement (both halves are required)
 
+The current operator handoff — posture, exact activation sequence, required decisions and rollback —
+is [conversation-studio-activation-package-2026-11-12.md](./conversation-studio-activation-package-2026-11-12.md).
+Nothing in it has been executed for production.
+
 1. Deployment flags (Vercel env; do not set values in git):
    - `CONVERSATION_STUDIO_ENABLED=true` — the feature exists at all.
    - `CONVERSATION_STUDIO_AI_ENABLED=true` — only when a reviewed live model is configured below.
