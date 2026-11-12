@@ -98,7 +98,35 @@ ownership decision.
 - Logs never contain prompts, model output, customer content, tokens or signed URLs.
 - Every domain mutation still writes an audit row; `audit:verify` remains a release gate.
 
-## 7. Evidence index
+## 7. Local rehearsal record (2026-11-12)
+
+The sequence above was rehearsed end-to-end against a **fresh disposable local database**
+(`wukong_activation_rehearsal` on the local Postgres, never a shared or production database), starting
+from an empty schema; the fixture owner row was created by the browser-acceptance seed so the rehearsal
+had a real user/workspace/membership to target.
+
+| Step                                   | Result                                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Preflight, before migrations           | `blocked` (exit 2): every Studio table and both resolver functions missing; identity checks skipped honestly |
+| Apply migrations `0054`–`0057`         | all applied; schema check then passed                                                                        |
+| Preflight, after migrations            | `blocked` (exit 2): schema and roles OK, `userExists`/`workspaceExists` false                                |
+| Seed a workspace/owner/membership      | —                                                                                                            |
+| Preflight, after seed                  | `ready` (exit 0): `schema.ok`, `roles.ok`, owner membership, settings `enabled:true`                         |
+| Dry-run plan (no `--confirm`)          | exit 0, printed the five steps and touched nothing                                                           |
+| `--disable --confirm` then `--confirm` | both exit 0 with readback; row went `enabled=false` → `enabled=true`                                         |
+
+Notes for the production window:
+
+- Database **roles are cluster-scoped**, not per-database. The local cluster already had `wukong_app`
+  and the two lookup roles, so their check passed even before the fresh database had migrations;
+  in production, create the runtime role per the local-development runbook before migrating.
+- The rehearsal used only localhost, so no `--allow-remote` was needed. Every non-localhost target
+  (including a preview branch) requires `--allow-remote`, and the live mutation also requires
+  `--confirm`.
+- No production database, credential or flag was used. The authenticated production acceptance
+  (step 5 of the sequence) is still unperformed and remains part of the A2 decision.
+
+## 8. Evidence index
 
 - Runbook: [conversation-studio.md](./conversation-studio.md) (enablement, activation CLI with
   `--preflight`, observability, local acceptance reproduction, rollback).
