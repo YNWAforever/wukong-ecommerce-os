@@ -346,9 +346,10 @@ migrated-empty reported `blocked` with the missing identity, the seeded workspac
 with an unchanged settings row, and temporarily making `wukong_app` `BYPASSRLS` turned the same
 check into `blocked` until the attribute was restored. CI now runs the same read-only preflight
 against the seeded flags-on acceptance database on every build, so schema or role-posture drift
-fails the build. This closes the runbook automation half of A2; the remaining step is the real
-preview/production dry run, which still needs the operator's database-access decision
-(`--allow-remote`, admin URL and the reviewed window).
+fails the build. This closes the runbook automation half of A2; the remaining step was the real
+preview/production dry run, which needed the operator's database-access decision (`--allow-remote`,
+admin URL and the reviewed window). That decision was given and the production window was executed on
+2026-11-13 (see below).
 
 ### Production activation package (2026-11-12)
 
@@ -388,3 +389,17 @@ auditable. Verified on a fresh local database and again on the Neon rehearsal br
 two audit rows, settings row and audit trail agree). The read-only preflight reports that last
 activation as `checks.lastActivation` (`{at, enabled, source}` or `null`) so the window starts from the
 known posture; verified against the rehearsal branch's disable row.
+
+### Production deterministic activation executed (2026-11-13)
+
+The operator approved the full deterministic window on 2026-11-13 and it was executed the same day:
+the production Neon database received migrations  054– 057 (60 files replayed idempotently, exit
+0), ws_opak was enabled with exactly one audited studio.settings.updated row (efore.enabled:null
+→ fter.enabled:true, source:"studio-activation-cli"), the resolver functions ended up owned by
+wukong_mcp_token_lookup, CONVERSATION_STUDIO_ENABLED=true was added to Vercel Production and
+redeployed as dpl_B54p7dNZPvs3MQGLpyRLUga4hagk (Ready, aliased to wukong-ecommerce-os.vercel.app).
+Route smoke: /signin 200, /studio 307, / 307, /api/studio/settings 401, /api/mcp 405.
+Authenticated owner acceptance is the remaining A2 action; CONVERSATION_STUDIO_AI_ENABLED,
+STUDIO_MCP_SERVER_ENABLED, STUDIO_EXTERNAL_MCP_ENABLED and STUDIO_MCP_ENCRYPTION_KEY remain off,
+so no model call or external MCP connection has happened. The dated record lives in section 10 of the
+activation package.
