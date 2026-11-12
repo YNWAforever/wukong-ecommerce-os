@@ -100,6 +100,17 @@ jobs:
           PGPASSWORD=wukong psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wukong_app') THEN CREATE ROLE wukong_app LOGIN PASSWORD 'wukong-app-local' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END \$\$;"
       - name: Build
         run: pnpm --filter @wukong/db... build
+      - name: Prove migrations replay as a non-superuser owner
+        # Production (Neon) has no superuser role, so migrations must apply and
+        # replay as a non-superuser database owner. This gate creates a fresh
+        # database owned by such a role, then runs migrations twice; it also
+        # lets that owner create the lookup roles first, matching production.
+        run: |
+          PGPASSWORD=wukong psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wukong_migration_ci') THEN CREATE ROLE wukong_migration_ci LOGIN PASSWORD 'wukong-migration-local' NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS INHERIT; END IF; END \$\$;"
+          PGPASSWORD=wukong psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE wukong_migration_ci OWNER wukong_migration_ci"
+          export MIGRATION_DATABASE_URL="postgres://wukong_migration_ci:wukong-migration-local@127.0.0.1:54329/wukong_migration_ci"
+          DATABASE_URL="$MIGRATION_DATABASE_URL" DATABASE_ADMIN_URL="$MIGRATION_DATABASE_URL" pnpm --filter @wukong/db db:migrate
+          DATABASE_URL="$MIGRATION_DATABASE_URL" DATABASE_ADMIN_URL="$MIGRATION_DATABASE_URL" pnpm --filter @wukong/db db:migrate
       - name: Apply migrations
         run: pnpm --filter @wukong/db db:migrate
       - name: Lint

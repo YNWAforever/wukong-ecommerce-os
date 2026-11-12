@@ -422,7 +422,9 @@ exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same datab
 migrations `0021`, `0055`, `0057`), so migrations apply and replay on hosts without a superuser — the
 Neon owner role — instead of requiring an object ownership transfer the admin cannot perform. The
 migration grants its admin a `SET` membership edge on the lookup roles once, and a regression test
-pins that the `ALTER ... OWNER TO` form never returns. The
+pins that the `ALTER ... OWNER TO` form never returns. CI applies and then immediately replays the
+migrations twice on a database owned by a non-superuser role (`wukong_migration_ci`), so the Neon
+posture is exercised continuously before the superuser release path. The
 same sequence is the A2 preview dry run: preflight first, then the plan, then the reviewed mutation
 — only after the operator grants database access for that window. CI runs the same read-only
 preflight (`Studio activation preflight (read-only)`) against the seeded acceptance database on every
