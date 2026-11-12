@@ -382,7 +382,19 @@ workspaces or memberships, and the database URL is read from `DATABASE_ADMIN_URL
 only). Without `--confirm` it prints a dry-run plan and touches nothing; a remote database also
 requires `--allow-remote` so production mutation is always explicit.
 
+`--preflight` is the read-only step to run first against the reviewed target. It connects with
+`SELECT` statements only and reports whether the database has the Studio schema (tables, quota
+columns and token-resolver functions from migrations `0054`–`0057`), the target user/workspace/
+membership and the current settings state. It never writes, so a remote target needs
+`--allow-remote` but no `--confirm`. A report exits `0` with `"outcome":"ready"`; a target that is
+not ready exits `2` with `"outcome":"blocked"` and lists exactly what is missing. The report echoes
+only host, database name, workspace id and booleans — never the URL, password or email.
+
 ```powershell
+# 0. Preflight (read-only): proves schema + identity + settings readiness.
+$env:DATABASE_ADMIN_URL = "<reviewed admin URL>"
+pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@example.com> --preflight --allow-remote
+
 # 1. Dry run: prints the exact steps and changes nothing.
 pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@example.com>
 
@@ -393,9 +405,11 @@ pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@examp
 pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@example.com> --disable --allow-remote --confirm
 ```
 
-The tool verifies the user, workspace and membership first and only then upserts `enabled` +
+The live tool verifies the user, workspace and membership first and only then upserts `enabled` +
 `updated_by`; it never edits budgets, skills, AI settings or any other column. A readback mismatch
-exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same database before it.
+exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same database before it. The
+same sequence is the A2 preview dry run: preflight first, then the plan, then the reviewed mutation
+— only after the operator grants database access for that window.
 
 ## Verification commands
 
