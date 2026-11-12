@@ -369,3 +369,14 @@ can rehearse activation. The same investigation found that preview and productio
 to the same Neon endpoint, while the only branch-scoped preview override points at a deleted branch:
 preview deployments are not isolated and must not be used for mutating rehearsal until a dedicated
 branch is configured. Both findings are recorded in section 8 of the activation package.
+
+A dedicated Neon branch (`studio-a2-rehearsal-20261112`) was then created from the `main` snapshot
+and the full sequence was rehearsed on it. The first `db:migrate` exposed a real production blocker:
+as the non-superuser Neon owner, migrations `0021`/`0055`/`0057` failed with `42501` because they
+created lookup-owned functions and then transferred ownership — replay could not work. The fix
+creates/replaces those functions **as the owning lookup role** via `SET ROLE` (granting the migration
+admin a `SET` membership edge once, revoking the temporary schema `CREATE`), with a `packages/db`
+regression test pinning the rule. After the fix: apply green, immediate replay green, preflight
+`ready` (`ws_opak`, `operator` membership), plan green, guarded enable and disable both
+`outcome:"ok"` with readback. The branch stays migrated and disabled as the preview candidate; the
+production endpoint and all deployment flags were untouched.

@@ -172,6 +172,29 @@ Consequences:
 - The read-only preflight itself is safe to point at any such branch; only `--confirm` mutations
   need the production window.
 
+### Dedicated branch rehearsal (2026-11-12, after the replay fix)
+
+A fresh Neon branch was created from the project's `main` snapshot and used to rehearse the whole
+sequence without touching the production endpoint:
+
+| Step                                                                                                                | Result                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create branch `studio-a2-rehearsal-20261112` (`br-steep-haze-atpzdgck`, endpoint `ep-delicate-waterfall-athydni9…`) | created from `main`; production endpoint never used                                                                                                                                                                                                   |
+| First `db:migrate` attempt                                                                                          | **failed** at `0021_product_shots.sql` with `42501`: the Neon owner role has no superuser and cannot act as / transfer ownership to the lookup role                                                                                                   |
+| Fix (migrations `0021`, `0055`, `0057`)                                                                             | lookup-owned functions are now created/replaced **as the owning role** via `SET ROLE`; the migration grants its admin a `SET` membership edge once and revokes the temporary schema `CREATE` privilege afterwards. A `packages/db` test pins the rule |
+| `db:migrate` after the fix                                                                                          | **green**: `0021`–`0057` applied, including role creation and both resolver functions                                                                                                                                                                 |
+| Immediate second `db:migrate` (replay)                                                                              | **green** — replay is no longer blocked by function ownership                                                                                                                                                                                         |
+| `--preflight --allow-remote`                                                                                        | `ready`, exit 0: schema/roles/functions ok, `ws_opak` + its member exist (membership `operator`), settings row absent                                                                                                                                 |
+| Dry-run plan                                                                                                        | exit 0, five steps, no writes                                                                                                                                                                                                                         |
+| `--allow-remote --confirm` (enable)                                                                                 | `outcome:"ok"`, `enabled:true`, readback verified                                                                                                                                                                                                     |
+| `--preflight` after enable                                                                                          | `ready`, settings `{exists:true,enabled:true}`                                                                                                                                                                                                        |
+| `--disable --confirm`                                                                                               | `outcome:"ok"`, `enabled:false` (branch left migrated and disabled)                                                                                                                                                                                   |
+
+The branch is left in place as the ready preview/rehearsal candidate — the operator can point the
+preview `DATABASE_URL` at it (see the isolation finding above) or delete it with
+`neonctl branches delete studio-a2-rehearsal-20261112`. Its settings row is disabled; no deployment
+flag points at it, so nothing is activated for users.
+
 ## 9. Evidence index
 
 - Runbook: [conversation-studio.md](./conversation-studio.md) (enablement, activation CLI with

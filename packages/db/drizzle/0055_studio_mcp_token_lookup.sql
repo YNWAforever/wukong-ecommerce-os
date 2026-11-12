@@ -19,7 +19,7 @@
 -- without that answer depending on a second, racy read. Rejection is enforced
 -- by the HTTP layer, not by hiding the row here.
 --
--- Replay-safe: CREATE OR REPLACE, guarded role creation, DROP POLICY IF EXISTS.
+-- Replay-safe: guarded role creation, DROP POLICY IF EXISTS, and function DDL run as the owning role.
 DO $role$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'wukong_mcp_token_lookup') THEN
     CREATE ROLE wukong_mcp_token_lookup NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
@@ -31,6 +31,18 @@ DO $role$ BEGIN
   ) THEN
     RAISE EXCEPTION 'unsafe studio token lookup owner role';
   END IF;
+  -- The function below is owned by the non-login lookup role. On hosts
+  -- without a superuser (Neon) the admin is a member of that role with ADMIN
+  -- OPTION but without SET, and a function owned by it cannot be replaced by
+  -- the admin. Grant a SET edge once, then create/replace it as the owner.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolsuper) THEN
+    BEGIN
+      EXECUTE format('GRANT wukong_mcp_token_lookup TO %I WITH SET TRUE, INHERIT FALSE', current_user);
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END;
+  END IF;
+  EXECUTE 'GRANT CREATE ON SCHEMA public TO wukong_mcp_token_lookup';
 END $role$;
 
 GRANT USAGE ON SCHEMA public TO wukong_mcp_token_lookup;
@@ -41,6 +53,8 @@ DROP POLICY IF EXISTS studio_api_tokens_mcp_lookup ON public.studio_api_tokens;
 CREATE POLICY studio_api_tokens_mcp_lookup ON public.studio_api_tokens
   FOR SELECT TO wukong_mcp_token_lookup USING (true);
 
+-- Create/replace as the owning lookup role so replay works on every host.
+SET ROLE wukong_mcp_token_lookup;
 CREATE OR REPLACE FUNCTION public.studio_resolve_api_token(p_token_hash text)
 RETURNS TABLE(
   workspace_id text,
@@ -60,8 +74,7 @@ AS $studio_resolve_api_token$
   WHERE t.token_hash = p_token_hash
     AND p_token_hash ~ '^[a-f0-9]{64}$'
 $studio_resolve_api_token$;
-
-ALTER FUNCTION public.studio_resolve_api_token(text)
-  OWNER TO wukong_mcp_token_lookup;
 REVOKE ALL ON FUNCTION public.studio_resolve_api_token(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.studio_resolve_api_token(text) TO wukong_app;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM wukong_mcp_token_lookup;
