@@ -459,6 +459,7 @@ export function activationPlan(args) {
         ? "update studio_workspace_settings.enabled = false"
         : "upsert studio_workspace_settings.enabled = true, updated_by = user",
       "read back studio_workspace_settings.enabled",
+      "record a content-free studio.settings.updated audit event",
     ],
     notes: [
       "run `pnpm --filter @wukong/db db:migrate` against the same database first",
@@ -466,6 +467,21 @@ export function activationPlan(args) {
       "this tool never creates users, workspaces or memberships",
       "feature flags are deployment environment variables, not workspace settings",
     ],
+  };
+}
+
+/**
+ * Content-free audit metadata for the guarded activation write.
+ *
+ * The admin API is unavailable until Studio is enabled, so this bootstrap path
+ * writes the same `studio.settings.updated` action as the admin settings API,
+ * with a distinguishable `source` and only the before/after `enabled` value.
+ */
+export function activationAuditMetadata({ enabled, previousEnabled }) {
+  return {
+    source: "studio-activation-cli",
+    before: { enabled: previousEnabled },
+    after: { enabled },
   };
 }
 
@@ -500,24 +516,45 @@ async function runLive(args, databaseUrl) {
         "That user is not a member of the workspace.",
       );
     const enabled = !args.disable;
-    await sql`
-      INSERT INTO studio_workspace_settings (workspace_id, enabled, updated_by)
-      VALUES (${args.workspaceId}, ${enabled}, ${user.id})
-      ON CONFLICT (workspace_id) DO UPDATE SET
-        enabled = excluded.enabled,
-        updated_by = excluded.updated_by,
-        updated_at = now()
-    `;
-    const [settings] = await sql`
-      SELECT enabled FROM studio_workspace_settings
-      WHERE workspace_id = ${args.workspaceId}
-    `;
-    if (settings?.enabled !== enabled)
-      throw new ActivationError(
-        "readback_mismatch",
-        "The settings readback did not match the requested state.",
-        1,
-      );
+    await sql.begin(async (transaction) => {
+      const [before] = await transaction`
+        SELECT enabled FROM studio_workspace_settings
+        WHERE workspace_id = ${args.workspaceId} LIMIT 1
+      `;
+      await transaction`
+        INSERT INTO studio_workspace_settings (workspace_id, enabled, updated_by)
+        VALUES (${args.workspaceId}, ${enabled}, ${user.id})
+        ON CONFLICT (workspace_id) DO UPDATE SET
+          enabled = excluded.enabled,
+          updated_by = excluded.updated_by,
+          updated_at = now()
+      `;
+      const [settings] = await transaction`
+        SELECT enabled FROM studio_workspace_settings
+        WHERE workspace_id = ${args.workspaceId}
+      `;
+      if (settings?.enabled !== enabled)
+        throw new ActivationError(
+          "readback_mismatch",
+          "The settings readback did not match the requested state.",
+          1,
+        );
+      await transaction`
+        INSERT INTO audit_events (workspace_id, actor_id, entity_id, action, metadata)
+        VALUES (
+          ${args.workspaceId},
+          ${user.id},
+          ${args.workspaceId},
+          ${"studio.settings.updated"},
+          ${transaction.json(
+            activationAuditMetadata({
+              enabled,
+              previousEnabled: before?.enabled ?? null,
+            }),
+          )}
+        )
+      `;
+    });
     return {
       event: "studio_activation",
       outcome: "ok",
@@ -525,6 +562,7 @@ async function runLive(args, databaseUrl) {
       userId: user.id,
       role: membership.role,
       enabled,
+      audited: true,
     };
   } finally {
     await sql.end({ timeout: 5 });

@@ -380,3 +380,9 @@ regression test pinning the rule. After the fix: apply green, immediate replay g
 `ready` (`ws_opak`, `operator` membership), plan green, guarded enable and disable both
 `outcome:"ok"` with readback. The branch stays migrated and disabled as the preview candidate; the
 production endpoint and all deployment flags were untouched.
+
+The activation CLI now also appends a content-free `studio.settings.updated` audit row
+(`source: "studio-activation-cli"`, before/after `enabled`) in the same transaction as the settings
+write, so the bootstrap enable/disable that happens before the admin API is reachable is still
+auditable. Verified on a fresh local database and again on the Neon rehearsal branch (enable + disable,
+two audit rows, settings row and audit trail agree).
