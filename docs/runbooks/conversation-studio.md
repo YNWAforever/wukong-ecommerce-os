@@ -391,7 +391,10 @@ requires `--allow-remote` so production mutation is always explicit.
 columns and token-resolver functions from migrations `0054`–`0057`), the role posture (`wukong_app`
 must exist and must not be `SUPERUSER`/`BYPASSRLS`; `wukong_image_lookup` and
 `wukong_mcp_token_lookup` must be present, `NOLOGIN`, `NOSUPERUSER`, `NOBYPASSRLS` and `NOINHERIT`),
-the target user/workspace/membership and the current settings state. It never writes, so a remote
+the target user/workspace/membership and the current settings state. Lookup roles that are absent are
+listed under `checks.roles.missingLookupRoles` (usually a sign the migrations have not run yet), while
+present roles with unsafe attributes are listed under `checks.roles.unsafeLookupRoles`; both block
+readiness. It never writes, so a remote
 target needs `--allow-remote` but no `--confirm`. A report exits `0` with `"outcome":"ready"`; a
 target that is not ready exits `2` with `"outcome":"blocked"` and lists exactly what is missing. The
 report echoes only host, database name, workspace id and booleans — never the URL, password or

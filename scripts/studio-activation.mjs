@@ -283,18 +283,27 @@ export function preflightReport({
     runtime.superuser === false &&
     runtime.bypassRls === false;
   const unsafeLookupRoles = [];
+  const missingLookupRoles = [];
   for (const name of LOOKUP_ROLES) {
     const role = roles.get(name);
-    if (
-      role === undefined ||
+    if (role === undefined) {
+      // A stale database that predates migration 0055 is `blocked` for schema
+      // reasons; naming the role missing here keeps the operator from chasing a
+      // role that simply was never created yet.
+      missingLookupRoles.push(name);
+    } else if (
       role.superuser !== false ||
       role.bypassRls !== false ||
       role.canLogin !== false ||
       role.inherit !== false
-    )
+    ) {
       unsafeLookupRoles.push(name);
+    }
   }
-  const rolesSafe = runtimeSafe && unsafeLookupRoles.length === 0;
+  const rolesSafe =
+    runtimeSafe &&
+    missingLookupRoles.length === 0 &&
+    unsafeLookupRoles.length === 0;
   const schemaReady =
     missingTables.length === 0 &&
     missingColumns.length === 0 &&
@@ -327,6 +336,7 @@ export function preflightReport({
           superuser: runtime?.superuser ?? null,
           bypassRls: runtime?.bypassRls ?? null,
         },
+        missingLookupRoles,
         unsafeLookupRoles,
       },
       userExists,
