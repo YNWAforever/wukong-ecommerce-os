@@ -10,6 +10,7 @@ import {
   assertPreflightTarget,
   parseActivationArgs,
   preflightReport,
+  summarizeLastActivation,
 } from "../scripts/studio-activation.mjs";
 
 /**
@@ -215,6 +216,7 @@ test("preflight report never claims readiness a check did not prove", () => {
   ]);
   assert.deepEqual(blocked.checks.roles.unsafeLookupRoles, []);
   assert.equal(blocked.checks.userExists, false);
+  assert.equal(blocked.checks.lastActivation, null);
 
   const readyTables = new Set([
     "users",
@@ -277,6 +279,11 @@ test("preflight report never claims readiness a check did not prove", () => {
     workspaceExists: true,
     membershipRole: "owner",
     studioSettings: { exists: true, enabled: false },
+    lastActivation: {
+      at: "2026-11-12T13:00:00.000Z",
+      enabled: false,
+      source: "studio-activation-cli",
+    },
   });
   assert.equal(ready.outcome, "ready");
   assert.equal(ready.readyToActivate, true);
@@ -288,6 +295,43 @@ test("preflight report never claims readiness a check did not prove", () => {
     exists: true,
     enabled: false,
   });
+  assert.deepEqual(ready.checks.lastActivation, {
+    at: "2026-11-12T13:00:00.000Z",
+    enabled: false,
+    source: "studio-activation-cli",
+  });
+});
+
+test("summarizeLastActivation reports only the recorded posture, never content", () => {
+  assert.equal(summarizeLastActivation(undefined), null);
+  assert.deepEqual(
+    summarizeLastActivation({
+      metadata: {
+        source: "studio-activation-cli",
+        before: { enabled: true },
+        after: { enabled: false },
+      },
+      created_at: new Date("2026-11-12T13:00:00.000Z"),
+    }),
+    {
+      at: "2026-11-12T13:00:00.000Z",
+      enabled: false,
+      source: "studio-activation-cli",
+    },
+  );
+  // An admin-API row has no explicit source; unknown shapes degrade to nulls
+  // instead of echoing arbitrary metadata into the report.
+  assert.deepEqual(
+    summarizeLastActivation({
+      metadata: { before: { enabled: true }, after: { enabled: true } },
+      created_at: "2026-11-12T14:00:00Z",
+    }),
+    { at: "2026-11-12T14:00:00Z", enabled: true, source: null },
+  );
+  assert.deepEqual(
+    summarizeLastActivation({ metadata: { secret: "redacted" } }),
+    { at: null, enabled: null, source: null },
+  );
 });
 
 test("preflight blocks an unsafe or missing runtime role", () => {
