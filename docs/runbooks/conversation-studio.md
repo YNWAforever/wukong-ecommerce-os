@@ -412,7 +412,10 @@ The live tool verifies the user, workspace and membership first and only then up
 `updated_by`; it never edits budgets, skills, AI settings or any other column. A readback mismatch
 exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same database before it. The
 same sequence is the A2 preview dry run: preflight first, then the plan, then the reviewed mutation
-— only after the operator grants database access for that window.
+— only after the operator grants database access for that window. CI runs the same read-only
+preflight (`Studio activation preflight (read-only)`) against the seeded acceptance database on every
+build, so a migration or role-posture regression fails the build instead of surfacing during
+activation.
 
 ## Verification commands
 

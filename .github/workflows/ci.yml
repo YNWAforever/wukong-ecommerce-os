@@ -274,6 +274,13 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:49300/signin > /dev/null
           pnpm exec playwright test tests/e2e/studio-browser-acceptance.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
+      - name: Studio activation preflight (read-only)
+        # The same command operators run before activation. It must report
+        # `outcome:"ready"` against the seeded acceptance database: schema from
+        # migrations 0054-0057, safe wukong_app/lookup role posture, and the
+        # fixture owner membership. The job-level DATABASE_ADMIN_URL is local,
+        # so no --allow-remote is needed.
+        run: node scripts/studio-activation.mjs --workspace-id ws_studio_browser_e2e --owner-email studio-browser-e2e@local.invalid --preflight
       - name: Opak isolated maintenance and read browser acceptance
         env:
           DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_browser_ci

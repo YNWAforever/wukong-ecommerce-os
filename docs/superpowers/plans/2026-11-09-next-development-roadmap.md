@@ -344,6 +344,8 @@ the current settings state — with `SELECT` statements only, no writes, sanitis
 and exit `2` when the target is not ready. Verified locally against a fresh disposable database:
 migrated-empty reported `blocked` with the missing identity, the seeded workspace reported `ready`
 with an unchanged settings row, and temporarily making `wukong_app` `BYPASSRLS` turned the same
-check into `blocked` until the attribute was restored. This closes the runbook automation half of
-A2; the remaining step is the real preview/production dry run, which still needs the operator's
-database-access decision (`--allow-remote`, admin URL and the reviewed window).
+check into `blocked` until the attribute was restored. CI now runs the same read-only preflight
+against the seeded flags-on acceptance database on every build, so schema or role-posture drift
+fails the build. This closes the runbook automation half of A2; the remaining step is the real
+preview/production dry run, which still needs the operator's database-access decision
+(`--allow-remote`, admin URL and the reviewed window).
