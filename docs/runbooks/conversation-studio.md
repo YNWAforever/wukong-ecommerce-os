@@ -384,11 +384,14 @@ requires `--allow-remote` so production mutation is always explicit.
 
 `--preflight` is the read-only step to run first against the reviewed target. It connects with
 `SELECT` statements only and reports whether the database has the Studio schema (tables, quota
-columns and token-resolver functions from migrations `0054`–`0057`), the target user/workspace/
-membership and the current settings state. It never writes, so a remote target needs
-`--allow-remote` but no `--confirm`. A report exits `0` with `"outcome":"ready"`; a target that is
-not ready exits `2` with `"outcome":"blocked"` and lists exactly what is missing. The report echoes
-only host, database name, workspace id and booleans — never the URL, password or email.
+columns and token-resolver functions from migrations `0054`–`0057`), the role posture (`wukong_app`
+must exist and must not be `SUPERUSER`/`BYPASSRLS`; `wukong_image_lookup` and
+`wukong_mcp_token_lookup` must be present, `NOLOGIN`, `NOSUPERUSER`, `NOBYPASSRLS` and `NOINHERIT`),
+the target user/workspace/membership and the current settings state. It never writes, so a remote
+target needs `--allow-remote` but no `--confirm`. A report exits `0` with `"outcome":"ready"`; a
+target that is not ready exits `2` with `"outcome":"blocked"` and lists exactly what is missing. The
+report echoes only host, database name, workspace id and booleans — never the URL, password or
+email.
 
 ```powershell
 # 0. Preflight (read-only): proves schema + identity + settings readiness.

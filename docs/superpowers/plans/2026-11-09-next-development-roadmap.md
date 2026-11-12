@@ -337,10 +337,13 @@ remain; C1 is complete. Still user-gated: A2, A3, C3 and the P3.2/C5 operator de
 
 The A2 activation helper gained a read-only `--preflight` mode (`scripts/studio-activation.mjs`):
 it connects to the reviewed `DATABASE_ADMIN_URL`, proves the Studio schema objects from migrations
-`0054`–`0057` exist (tables, quota columns, token-resolver functions), checks the target
-user/workspace/membership and reports the current settings state — with `SELECT` statements only,
-no writes, sanitised single-line JSON and exit `2` when the target is not ready. Verified locally
-against a fresh disposable database: migrated-empty reported `blocked` with the missing identity,
-the seeded workspace reported `ready` with an unchanged settings row. This closes the runbook
-automation half of A2; the remaining step is the real preview/production dry run, which still needs
-the operator's database-access decision (`--allow-remote`, admin URL and the reviewed window).
+`0054`–`0057` exist (tables, quota columns, token-resolver functions) plus the security-relevant
+role posture (`wukong_app` must not be SUPERUSER/BYPASSRLS; both lookup roles must be
+NOLOGIN/NOSUPERUSER/NOBYPASSRLS/NOINHERIT), checks the target user/workspace/membership and reports
+the current settings state — with `SELECT` statements only, no writes, sanitised single-line JSON
+and exit `2` when the target is not ready. Verified locally against a fresh disposable database:
+migrated-empty reported `blocked` with the missing identity, the seeded workspace reported `ready`
+with an unchanged settings row, and temporarily making `wukong_app` `BYPASSRLS` turned the same
+check into `blocked` until the attribute was restored. This closes the runbook automation half of
+A2; the remaining step is the real preview/production dry run, which still needs the operator's
+database-access decision (`--allow-remote`, admin URL and the reviewed window).
