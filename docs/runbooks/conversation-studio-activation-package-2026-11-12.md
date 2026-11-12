@@ -48,8 +48,10 @@ and its owner email, and an operator available for the authenticated acceptance.
 1. **Snapshot and preflight (read-only).** Load the production admin URL into the operator shell as
    `DATABASE_ADMIN_URL` (never argv, never committed) and run:
    `pnpm studio:activate -- --workspace-id <id> --owner-email <owner> --preflight --allow-remote`.
-   Expected: `"outcome":"ready"`, `schema.ok`, `roles.ok`, owner membership. A `blocked` report lists
-   exactly what is missing — stop and fix before touching the window.
+   Expected: `"outcome":"ready"`, `schema.ok`, `roles.ok`, owner membership, and
+   `checks.lastActivation` showing the previous `studio.settings.updated` posture (`null` before the
+   first activation). A `blocked` report lists exactly what is missing — stop and fix before touching
+   the window.
 2. **Apply additive migrations** `0054`–`0057` with the normal
    `pnpm --filter @wukong/db db:migrate` against the same admin URL. They create tables, indexes,
    functions and roles only; no existing row is rewritten.
@@ -202,6 +204,7 @@ sequence without touching the production endpoint:
 | Audit row after enable                                                                                              | one `studio.settings.updated` row, `source:"studio-activation-cli"`, `before.enabled:false` → `after.enabled:true`, actor = member                                                                                                                    |
 | `--disable --confirm`                                                                                               | `outcome:"ok"`, `enabled:false`, `audited:true` (branch left migrated and disabled)                                                                                                                                                                   |
 | Audit row after disable                                                                                             | second `studio.settings.updated` row, `before.enabled:true` → `after.enabled:false`; settings row and audit trail agree                                                                                                                               |
+| Preflight with the history field                                                                                    | `ready`; `checks.lastActivation` = `{at: …, enabled:false, source:"studio-activation-cli"}` from the disable row (`null` on a fresh database)                                                                                                         |
 
 The branch is left in place as the ready preview/rehearsal candidate — the operator can point the
 preview `DATABASE_URL` at it (see the isolation finding above) or delete it with
@@ -218,6 +221,7 @@ flag points at it, so nothing is activated for users.
   #195 attachments + CI fixes, #196 exports, #197 dispatch, #198 preflight, #199 role posture,
   #200 CI preflight step, #201 activation package, #202 local rehearsal, #203 preview dry run,
   #204 preflight role report, #205 SET-ROLE migration replay fix, #206 non-superuser CI replay gate,
-  #207 audited activation write.
+  #207 audited activation write, #208 live-model runbook (audited admin surface), #209 assets decode
+  timeout.
 - Database-posture evidence: migration apply + immediate replay as the non-superuser Neon owner
   (section 8), and the same sequence enforced on every CI run by the non-superuser replay gate.

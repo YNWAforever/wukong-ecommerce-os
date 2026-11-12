@@ -264,6 +264,7 @@ export function preflightReport({
   workspaceExists,
   membershipRole,
   studioSettings,
+  lastActivation = null,
 }) {
   const missingTables = REQUIRED_TABLES.filter((table) => !tables.has(table));
   const missingColumns = Object.entries(REQUIRED_COLUMNS).flatMap(
@@ -343,8 +344,31 @@ export function preflightReport({
       workspaceExists,
       membershipRole,
       studioSettings,
+      lastActivation,
     },
     readyToActivate,
+  };
+}
+
+/** Content-free summary of the last Studio activation audit row. */
+export function summarizeLastActivation(row) {
+  if (!row) return null;
+  const metadata =
+    row.metadata && typeof row.metadata === "object" ? row.metadata : null;
+  const after =
+    metadata?.after && typeof metadata.after === "object"
+      ? metadata.after
+      : null;
+  const createdAt =
+    row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : typeof row.created_at === "string"
+        ? row.created_at
+        : null;
+  return {
+    at: createdAt,
+    enabled: typeof after?.enabled === "boolean" ? after.enabled : null,
+    source: typeof metadata?.source === "string" ? metadata.source : null,
   };
 }
 
@@ -427,6 +451,24 @@ async function runPreflight(args, databaseUrl, target) {
         ? { exists: true, enabled: settings[0].enabled === true }
         : { exists: false, enabled: false };
     }
+    let lastActivation = null;
+    const auditColumns = columns.get("audit_events");
+    // The activation CLI and the admin settings API both write this action, so
+    // the report shows the operator the posture the window starts from.
+    if (
+      workspaceExists &&
+      tables.has("audit_events") &&
+      auditColumns?.has("metadata") &&
+      auditColumns.has("created_at")
+    ) {
+      const audits = await sql`
+        SELECT metadata, created_at FROM audit_events
+        WHERE workspace_id = ${args.workspaceId}
+          AND action = 'studio.settings.updated'
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      lastActivation = summarizeLastActivation(audits[0]);
+    }
     return preflightReport({
       target,
       workspaceId: args.workspaceId,
@@ -438,6 +480,7 @@ async function runPreflight(args, databaseUrl, target) {
       workspaceExists,
       membershipRole,
       studioSettings,
+      lastActivation,
     });
   } finally {
     await sql.end({ timeout: 5 });

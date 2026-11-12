@@ -385,4 +385,6 @@ The activation CLI now also appends a content-free `studio.settings.updated` aud
 (`source: "studio-activation-cli"`, before/after `enabled`) in the same transaction as the settings
 write, so the bootstrap enable/disable that happens before the admin API is reachable is still
 auditable. Verified on a fresh local database and again on the Neon rehearsal branch (enable + disable,
-two audit rows, settings row and audit trail agree).
+two audit rows, settings row and audit trail agree). The read-only preflight reports that last
+activation as `checks.lastActivation` (`{at, enabled, source}` or `null`) so the window starts from the
+known posture; verified against the rehearsal branch's disable row.

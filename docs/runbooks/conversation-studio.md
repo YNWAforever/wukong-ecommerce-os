@@ -430,10 +430,14 @@ the target user/workspace/membership and the current settings state. Lookup role
 listed under `checks.roles.missingLookupRoles` (usually a sign the migrations have not run yet), while
 present roles with unsafe attributes are listed under `checks.roles.unsafeLookupRoles`; both block
 readiness. It never writes, so a remote
-target needs `--allow-remote` but no `--confirm`. A report exits `0` with `"outcome":"ready"`; a
+target needs `--allow-remote` but no `--confirm`. The report also includes
+`checks.lastActivation`: the last recorded `studio.settings.updated` row for that workspace as
+`{ at, enabled, source }` (or `null`), so the window starts from the known posture — this is the same
+event the CLI and the admin settings API append, and it never includes actor ids or metadata content.
+A report exits `0` with `"outcome":"ready"`; a
 target that is not ready exits `2` with `"outcome":"blocked"` and lists exactly what is missing. The
-report echoes only host, database name, workspace id and booleans — never the URL, password or
-email.
+report echoes only host, database name, workspace id, activation posture and booleans — never the URL,
+password or email.
 
 ```powershell
 # 0. Preflight (read-only): proves schema + identity + settings readiness.
