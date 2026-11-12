@@ -33,7 +33,11 @@ flag, env var or provider call is involved.
 
 The current operator handoff — posture, exact activation sequence, required decisions and rollback —
 is [conversation-studio-activation-package-2026-11-12.md](./conversation-studio-activation-package-2026-11-12.md).
-Nothing in it has been executed for production.
+As of 2026-11-13 the operator approved the production window (full deterministic activation); it has
+**not** been executed because the production admin URL has not been provided, and nothing is activated
+in production yet. Companion sheets: [live-model onboarding](./conversation-studio-live-model-onboarding-2026-11-12.md)
+(A3, OpenCode Go selected) and [external MCP provider evaluation](./conversation-studio-external-mcp-provider-evaluation-2026-11-12.md)
+(C3).
 
 1. Deployment flags (Vercel env; do not set values in git):
    - `CONVERSATION_STUDIO_ENABLED=true` — the feature exists at all.
