@@ -416,8 +416,11 @@ pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@examp
 ```
 
 The live tool verifies the user, workspace and membership first and only then upserts `enabled` +
-`updated_by`; it never edits budgets, skills, AI settings or any other column. A readback mismatch
-exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same database before it. Since
+`updated_by` and appends a content-free `studio.settings.updated` audit row (`source:
+"studio-activation-cli"`, before/after `enabled`) in the same transaction, so the first activation is
+auditable even though the admin settings API is unavailable until Studio is enabled. It never edits
+budgets, skills, AI settings or any other settings column. A readback mismatch or a failed audit
+write rolls the transaction back and exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same database before it. Since
 2026-11-12 the lookup-owned resolver functions are created **as their owning role** (`SET ROLE` in
 migrations `0021`, `0055`, `0057`), so migrations apply and replay on hosts without a superuser — the
 Neon owner role — instead of requiring an object ownership transfer the admin cannot perform. The

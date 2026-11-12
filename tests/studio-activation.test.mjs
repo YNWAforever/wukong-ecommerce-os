@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import {
   ActivationError,
+  activationAuditMetadata,
   activationPlan,
   assertLiveTarget,
   assertPreflightTarget,
@@ -16,6 +17,40 @@ import {
  * that keep a live production mutation explicit. Live DB writes are covered by
  * the local end-to-end verification in the runbook, not by unit tests.
  */
+
+test("activation audit metadata is content-free and records before/after enabled", () => {
+  assert.deepEqual(
+    activationAuditMetadata({ enabled: true, previousEnabled: null }),
+    {
+      source: "studio-activation-cli",
+      before: { enabled: null },
+      after: { enabled: true },
+    },
+  );
+  assert.deepEqual(
+    activationAuditMetadata({ enabled: false, previousEnabled: true }),
+    {
+      source: "studio-activation-cli",
+      before: { enabled: true },
+      after: { enabled: false },
+    },
+  );
+});
+
+test("dry-run plan includes the audit write before the readback claim", () => {
+  const plan = activationPlan({
+    workspaceId: "ws_plan",
+    ownerEmail: "owner@example.com",
+  });
+  assert.equal(
+    plan.steps.at(-2),
+    "read back studio_workspace_settings.enabled",
+  );
+  assert.equal(
+    plan.steps.at(-1),
+    "record a content-free studio.settings.updated audit event",
+  );
+});
 
 test("parses a dry-run request and lower-cases the email", () => {
   const args = parseActivationArgs([
