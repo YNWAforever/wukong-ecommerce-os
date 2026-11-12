@@ -357,4 +357,7 @@ The operator handoff for the remaining A2/A3/C3 work now exists as
 current production posture and smoke status, what is verified and how, the exact deterministic-first
 activation sequence (preflight, additive migrations, workspace enablement, deployment flag, authenticated
 acceptance), the four decisions only the operator can make, rollback steps and the invariants that stay
-true. It performs and changes nothing; every Studio flag remains off.
+true. It performs and changes nothing; every Studio flag remains off. The sequence itself was
+rehearsed end-to-end on a fresh disposable database (blocked before migrations, blocked until the
+identity existed, ready after seeding, then guarded disable/enable with readback), recorded in the
+package. Production execution still needs the A2 database-access decision.
