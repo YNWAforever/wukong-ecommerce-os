@@ -218,6 +218,27 @@ preview `DATABASE_URL` at it (see the isolation finding above) or delete it with
 `neonctl branches delete studio-a2-rehearsal-20261112`. Its settings row is disabled; no deployment
 flag points at it, so nothing is activated for users.
 
+### Local fresh-database rehearsal (2026-11-13, current `main`)
+
+On 2026-11-13 (after the operator approved the production window and after PR #210 added the
+`lastActivation` field) the whole operator sequence was re-run end-to-end on a throwaway **local**
+database, starting from empty, to prove the current `main` path — not just the unit tests — behaves:
+
+| Step                                                       | Result                                                                                                               |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Fresh empty database, `db:migrate` `0000`–`0057`           | green (all migrations, including the lookup-role functions)                                                          |
+| Preflight before any fixture                               | **`blocked`, exit 2** — schema/roles ok, `userExists:false`, `workspaceExists:false`, `lastActivation:null`          |
+| Preflight after a synthetic owner + workspace + membership | `ready`, exit 0, `studioSettings:{exists:false,enabled:false}`, `lastActivation:null`                                |
+| Enable (`--confirm`)                                       | `outcome:"ok"`, `enabled:true`, `audited:true`                                                                       |
+| Preflight after enable                                     | `ready`; `studioSettings:{exists:true,enabled:true}`, `lastActivation:{enabled:true,source:"studio-activation-cli"}` |
+| Disable (`--confirm`)                                      | `outcome:"ok"`, `enabled:false`, `audited:true`                                                                      |
+| Preflight after disable                                    | `ready`; `studioSettings:{exists:true,enabled:false}`, `lastActivation` false with the CLI source                    |
+| Audit/settings cross-check                                 | `audit_events` count and before/after order match the settings writes; row left `enabled=false`                      |
+| Cleanup                                                    | database dropped; no local fixture left behind                                                                       |
+
+One typed `--enable` (a flag the CLI does not define) was rejected as `unknown_argument` with **no**
+write, which is the fail-closed parsing the preflight/live guards rely on.
+
 ## 9. Evidence index
 
 - Runbook: [conversation-studio.md](./conversation-studio.md) (enablement, activation CLI with
@@ -229,6 +250,6 @@ flag points at it, so nothing is activated for users.
   #200 CI preflight step, #201 activation package, #202 local rehearsal, #203 preview dry run,
   #204 preflight role report, #205 SET-ROLE migration replay fix, #206 non-superuser CI replay gate,
   #207 audited activation write, #208 live-model runbook (audited admin surface), #209 assets decode
-  timeout.
+  timeout, #210 preflight activation-history field, #211 A3/C3 execution sheets.
 - Database-posture evidence: migration apply + immediate replay as the non-superuser Neon owner
   (section 8), and the same sequence enforced on every CI run by the non-superuser replay gate.
