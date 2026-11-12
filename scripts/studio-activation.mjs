@@ -11,8 +11,14 @@
  *
  * Usage:
  *   node scripts/studio-activation.mjs --workspace-id ws_opf --owner-email owner@example.com       # dry run
+ *   node scripts/studio-activation.mjs --workspace-id ws_opf --owner-email owner@example.com --preflight --allow-remote
  *   node scripts/studio-activation.mjs --workspace-id ws_opf --owner-email owner@example.com --confirm
  *   node scripts/studio-activation.mjs --workspace-id ws_opf --owner-email owner@example.com --disable --confirm
+ *
+ * `--preflight` is read-only: it connects to `DATABASE_ADMIN_URL`, proves the
+ * schema objects the Studio needs are present, and reports whether the target
+ * user/workspace/membership/settings state is ready. It never writes, so it
+ * needs `--allow-remote` for a remote target but not `--confirm`.
  *
  * `DATABASE_ADMIN_URL` is read from the environment only, so the credential
  * never appears in argv or shell history. A live run also requires
@@ -30,10 +36,52 @@ const requireFromWeb = createRequire(
 );
 
 export const ACTIVATION_USAGE =
-  "node scripts/studio-activation.mjs --workspace-id <id> --owner-email <email> [--disable] [--confirm] [--allow-remote]";
+  "node scripts/studio-activation.mjs --workspace-id <id> --owner-email <email> [--preflight] [--disable] [--confirm] [--allow-remote]";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+
+/**
+ * Read-only readiness checks for a future activation. Each name is a schema
+ * object an earlier release would lack, so a missing one means migrations are
+ * behind even when replay-safe SQL would report no failure.
+ */
+const REQUIRED_TABLES = [
+  "users",
+  "workspaces",
+  "memberships",
+  "audit_events",
+  "studio_workspace_settings",
+  "studio_threads",
+  "studio_messages",
+  "studio_runs",
+  "studio_run_events",
+  "studio_outputs",
+  "studio_output_versions",
+  "studio_budget_reservations",
+  "studio_mcp_connections",
+  "studio_mcp_calls",
+  "studio_api_tokens",
+];
+const REQUIRED_COLUMNS = {
+  studio_workspace_settings: [
+    "workspace_id",
+    "enabled",
+    "updated_by",
+    "updated_at",
+  ],
+  studio_api_tokens: [
+    "token_hash",
+    "revoked_at",
+    "rate_limit_per_minute",
+    "monthly_call_quota",
+  ],
+  studio_mcp_calls: ["token_id"],
+};
+const REQUIRED_FUNCTIONS = [
+  "studio_resolve_api_token",
+  "studio_resolve_api_token_limits",
+];
 
 export class ActivationError extends Error {
   constructor(code, message, exitCode = 2) {
@@ -52,6 +100,7 @@ export function parseActivationArgs(argv) {
     confirm: false,
     allowRemote: false,
     disable: false,
+    preflight: false,
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -64,6 +113,8 @@ export function parseActivationArgs(argv) {
       args.allowRemote = true;
     } else if (value === "--disable") {
       args.disable = true;
+    } else if (value === "--preflight") {
+      args.preflight = true;
     } else if (value === "--workspace-id" || value === "--owner-email") {
       const next = argv[index + 1];
       if (next === undefined || next.startsWith("--"))
@@ -91,6 +142,16 @@ export function parseActivationArgs(argv) {
     throw new ActivationError(
       "invalid_email",
       "--owner-email must be a valid email address.",
+    );
+  if (args.preflight && args.confirm)
+    throw new ActivationError(
+      "conflicting_mode",
+      "--preflight is read-only and cannot be combined with --confirm.",
+    );
+  if (args.preflight && args.disable)
+    throw new ActivationError(
+      "conflicting_mode",
+      "--preflight checks activation readiness; it cannot be combined with --disable.",
     );
   return args;
 }
@@ -139,6 +200,185 @@ export function assertLiveTarget(databaseUrl, { confirm, allowRemote }) {
   return { host: parsed.hostname, database, local };
 }
 
+/**
+ * A preflight only reads. It still refuses an unconfirmed remote target so a
+ * production check is always explicit, but it never asks for `--confirm`
+ * because there is no mutation to confirm.
+ */
+export function assertPreflightTarget(databaseUrl, { allowRemote }) {
+  if (!databaseUrl)
+    throw new ActivationError(
+      "missing_database_url",
+      "DATABASE_ADMIN_URL is required for a preflight check.",
+    );
+  let parsed;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    throw new ActivationError(
+      "invalid_database_url",
+      "DATABASE_ADMIN_URL is not a valid URL.",
+    );
+  }
+  if (!/^postgres(ql)?:$/.test(parsed.protocol))
+    throw new ActivationError(
+      "invalid_database_url",
+      "DATABASE_ADMIN_URL must be a postgres URL.",
+    );
+  const local = ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
+  if (!local && !allowRemote)
+    throw new ActivationError(
+      "remote_requires_allow_remote",
+      "Refusing a remote database without --allow-remote.",
+    );
+  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+  if (!database)
+    throw new ActivationError(
+      "invalid_database_url",
+      "DATABASE_ADMIN_URL must name a database.",
+    );
+  return { host: parsed.hostname, database, local };
+}
+
+/**
+ * The preflight report's shape, kept pure so tests can pin the honesty rule:
+ * a check is only `true` when the query proved it; everything else is listed.
+ */
+export function preflightReport({
+  target,
+  workspaceId,
+  tables,
+  columns,
+  functions,
+  userExists,
+  workspaceExists,
+  membershipRole,
+  studioSettings,
+}) {
+  const missingTables = REQUIRED_TABLES.filter((table) => !tables.has(table));
+  const missingColumns = Object.entries(REQUIRED_COLUMNS).flatMap(
+    ([table, required]) =>
+      missingTables.includes(table)
+        ? []
+        : required
+            .filter((column) => !(columns.get(table) ?? new Set()).has(column))
+            .map((column) => `${table}.${column}`),
+  );
+  const missingFunctions = REQUIRED_FUNCTIONS.filter(
+    (name) => !functions.has(name),
+  );
+  const schemaReady =
+    missingTables.length === 0 &&
+    missingColumns.length === 0 &&
+    missingFunctions.length === 0;
+  const readyToActivate =
+    schemaReady &&
+    userExists &&
+    workspaceExists &&
+    membershipRole !== null &&
+    studioSettings !== null;
+  return {
+    event: "studio_activation_preflight",
+    outcome: readyToActivate ? "ready" : "blocked",
+    host: target.host,
+    database: target.database,
+    workspaceId,
+    checks: {
+      schema: {
+        ok: schemaReady,
+        missingTables,
+        missingColumns,
+        missingFunctions,
+      },
+      userExists,
+      workspaceExists,
+      membershipRole,
+      studioSettings,
+    },
+    readyToActivate,
+  };
+}
+
+async function runPreflight(args, databaseUrl, target) {
+  const postgresModule = requireFromWeb("postgres");
+  const postgres = postgresModule.default ?? postgresModule;
+  const sql = postgres(databaseUrl, { max: 1, prepare: false });
+  try {
+    const tableRows = await sql`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public'
+    `;
+    const tables = new Set(tableRows.map((row) => row.table_name));
+    const columnRows = await sql`
+      SELECT table_name, column_name FROM information_schema.columns
+      WHERE table_schema = 'public'
+    `;
+    const columns = new Map();
+    for (const row of columnRows) {
+      if (!columns.has(row.table_name)) columns.set(row.table_name, new Set());
+      columns.get(row.table_name).add(row.column_name);
+    }
+    const functionRows = await sql`
+      SELECT proname FROM pg_proc
+      WHERE pronamespace = 'public'::regnamespace
+    `;
+    const functions = new Set(functionRows.map((row) => row.proname));
+
+    let userExists = false;
+    let workspaceExists = false;
+    let membershipRole = null;
+    let studioSettings = null;
+    // Never query a table the check above just proved missing.
+    if (tables.has("users")) {
+      const users = await sql`
+        SELECT id FROM users WHERE lower(email) = ${args.ownerEmail} LIMIT 1
+      `;
+      userExists = users.length === 1;
+    }
+    if (tables.has("workspaces")) {
+      const workspaces = await sql`
+        SELECT id FROM workspaces WHERE id = ${args.workspaceId} LIMIT 1
+      `;
+      workspaceExists = workspaces.length === 1;
+    }
+    if (userExists && workspaceExists && tables.has("memberships")) {
+      const memberships = await sql`
+        SELECT role FROM memberships
+        WHERE workspace_id = ${args.workspaceId}
+          AND user_id = (SELECT id FROM users WHERE lower(email) = ${args.ownerEmail} LIMIT 1)
+        LIMIT 1
+      `;
+      membershipRole = memberships[0]?.role ?? null;
+    }
+    if (
+      workspaceExists &&
+      tables.has("studio_workspace_settings") &&
+      columns.get("studio_workspace_settings")?.has("enabled")
+    ) {
+      const settings = await sql`
+        SELECT enabled, updated_at FROM studio_workspace_settings
+        WHERE workspace_id = ${args.workspaceId} LIMIT 1
+      `;
+      studioSettings = settings[0]
+        ? { exists: true, enabled: settings[0].enabled === true }
+        : { exists: false, enabled: false };
+    }
+    return preflightReport({
+      target,
+      workspaceId: args.workspaceId,
+      tables,
+      columns,
+      functions,
+      userExists,
+      workspaceExists,
+      membershipRole,
+      studioSettings,
+    });
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 /** The deterministic plan printed by a dry run (also used by tests). */
 export function activationPlan(args) {
   return {
@@ -157,6 +397,7 @@ export function activationPlan(args) {
     ],
     notes: [
       "run `pnpm --filter @wukong/db db:migrate` against the same database first",
+      "run with --preflight first for a read-only schema/identity readiness report",
       "this tool never creates users, workspaces or memberships",
       "feature flags are deployment environment variables, not workspace settings",
     ],
@@ -225,6 +466,36 @@ async function runLive(args, databaseUrl) {
   }
 }
 
+function emitActivationError(error) {
+  const activationError =
+    error instanceof ActivationError
+      ? error
+      : new ActivationError(
+          "activation_failed",
+          "Activation failed; see server logs for the error name.",
+          1,
+        );
+  if (!(error instanceof ActivationError))
+    console.error(
+      JSON.stringify({
+        event: "studio_activation",
+        outcome: "error",
+        code: activationError.code,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      }),
+    );
+  else
+    console.error(
+      JSON.stringify({
+        event: "studio_activation",
+        outcome: "error",
+        code: activationError.code,
+        message: activationError.message,
+      }),
+    );
+  return activationError.exitCode;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   let args;
   try {
@@ -244,6 +515,23 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(ACTIVATION_USAGE);
     return 0;
   }
+  if (args.preflight) {
+    try {
+      const target = assertPreflightTarget(
+        process.env.DATABASE_ADMIN_URL,
+        args,
+      );
+      const report = await runPreflight(
+        args,
+        process.env.DATABASE_ADMIN_URL,
+        target,
+      );
+      console.log(JSON.stringify(report));
+      return report.readyToActivate ? 0 : 2;
+    } catch (error) {
+      return emitActivationError(error);
+    }
+  }
   if (!args.confirm) {
     console.log(JSON.stringify(activationPlan(args)));
     return 0;
@@ -260,33 +548,7 @@ export async function main(argv = process.argv.slice(2)) {
     );
     return 0;
   } catch (error) {
-    const activationError =
-      error instanceof ActivationError
-        ? error
-        : new ActivationError(
-            "activation_failed",
-            "Activation failed; see server logs for the error name.",
-            1,
-          );
-    if (!(error instanceof ActivationError))
-      console.error(
-        JSON.stringify({
-          event: "studio_activation",
-          outcome: "error",
-          code: activationError.code,
-          errorName: error instanceof Error ? error.name : "UnknownError",
-        }),
-      );
-    else
-      console.error(
-        JSON.stringify({
-          event: "studio_activation",
-          outcome: "error",
-          code: activationError.code,
-          message: activationError.message,
-        }),
-      );
-    return activationError.exitCode;
+    return emitActivationError(error);
   }
 }
 

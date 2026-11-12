@@ -332,3 +332,15 @@ reload), and the **draft-from-sources dispatch** (nothing is created before the 
 confirm, the created listing opens in the existing screen, the queue outcome is reported honestly,
 and an asset-set replay returns the same listing instead of a duplicate). No planned skills
 remain; C1 is complete. Still user-gated: A2, A3, C3 and the P3.2/C5 operator decisions.
+
+### Activation preflight automation (2026-11-12)
+
+The A2 activation helper gained a read-only `--preflight` mode (`scripts/studio-activation.mjs`):
+it connects to the reviewed `DATABASE_ADMIN_URL`, proves the Studio schema objects from migrations
+`0054`–`0057` exist (tables, quota columns, token-resolver functions), checks the target
+user/workspace/membership and reports the current settings state — with `SELECT` statements only,
+no writes, sanitised single-line JSON and exit `2` when the target is not ready. Verified locally
+against a fresh disposable database: migrated-empty reported `blocked` with the missing identity,
+the seeded workspace reported `ready` with an unchanged settings row. This closes the runbook
+automation half of A2; the remaining step is the real preview/production dry run, which still needs
+the operator's database-access decision (`--allow-remote`, admin URL and the reviewed window).
