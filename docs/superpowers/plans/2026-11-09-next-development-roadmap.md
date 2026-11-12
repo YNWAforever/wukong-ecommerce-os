@@ -349,3 +349,12 @@ against the seeded flags-on acceptance database on every build, so schema or rol
 fails the build. This closes the runbook automation half of A2; the remaining step is the real
 preview/production dry run, which still needs the operator's database-access decision
 (`--allow-remote`, admin URL and the reviewed window).
+
+### Production activation package (2026-11-12)
+
+The operator handoff for the remaining A2/A3/C3 work now exists as
+[conversation-studio-activation-package-2026-11-12.md](../../runbooks/conversation-studio-activation-package-2026-11-12.md):
+current production posture and smoke status, what is verified and how, the exact deterministic-first
+activation sequence (preflight, additive migrations, workspace enablement, deployment flag, authenticated
+acceptance), the four decisions only the operator can make, rollback steps and the invariants that stay
+true. It performs and changes nothing; every Studio flag remains off.
