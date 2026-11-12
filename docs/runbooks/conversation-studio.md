@@ -417,7 +417,12 @@ pnpm studio:activate -- --workspace-id <workspace-id> --owner-email <owner@examp
 
 The live tool verifies the user, workspace and membership first and only then upserts `enabled` +
 `updated_by`; it never edits budgets, skills, AI settings or any other column. A readback mismatch
-exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same database before it. The
+exits non-zero. Run `pnpm --filter @wukong/db db:migrate` against the same database before it. Since
+2026-11-12 the lookup-owned resolver functions are created **as their owning role** (`SET ROLE` in
+migrations `0021`, `0055`, `0057`), so migrations apply and replay on hosts without a superuser — the
+Neon owner role — instead of requiring an object ownership transfer the admin cannot perform. The
+migration grants its admin a `SET` membership edge on the lookup roles once, and a regression test
+pins that the `ALTER ... OWNER TO` form never returns. The
 same sequence is the A2 preview dry run: preflight first, then the plan, then the reviewed mutation
 — only after the operator grants database access for that window. CI runs the same read-only
 preflight (`Studio activation preflight (read-only)`) against the seeded acceptance database on every

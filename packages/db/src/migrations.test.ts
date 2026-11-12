@@ -72,6 +72,29 @@ it("loads the additive product-shot migration with forced RLS and narrow publica
   expect(migration?.sql).toContain("product_shot_approval_urls");
 });
 
+it("creates lookup-owned functions as the owning role so migrations replay without a superuser", async () => {
+  const migrations = await loadSqlMigrations(
+    new URL("../drizzle/", import.meta.url),
+  );
+
+  for (const [fileName, role] of [
+    ["0021_product_shots.sql", "wukong_image_lookup"],
+    ["0055_studio_mcp_token_lookup.sql", "wukong_mcp_token_lookup"],
+    ["0057_studio_mcp_token_quotas.sql", "wukong_mcp_token_lookup"],
+  ] as const) {
+    const sql = migrations.find(({ name }) => name === fileName)?.sql ?? "";
+    expect(sql, fileName).toContain(`SET ROLE ${role}`);
+    expect(sql, fileName).toContain("CREATE OR REPLACE FUNCTION");
+    expect(sql, fileName).toContain(
+      `REVOKE CREATE ON SCHEMA public FROM ${role}`,
+    );
+    // The function must be created as the lookup role, never transferred to it
+    // afterwards: hosts without a superuser (Neon) cannot ALTER an object they
+    // do not own, so the transfer form would make migration replay fail.
+    expect(sql, fileName).not.toMatch(/ALTER FUNCTION[^;]*OWNER TO/);
+  }
+});
+
 it("discovers all reviewed additive wine migrations in release order without a parallel registry", async () => {
   const migrations = await loadSqlMigrations(
     new URL("../drizzle/", import.meta.url),

@@ -70,6 +70,22 @@ GRANT SELECT (rate_limit_per_minute, monthly_call_quota)
 
 -- Same hardened shape as 0055: SECURITY DEFINER, dedicated NOLOGIN/NOBYPASSRLS
 -- owner, one permissive SELECT policy, EXECUTE only for wukong_app.
+--
+-- Create/replace as the owning lookup role so replay works on hosts without
+-- a superuser (Neon): the admin can only act as the role after recording a
+-- SET membership edge, which 0055 does and this guard repeats defensively.
+DO $mcp_owner$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolsuper) THEN
+  BEGIN
+   EXECUTE format('GRANT wukong_mcp_token_lookup TO %I WITH SET TRUE, INHERIT FALSE', current_user);
+  EXCEPTION WHEN OTHERS THEN
+   NULL;
+  END;
+ END IF;
+ EXECUTE 'GRANT CREATE ON SCHEMA public TO wukong_mcp_token_lookup';
+END $mcp_owner$;
+
+SET ROLE wukong_mcp_token_lookup;
 CREATE OR REPLACE FUNCTION public.studio_resolve_api_token_limits(p_token_hash text)
 RETURNS TABLE(
   workspace_id text,
@@ -99,9 +115,8 @@ AS $studio_resolve_api_token_limits$
   WHERE t.token_hash = p_token_hash
     AND p_token_hash ~ '^[a-f0-9]{64}$'
 $studio_resolve_api_token_limits$;
-
-ALTER FUNCTION public.studio_resolve_api_token_limits(text)
-  OWNER TO wukong_mcp_token_lookup;
 REVOKE ALL ON FUNCTION public.studio_resolve_api_token_limits(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.studio_resolve_api_token_limits(text)
   TO wukong_app;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM wukong_mcp_token_lookup;

@@ -188,6 +188,22 @@ GRANT USAGE ON SCHEMA public TO wukong_image_lookup;
 GRANT SELECT(token_hash,workspace_id,storage_key,candidate_digest,size,revoked_at) ON public.product_shot_publications TO wukong_image_lookup;
 DROP POLICY IF EXISTS product_shot_public_lookup ON public.product_shot_publications;
 CREATE POLICY product_shot_public_lookup ON public.product_shot_publications FOR SELECT TO wukong_image_lookup USING(true);
+
+-- Replay-safe on hosts without a superuser role (Neon): the function is owned
+-- by the non-login lookup role, and the migration admin cannot replace an
+-- object it does not own. Grant the admin a SET edge once, then create/replace
+-- the function as its owner so replay works on every host.
+DO $owner$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolsuper) THEN
+  BEGIN
+   EXECUTE format('GRANT wukong_image_lookup TO %I WITH SET TRUE, INHERIT FALSE', current_user);
+  EXCEPTION WHEN OTHERS THEN
+   NULL;
+  END;
+ END IF;
+ EXECUTE 'GRANT CREATE ON SCHEMA public TO wukong_image_lookup';
+END $owner$;
+SET ROLE wukong_image_lookup;
 CREATE OR REPLACE FUNCTION public.lookup_published_product_image(requested_hash text)
 RETURNS TABLE(workspace_id text,storage_key text,digest text,size integer)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $lookup$
@@ -196,6 +212,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $lookup$
  WHERE p.token_hash=requested_hash AND p.revoked_at IS NULL
    AND requested_hash ~ '^[0-9a-f]{64}$'
 $lookup$;
-ALTER FUNCTION public.lookup_published_product_image(text) OWNER TO wukong_image_lookup;
 REVOKE ALL ON FUNCTION public.lookup_published_product_image(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.lookup_published_product_image(text) TO wukong_app;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM wukong_image_lookup;
