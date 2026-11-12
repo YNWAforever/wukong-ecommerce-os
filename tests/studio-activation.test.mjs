@@ -157,6 +157,7 @@ test("preflight report never claims readiness a check did not prove", () => {
     tables: emptyTables,
     columns: new Map(),
     functions: new Set(),
+    roles: new Map(),
     userExists: false,
     workspaceExists: false,
     membershipRole: null,
@@ -171,6 +172,12 @@ test("preflight report never claims readiness a check did not prove", () => {
       "studio_resolve_api_token_limits",
     ),
   );
+  assert.equal(blocked.checks.roles.ok, false);
+  assert.equal(blocked.checks.roles.runtimeRole.present, false);
+  assert.deepEqual(blocked.checks.roles.unsafeLookupRoles, [
+    "wukong_image_lookup",
+    "wukong_mcp_token_lookup",
+  ]);
   assert.equal(blocked.checks.userExists, false);
 
   const readyTables = new Set([
@@ -206,6 +213,20 @@ test("preflight report never claims readiness a check did not prove", () => {
     ],
     ["studio_mcp_calls", new Set(["token_id"])],
   ]);
+  const safeRoles = new Map([
+    [
+      "wukong_app",
+      { superuser: false, bypassRls: false, canLogin: true, inherit: false },
+    ],
+    [
+      "wukong_image_lookup",
+      { superuser: false, bypassRls: false, canLogin: false, inherit: false },
+    ],
+    [
+      "wukong_mcp_token_lookup",
+      { superuser: false, bypassRls: false, canLogin: false, inherit: false },
+    ],
+  ]);
   const ready = preflightReport({
     target,
     workspaceId: "ws_opf",
@@ -215,6 +236,7 @@ test("preflight report never claims readiness a check did not prove", () => {
       "studio_resolve_api_token",
       "studio_resolve_api_token_limits",
     ]),
+    roles: safeRoles,
     userExists: true,
     workspaceExists: true,
     membershipRole: "owner",
@@ -224,10 +246,100 @@ test("preflight report never claims readiness a check did not prove", () => {
   assert.equal(ready.readyToActivate, true);
   assert.deepEqual(ready.checks.schema.missingTables, []);
   assert.deepEqual(ready.checks.schema.missingColumns, []);
+  assert.deepEqual(ready.checks.roles.unsafeLookupRoles, []);
   assert.deepEqual(ready.checks.studioSettings, {
     exists: true,
     enabled: false,
   });
+});
+
+test("preflight blocks an unsafe or missing runtime role", () => {
+  const target = { host: "db.example.com", database: "wukong" };
+  const tables = new Set([
+    "users",
+    "workspaces",
+    "memberships",
+    "audit_events",
+    "studio_workspace_settings",
+    "studio_threads",
+    "studio_messages",
+    "studio_runs",
+    "studio_run_events",
+    "studio_outputs",
+    "studio_output_versions",
+    "studio_budget_reservations",
+    "studio_mcp_connections",
+    "studio_mcp_calls",
+    "studio_api_tokens",
+  ]);
+  const columns = new Map([
+    [
+      "studio_workspace_settings",
+      new Set(["workspace_id", "enabled", "updated_by", "updated_at"]),
+    ],
+    [
+      "studio_api_tokens",
+      new Set([
+        "token_hash",
+        "revoked_at",
+        "rate_limit_per_minute",
+        "monthly_call_quota",
+      ]),
+    ],
+    ["studio_mcp_calls", new Set(["token_id"])],
+  ]);
+  const functions = new Set([
+    "studio_resolve_api_token",
+    "studio_resolve_api_token_limits",
+  ]);
+  const base = {
+    target,
+    workspaceId: "ws_opf",
+    tables,
+    columns,
+    functions,
+    userExists: true,
+    workspaceExists: true,
+    membershipRole: "owner",
+    studioSettings: { exists: true, enabled: true },
+  };
+  const superuserRuntime = preflightReport({
+    ...base,
+    roles: new Map([
+      [
+        "wukong_app",
+        { superuser: true, bypassRls: false, canLogin: true, inherit: false },
+      ],
+      [
+        "wukong_image_lookup",
+        { superuser: false, bypassRls: false, canLogin: false, inherit: false },
+      ],
+      [
+        "wukong_mcp_token_lookup",
+        { superuser: false, bypassRls: false, canLogin: false, inherit: false },
+      ],
+    ]),
+  });
+  assert.equal(superuserRuntime.outcome, "blocked");
+  assert.equal(superuserRuntime.checks.roles.runtimeRole.safe, false);
+  assert.equal(superuserRuntime.checks.roles.runtimeRole.superuser, true);
+  assert.equal(superuserRuntime.readyToActivate, false);
+
+  const missingLookupRole = preflightReport({
+    ...base,
+    roles: new Map([
+      [
+        "wukong_app",
+        { superuser: false, bypassRls: false, canLogin: true, inherit: false },
+      ],
+    ]),
+  });
+  assert.equal(missingLookupRole.outcome, "blocked");
+  assert.deepEqual(missingLookupRole.checks.roles.unsafeLookupRoles, [
+    "wukong_image_lookup",
+    "wukong_mcp_token_lookup",
+  ]);
+  assert.equal(missingLookupRole.readyToActivate, false);
 });
 
 test("preflight without DATABASE_ADMIN_URL exits 2 with a sanitised error", () => {

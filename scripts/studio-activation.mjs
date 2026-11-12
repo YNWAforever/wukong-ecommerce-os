@@ -82,6 +82,15 @@ const REQUIRED_FUNCTIONS = [
   "studio_resolve_api_token",
   "studio_resolve_api_token_limits",
 ];
+/**
+ * Role posture is part of readiness: the web process must connect as the
+ * non-superuser, RLS-respecting runtime role, and the two SECURITY DEFINER
+ * lookup roles must never be login/superuser/BYPASSRLS/INHERIT. A production
+ * dry run that skipped this could "succeed" while every request reads foreign
+ * rows or fails closed.
+ */
+const RUNTIME_ROLE = "wukong_app";
+const LOOKUP_ROLES = ["wukong_image_lookup", "wukong_mcp_token_lookup"];
 
 export class ActivationError extends Error {
   constructor(code, message, exitCode = 2) {
@@ -250,6 +259,7 @@ export function preflightReport({
   tables,
   columns,
   functions,
+  roles,
   userExists,
   workspaceExists,
   membershipRole,
@@ -267,10 +277,29 @@ export function preflightReport({
   const missingFunctions = REQUIRED_FUNCTIONS.filter(
     (name) => !functions.has(name),
   );
+  const runtime = roles.get(RUNTIME_ROLE) ?? null;
+  const runtimeSafe =
+    runtime !== null &&
+    runtime.superuser === false &&
+    runtime.bypassRls === false;
+  const unsafeLookupRoles = [];
+  for (const name of LOOKUP_ROLES) {
+    const role = roles.get(name);
+    if (
+      role === undefined ||
+      role.superuser !== false ||
+      role.bypassRls !== false ||
+      role.canLogin !== false ||
+      role.inherit !== false
+    )
+      unsafeLookupRoles.push(name);
+  }
+  const rolesSafe = runtimeSafe && unsafeLookupRoles.length === 0;
   const schemaReady =
     missingTables.length === 0 &&
     missingColumns.length === 0 &&
-    missingFunctions.length === 0;
+    missingFunctions.length === 0 &&
+    rolesSafe;
   const readyToActivate =
     schemaReady &&
     userExists &&
@@ -289,6 +318,16 @@ export function preflightReport({
         missingTables,
         missingColumns,
         missingFunctions,
+      },
+      roles: {
+        ok: rolesSafe,
+        runtimeRole: {
+          present: runtime !== null,
+          safe: runtimeSafe,
+          superuser: runtime?.superuser ?? null,
+          bypassRls: runtime?.bypassRls ?? null,
+        },
+        unsafeLookupRoles,
       },
       userExists,
       workspaceExists,
@@ -323,6 +362,21 @@ async function runPreflight(args, databaseUrl, target) {
       WHERE pronamespace = 'public'::regnamespace
     `;
     const functions = new Set(functionRows.map((row) => row.proname));
+    const roleRows = await sql`
+      SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolinherit
+      FROM pg_roles
+    `;
+    const roles = new Map(
+      roleRows.map((row) => [
+        row.rolname,
+        {
+          superuser: row.rolsuper === true,
+          bypassRls: row.rolbypassrls === true,
+          canLogin: row.rolcanlogin === true,
+          inherit: row.rolinherit === true,
+        },
+      ]),
+    );
 
     let userExists = false;
     let workspaceExists = false;
@@ -369,6 +423,7 @@ async function runPreflight(args, databaseUrl, target) {
       tables,
       columns,
       functions,
+      roles,
       userExists,
       workspaceExists,
       membershipRole,
