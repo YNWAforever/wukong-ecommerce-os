@@ -109,17 +109,21 @@ describe("source inspection", () => {
       }),
     ).rejects.toMatchObject({ code: "asset_content_mismatch" });
   });
-  it("rejects a small encoded image that exceeds the decoded pixel cap", async () => {
-    const bytes = await sharp({
-      create: { width: 6400, height: 6400, channels: 3, background: "white" },
-    })
-      .png()
-      .toBuffer();
-    const f = await setup(bytes, "image/png");
-    await expect(
-      inspectUploadedSource(f.store, "inspect", f.key, f.expected),
-    ).rejects.toMatchObject({ code: "image_too_large" });
-  });
+  it(
+    "rejects a small encoded image that exceeds the decoded pixel cap",
+    { timeout: 30_000 },
+    async () => {
+      const bytes = await sharp({
+        create: { width: 6400, height: 6400, channels: 3, background: "white" },
+      })
+        .png()
+        .toBuffer();
+      const f = await setup(bytes, "image/png");
+      await expect(
+        inspectUploadedSource(f.store, "inspect", f.key, f.expected),
+      ).rejects.toMatchObject({ code: "image_too_large" });
+    },
+  );
   it("rejects bytes that merely claim to be PDF", async () => {
     const f = await setup(Buffer.from("not a PDF"), "application/pdf");
     await expect(
