@@ -174,10 +174,11 @@ test("preflight report never claims readiness a check did not prove", () => {
   );
   assert.equal(blocked.checks.roles.ok, false);
   assert.equal(blocked.checks.roles.runtimeRole.present, false);
-  assert.deepEqual(blocked.checks.roles.unsafeLookupRoles, [
+  assert.deepEqual(blocked.checks.roles.missingLookupRoles, [
     "wukong_image_lookup",
     "wukong_mcp_token_lookup",
   ]);
+  assert.deepEqual(blocked.checks.roles.unsafeLookupRoles, []);
   assert.equal(blocked.checks.userExists, false);
 
   const readyTables = new Set([
@@ -246,6 +247,7 @@ test("preflight report never claims readiness a check did not prove", () => {
   assert.equal(ready.readyToActivate, true);
   assert.deepEqual(ready.checks.schema.missingTables, []);
   assert.deepEqual(ready.checks.schema.missingColumns, []);
+  assert.deepEqual(ready.checks.roles.missingLookupRoles, []);
   assert.deepEqual(ready.checks.roles.unsafeLookupRoles, []);
   assert.deepEqual(ready.checks.studioSettings, {
     exists: true,
@@ -335,11 +337,35 @@ test("preflight blocks an unsafe or missing runtime role", () => {
     ]),
   });
   assert.equal(missingLookupRole.outcome, "blocked");
-  assert.deepEqual(missingLookupRole.checks.roles.unsafeLookupRoles, [
+  assert.deepEqual(missingLookupRole.checks.roles.missingLookupRoles, [
     "wukong_image_lookup",
     "wukong_mcp_token_lookup",
   ]);
+  assert.deepEqual(missingLookupRole.checks.roles.unsafeLookupRoles, []);
   assert.equal(missingLookupRole.readyToActivate, false);
+
+  const unsafeLookupRole = preflightReport({
+    ...base,
+    roles: new Map([
+      [
+        "wukong_app",
+        { superuser: false, bypassRls: false, canLogin: true, inherit: false },
+      ],
+      [
+        "wukong_image_lookup",
+        { superuser: false, bypassRls: false, canLogin: true, inherit: false },
+      ],
+      [
+        "wukong_mcp_token_lookup",
+        { superuser: false, bypassRls: false, canLogin: false, inherit: false },
+      ],
+    ]),
+  });
+  assert.equal(unsafeLookupRole.outcome, "blocked");
+  assert.deepEqual(unsafeLookupRole.checks.roles.missingLookupRoles, []);
+  assert.deepEqual(unsafeLookupRole.checks.roles.unsafeLookupRoles, [
+    "wukong_image_lookup",
+  ]);
 });
 
 test("preflight without DATABASE_ADMIN_URL exits 2 with a sanitised error", () => {
