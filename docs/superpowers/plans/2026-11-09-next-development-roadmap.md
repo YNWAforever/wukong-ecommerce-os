@@ -361,3 +361,11 @@ true. It performs and changes nothing; every Studio flag remains off. The sequen
 rehearsed end-to-end on a fresh disposable database (blocked before migrations, blocked until the
 identity existed, ready after seeding, then guarded disable/enable with readback), recorded in the
 package. Production execution still needs the A2 database-access decision.
+
+A read-only preview-branch dry run on 2026-11-12 (existing Neon branch
+`codex/recovery-rehearsal-20260916`) reported `blocked`: the branch predates the Studio migrations
+(no Studio tables/functions, `wukong_mcp_token_lookup` missing), so it needs `db:migrate` before it
+can rehearse activation. The same investigation found that preview and production Vercel envs resolve
+to the same Neon endpoint, while the only branch-scoped preview override points at a deleted branch:
+preview deployments are not isolated and must not be used for mutating rehearsal until a dedicated
+branch is configured. Both findings are recorded in section 8 of the activation package.
