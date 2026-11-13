@@ -1,8 +1,12 @@
 # Live model onboarding — OpenCode Go / `deepseek-v4.1-flash` (A3, prepared 2026-11-12)
 
-Status: **prepared, not enabled**. The operator selected OpenCode Go / `deepseek-v4.1-flash` on
-2026-11-13; the credential (`OPENCODE_GO_API_KEY`) and the budget numbers still need approval. This
-sheet is the execution checklist for the A3 step that follows the A2 deterministic activation.
+Status: **limits approved, not enabled**. On 2026-11-13 the operator approved OpenCode Go /
+`deepseek-v4.1-flash` with a **USD 10.00 cumulative workspace cap**, **USD 2.00 per-run ceiling**,
+**4,096 max output tokens** and pricing label **`opencode-go-2026-11`**. These values are authorized
+but have not been verified as applied. The operator will save `OPENCODE_GO_API_KEY` in the
+`wukong-ecommerce-os` project's Vercel **Production** environment and confirmed having an admin/owner
+account for the audited settings surface. The latest environment-name check did not list the key;
+AI remains disabled pending credential presence and settings readback.
 
 ## What is already implemented
 
@@ -33,14 +37,17 @@ sheet is the execution checklist for the A3 step that follows the A2 determinist
 
 ## Exact settings — do this only while A2 is live and audited
 
-Use the audited admin surface (`/studio/settings` or `PATCH /api/studio/settings` with the same body),
-never hand-written `UPDATE` SQL now that the surface exists:
+Use an **admin/owner** session on the audited settings surface (`/studio/settings` or
+`PATCH /api/studio/settings`). Preserve the current `allowedSkills`, `retentionDays`, `defaultHome`
+and `enabled` values when configuring AI. The body below illustrates those fields; they are not
+new approvals to replace the workspace's existing configuration. The approved AI and budget values
+are shown exactly. Never use hand-written `UPDATE` SQL to bypass the admin surface:
 
 ```json
 {
   "enabled": true,
   "allowedSkills": ["catalog.find"],
-  "monthlyBudgetUsd": "100.00",
+  "monthlyBudgetUsd": "10.00",
   "runCeilingUsd": "2.00",
   "retentionDays": null,
   "defaultHome": false,
@@ -103,6 +110,7 @@ Commitments already reserved are not refunded by disabling AI; the budget cap is
 
 ## What this does NOT decide
 
-The credential itself, the budget numbers and the pricing label remain operator decisions. No live
-model request has been made from this repository in any round; the live-model code path has only been
-exercised against the fake provider in tests.
+The operator has approved the budget numbers and pricing label recorded above. Credential setup,
+admin settings application and the first live-model verification remain pending. This approval does
+not activate external MCP or authorize a workspace role change. No live Studio model request has
+been verified in this session.
