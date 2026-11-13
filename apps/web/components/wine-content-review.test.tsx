@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { WineContentReview } from "./wine-content-review";
@@ -60,6 +60,61 @@ it("edits a bilingual paragraph, saves only its text and keeps the other paragra
       .value,
   ).toBe("Original pairing");
   await act(async () => root.unmount());
+});
+
+it("keeps an edit entered before a pristine server-refresh effect flushes", async () => {
+  preference.locale = "en";
+  const el = document.createElement("div");
+  document.body.append(el);
+  const root = createRoot(el);
+  const save = vi.fn().mockResolvedValue(undefined);
+  const edit = "Edit entered immediately after refresh";
+  function Refresh({ refreshed }: { refreshed: boolean }) {
+    // Inject input after the refreshed DOM commits, before passive effects.
+    // This deterministically exercises the input/effect ordering seen in CI.
+    useLayoutEffect(() => {
+      if (!refreshed) return;
+      const textarea = el.querySelector('textarea[lang="en"]')!;
+      Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )!.set!.call(textarea, edit);
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    }, [refreshed]);
+    return (
+      <WineContentReview
+        sections={sections.map((section) => ({ ...section }))}
+        revision={2}
+        baseVersionId="base"
+        canEdit
+        busy={false}
+        onSave={save}
+        onRegenerate={vi.fn()}
+      />
+    );
+  }
+  try {
+    await act(async () => root.render(<Refresh refreshed={false} />));
+    await act(async () => root.render(<Refresh refreshed />));
+    expect(
+      (el.querySelector('textarea[lang="en"]') as HTMLTextAreaElement).value,
+    ).toBe(edit);
+    const button = el.querySelector(
+      '[data-action="save-sections"]',
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    expect(save).toHaveBeenCalledWith({
+      expectedInputRevision: 2,
+      baseVersionId: "base",
+      sectionChanges: [
+        { key: "introduction", en: edit, "zh-Hant": "原有介紹", locked: false },
+      ],
+    });
+  } finally {
+    await act(async () => root.unmount());
+    el.remove();
+  }
 });
 
 const preference = vi.hoisted(() => ({ locale: "en" }));
