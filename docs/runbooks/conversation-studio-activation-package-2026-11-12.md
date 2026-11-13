@@ -1,14 +1,15 @@
 # Conversation Studio — production activation package (2026-11-12)
 
-Status: **A2 activated and operator-reported accepted; A3 configured/deployed, live call unverified.**
+Status: **A2 activated and operator-reported accepted; A3 first live call and settlement verified.**
 The deterministic production window was executed on 2026-11-13 (section 10). On 2026-11-14
 (Asia/Singapore), the operator explicitly authorized the pilot's `operator` → `admin` role change,
-and the approved AI policy was applied through the audited settings service. Production now has
-`CONVERSATION_STUDIO_ENABLED=true` and `CONVERSATION_STUDIO_AI_ENABLED=true`; credential-name presence,
-settings readback, audit and deployment readiness are verified, but a successful provider call and
-cost settlement are not (section 11). Hosted MCP remains off, and external MCP was explicitly deferred
-for this pilot. Sections 1–8 preserve the initial posture, prepared sequence and rehearsal evidence;
-sections 10–11 are the dated production records.
+and the approved AI policy was applied through the audited settings service. Production has
+`CONVERSATION_STUDIO_ENABLED=true` and `CONVERSATION_STUDIO_AI_ENABLED=true`. The first live
+`catalog.find` run succeeded, with its model event, usage, completion audit and settled budget
+reservation independently read back (section 11). This is execution acceptance, not broad response
+quality validation. Hosted MCP remains off, and external MCP was explicitly deferred for this pilot.
+Sections 1–8 preserve the initial posture, prepared sequence and rehearsal evidence; sections 10–11
+are the dated production records.
 
 ## 1. Initial production posture (before activation; current state is in sections 10–11)
 
@@ -312,23 +313,47 @@ USD 2 per-run ceiling, 4,096 max output tokens and pricing label `opencode-go-20
 explicitly requested a database role change after the settings API returned `insufficient_role`.
 The supplied conversation id was checked against its workspace and creator before any role write.
 
-| Check                        | Evidence                                                                                                                                                                                                                                      |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Authorized membership change | `ws_opak` / `user_opak_operator`: `operator` → `admin`; owner was not granted                                                                                                                                                                 |
-| Role-change audit            | `workspace.member_role_changed`, id `6d18556b-9e71-4cd7-90c6-d02994735d23`, source `operator-authorized-db-maintenance`, before/after recorded; independently read back                                                                       |
-| AI policy application        | Existing `createStudioSettingsAdminService` validation, persisted admin membership check, workspace scope and audit; runtime database role `wukong_app` verified non-superuser without BYPASSRLS                                              |
-| Policy readback              | `monthlyBudgetUsd:10.000000`, `runCeilingUsd:2.000000`, provider `opencode-go`, model `deepseek-v4.1-flash`, pricing `opencode-go-2026-11`, input/output price `0.3000`/`1.2000` per million tokens, max input `1048576`, max output `4096`   |
-| Settings audit               | `studio.settings.updated`, id `043aee38-53e5-4e06-a619-fe8261c23167`, `aiConfigured:false` → `true`; settings and audit read back after the transaction                                                                                       |
-| Existing settings            | Enabled state, skill allowlist, retention and default home preserved                                                                                                                                                                          |
-| Production env               | `OPENCODE_GO_API_KEY` listed (value never displayed); `CONVERSATION_STUDIO_AI_ENABLED=true` added alongside existing Studio flag                                                                                                              |
-| Deployment                   | `dpl_D4uHVzUYrjm8D4imFC27sf7GPMkf`, Ready and aliased to `wukong-ecommerce-os.vercel.app`, based on `aa9d0be2`                                                                                                                                |
-| Route smoke                  | `/signin` 200, `/studio` 307 and `/api/studio/settings` 401 without a session                                                                                                                                                                 |
-| Release CI                   | PR #217 run `43475066246` and main run `43492256826` succeeded on attempt 1; the patch fixes a deterministically reproduced pristine-draft edit-loss race                                                                                     |
-| Live-call evidence           | Operator reported seeing AI output; the subsequent content-free query found zero runs, model events and reservations created after policy configuration. A successful live call, key validity, token usage and settled cost remain unverified |
+| Check                        | Evidence                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authorized membership change | `ws_opak` / `user_opak_operator`: `operator` → `admin`; owner was not granted                                                                                                                                                               |
+| Role-change audit            | `workspace.member_role_changed`, id `6d18556b-9e71-4cd7-90c6-d02994735d23`, source `operator-authorized-db-maintenance`, before/after recorded; independently read back                                                                     |
+| AI policy application        | Existing `createStudioSettingsAdminService` validation, persisted admin membership check, workspace scope and audit; runtime database role `wukong_app` verified non-superuser without BYPASSRLS                                            |
+| Policy readback              | `monthlyBudgetUsd:10.000000`, `runCeilingUsd:2.000000`, provider `opencode-go`, model `deepseek-v4.1-flash`, pricing `opencode-go-2026-11`, input/output price `0.3000`/`1.2000` per million tokens, max input `1048576`, max output `4096` |
+| Settings audit               | `studio.settings.updated`, id `043aee38-53e5-4e06-a619-fe8261c23167`, `aiConfigured:false` → `true`; settings and audit read back after the transaction                                                                                     |
+| Existing settings            | Enabled state, skill allowlist, retention and default home preserved                                                                                                                                                                        |
+| Production env               | `OPENCODE_GO_API_KEY` listed (value never displayed); `CONVERSATION_STUDIO_AI_ENABLED=true` added alongside existing Studio flag                                                                                                            |
+| Deployment                   | `dpl_D4uHVzUYrjm8D4imFC27sf7GPMkf`, Ready and aliased to `wukong-ecommerce-os.vercel.app`, based on `aa9d0be2`                                                                                                                              |
+| Route smoke                  | `/signin` 200, `/studio` 307 and `/api/studio/settings` 401 without a session                                                                                                                                                               |
+| Release CI                   | PR #217 run `43475066246` and main run `43492256826` succeeded on attempt 1; the patch fixes a deterministically reproduced pristine-draft edit-loss race                                                                                   |
+| Live-call evidence           | Initial post-configuration query found no new runs; the later authenticated run is independently verified in the first live-model acceptance record below                                                                                   |
 
-Next: submit a new authenticated `catalog.find` turn and record its thread/run id. Verify persisted
-provider/model, a completed model event, token usage, settled cost and reservation state before
-claiming A3 live acceptance. Do not copy merchant content into the evidence record.
+### First live-model acceptance (2026-11-14 04:30, Asia/Singapore)
+
+The operator supplied the rendered result, including the model trace. A subsequent content-free,
+read-only query using the RLS-enforced runtime role matched its timestamp and exact token counts:
+
+| Evidence              | Verified value                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------- |
+| Thread                | `b1cd87cd-9db8-45b2-8234-16798d8af863`                                                 |
+| Run                   | `c4205aab-d59e-4eec-b292-ff8e2e7bde95`                                                 |
+| Skill / status        | `catalog.find` / `succeeded`; no error code                                            |
+| Started / finished    | `2026-11-13T20:29:52.722Z` / `2026-11-13T20:30:08.925Z`                                |
+| Persisted model event | One `model` / `done` event, key `studio.trace.model.done`, model `deepseek-v4.1-flash` |
+| Token usage           | 927 input, 1,385 output                                                                |
+| Evidence filtering    | 7 dropped claims in both model event and completion audit                              |
+| Completion audit      | One `studio.run.completed`, `modelUsed:true`                                           |
+| Budget reservation    | USD `0.638976` reserved, state `settled`                                               |
+| Settlement            | USD `0.001941` in both run and reservation                                             |
+
+This closes the first-call execution/settlement check for A3. Model identity is verified from the
+persisted model event and configured backend: the run-summary `provider`, `model` and `reserved_usd`
+columns are null, so they cannot be used as the source for those facts. The reservation ledger
+contains the verified reserved amount; no historical summary fields were backfilled.
+
+The rendered answer remains labelled unverified. Dropping 7 unresolved-reference claims proves that
+filtering ran, not that all remaining generated statements are correct. In particular, zero search
+matches does not mean the workspace has zero products; no claim about the actual search input is
+made from the model's explanation alone. No merchant content was copied into this record.
 
 Rollback: unset or set `CONVERSATION_STUDIO_AI_ENABLED=false` and redeploy; an authorized admin can
 also clear the `ai` block through the audited settings surface. Keep deterministic Studio enabled.
