@@ -39,8 +39,10 @@ migrations through `0057` applied, `ws_opak` enabled with one audited `studio.se
 question, answer/trace/evidence, reload and outputs checks (section 10 records the evidence limits).
 On 2026-11-14 the operator explicitly authorized the pilot membership change to `admin`. The approved
 OpenCode Go policy was applied through the audited admin service and
-`CONVERSATION_STUDIO_AI_ENABLED=true` deployed; the first successful provider call and cost settlement
-remain unverified (section 11). Hosted MCP stays off and external MCP is deferred for this pilot.
+`CONVERSATION_STUDIO_AI_ENABLED=true` deployed. The first live `catalog.find` run succeeded with
+927 input / 1,385 output tokens and USD 0.001941 settled; model event, completion audit and budget
+reservation were independently read back (section 11 records the evidence and summary-field limits).
+Hosted MCP stays off and external MCP is deferred for this pilot.
 Companion sheets: [live-model onboarding](./conversation-studio-live-model-onboarding-2026-11-12.md)
 (A3, configured/deployed) and [external MCP provider evaluation](./conversation-studio-external-mcp-provider-evaluation-2026-11-12.md)
 (C3, deferred).

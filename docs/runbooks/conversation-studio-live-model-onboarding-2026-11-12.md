@@ -1,6 +1,6 @@
 # Live model onboarding — OpenCode Go / `deepseek-v4.1-flash` (A3, prepared 2026-11-12)
 
-Status: **configured and deployed on 2026-11-14 (Asia/Singapore); first live-model call unverified**.
+Status: **first live-model call and budget settlement verified on 2026-11-14 (Asia/Singapore)**.
 The approved `opencode-go` / `deepseek-v4.1-flash` settings were applied through the existing admin
 settings service using the non-superuser, RLS-enforced `wukong_app` database role: **USD 10.00 cumulative
 workspace cap**, **USD 2.00 per-run ceiling**, **4,096 max output tokens**, pricing label
@@ -8,9 +8,13 @@ workspace cap**, **USD 2.00 per-run ceiling**, **4,096 max output tokens**, pric
 `043aee38-53e5-4e06-a619-fe8261c23167` confirm the write; existing skills, retention and home settings
 were preserved. Vercel Production lists `OPENCODE_GO_API_KEY`, and
 `CONVERSATION_STUDIO_AI_ENABLED=true` is deployed in Ready deployment
-`dpl_D4uHVzUYrjm8D4imFC27sf7GPMkf` on the production alias. Credential validity, provider usage and
-settled cost still require a new model-backed run; the latest content-free database check found no
-runs, model events or reservations after configuration. See section 11 of the activation package.
+`dpl_D4uHVzUYrjm8D4imFC27sf7GPMkf` on the production alias. Run
+`c4205aab-d59e-4eec-b292-ff8e2e7bde95` succeeded at 04:30:08 Asia/Singapore: its persisted model event
+identifies `deepseek-v4.1-flash`, **927 input / 1,385 output tokens**, and **7 dropped ungrounded
+claims**. The run and budget reservation agree on **USD 0.001941 settled**, with the reservation in
+`settled` state. Run-summary provider/model fields are null; model identity is verified from the
+persisted event plus configured backend, not those summary fields. This proves one successful live
+call and settlement, not general response quality. See section 11 of the activation package.
 
 ## What is already implemented
 
@@ -114,8 +118,9 @@ Commitments already reserved are not refunded by disabling AI; the budget cap is
 
 ## What this does NOT decide
 
-The first live-model verification remains pending; configured settings and a Ready deployment alone
-do not prove a successful provider request. The operator separately authorized the pilot's role
-change from `operator` to `admin` on 2026-11-14, recorded by audit
-`6d18556b-9e71-4cd7-90c6-d02994735d23`. External MCP was explicitly deferred for this pilot and stays
-disabled. No live Studio model request has been verified in this session.
+The observed live run verifies credential use, the model path and budget settlement for that turn;
+it does not validate every generated claim or establish a broad quality evaluation. Seven claims were
+filtered for unresolved evidence references, and the remaining AI suggestions are still labelled
+unverified. The operator separately authorized the pilot's role change from `operator` to `admin` on
+2026-11-14, recorded by audit `6d18556b-9e71-4cd7-90c6-d02994735d23`. External MCP remains explicitly
+deferred and disabled; this live verification does not authorize it or any SHOPLINE write.
