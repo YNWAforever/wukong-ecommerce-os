@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import type {
   ContentSection,
   WineSectionChange,
@@ -120,7 +120,9 @@ export function WineContentReview({
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
-  useEffect(() => {
+  // Sync a pristine draft before the refreshed DOM becomes interactive. A
+  // passive effect can run after the next input event and erase that new edit.
+  useLayoutEffect(() => {
     if (storageReady && !dirty && !saving) {
       setBase({ sections, revision, baseVersionId });
       setDraft(sections);
