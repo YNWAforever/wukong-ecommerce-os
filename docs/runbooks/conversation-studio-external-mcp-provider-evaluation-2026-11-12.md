@@ -1,9 +1,9 @@
 # External MCP provider evaluation checklist (C3, prepared 2026-11-12)
 
-Status: **prepared, no provider approved**. `STUDIO_EXTERNAL_MCP_ENABLED=false` in production, the
-connection registry is read-only, and `STUDIO_MCP_ENCRYPTION_KEY` is not set. This checklist is the
-input the operator needs to approve the first external MCP connection; it is deliberately about
-**evaluation**, not enabling anything.
+Status: **deferred for this pilot by the operator on 2026-11-13**. No provider or endpoint has been
+approved. External MCP remains disabled, and no credential or encryption key is configured for this
+pilot. The checklist is retained for a future, separately approved onboarding; this decision does
+not authorize a probe, connection approval or transport activation.
 
 ## Hard requirements the client enforces
 
@@ -96,6 +96,6 @@ This file is the evaluation record; append the decision below when it exists.
 
 ## Decision log
 
-| Date | Provider/endpoint | Decision | Approver | Notes |
-| ---- | ----------------- | -------- | -------- | ----- |
-| —    | —                 | none yet | —        | —     |
+| Date       | Provider/endpoint | Decision            | Approver | Notes                                                                                     |
+| ---------- | ----------------- | ------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| 2026-11-13 | none selected     | Defer for the pilot | Operator | Selected “Defer external MCP for this pilot” in this session; keep external MCP disabled. |
