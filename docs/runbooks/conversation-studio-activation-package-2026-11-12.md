@@ -1,17 +1,16 @@
 # Conversation Studio — production activation package (2026-11-12)
 
-Status: **executed for production on 2026-11-13 — deterministic activation only.** The operator
-approved the A2 production window on 2026-11-13. The production admin URL was obtained through the
-already-authenticated Neon CLI for that approved window (never printed, committed or echoed) because
-the operator-supplied `.env.production.local` was not present. Migrations `0054`–`0057` were applied,
-`ws_opak` was enabled with one audited `studio.settings.updated` row, and
-`CONVERSATION_STUDIO_ENABLED=true` was added to production and redeployed (section 10). Every other
-Studio flag is off: `CONVERSATION_STUDIO_AI_ENABLED`, `STUDIO_MCP_SERVER_ENABLED`,
-`STUDIO_EXTERNAL_MCP_ENABLED` and `STUDIO_MCP_ENCRYPTION_KEY` remain unset, and no live model call,
-external MCP connection, SHOPLINE write or authenticated acceptance has happened. Sections 2–8 keep
-the prepared sequence and the rehearsal/dry-run evidence; section 10 is the dated production record.
+Status: **A2 activated and operator-reported accepted; A3 configured/deployed, live call unverified.**
+The deterministic production window was executed on 2026-11-13 (section 10). On 2026-11-14
+(Asia/Singapore), the operator explicitly authorized the pilot's `operator` → `admin` role change,
+and the approved AI policy was applied through the audited settings service. Production now has
+`CONVERSATION_STUDIO_ENABLED=true` and `CONVERSATION_STUDIO_AI_ENABLED=true`; credential-name presence,
+settings readback, audit and deployment readiness are verified, but a successful provider call and
+cost settlement are not (section 11). Hosted MCP remains off, and external MCP was explicitly deferred
+for this pilot. Sections 1–8 preserve the initial posture, prepared sequence and rehearsal evidence;
+sections 10–11 are the dated production records.
 
-## 1. Current production posture
+## 1. Initial production posture (before activation; current state is in sections 10–11)
 
 | Item                          | Value                                                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -305,3 +304,32 @@ Rollback: `CONVERSATION_STUDIO_ENABLED` off and redeploy (or promote the previou
 deployment); `pnpm studio:activate -- --workspace-id ws_opak --owner-email <owner> --disable
 --allow-remote --confirm` (audited) to disable the workspace row. Migrations are additive and stay;
 the pre-window snapshot branch is `br-damp-star-atrov2jg` if a database restore is ever needed.
+
+## 11. A3 configuration and deployment record (2026-11-14, Asia/Singapore)
+
+The operator approved `opencode-go` / `deepseek-v4.1-flash`, a USD 10 cumulative workspace cap,
+USD 2 per-run ceiling, 4,096 max output tokens and pricing label `opencode-go-2026-11`. They then
+explicitly requested a database role change after the settings API returned `insufficient_role`.
+The supplied conversation id was checked against its workspace and creator before any role write.
+
+| Check                        | Evidence                                                                                                                                                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authorized membership change | `ws_opak` / `user_opak_operator`: `operator` → `admin`; owner was not granted                                                                                                                                                                 |
+| Role-change audit            | `workspace.member_role_changed`, id `6d18556b-9e71-4cd7-90c6-d02994735d23`, source `operator-authorized-db-maintenance`, before/after recorded; independently read back                                                                       |
+| AI policy application        | Existing `createStudioSettingsAdminService` validation, persisted admin membership check, workspace scope and audit; runtime database role `wukong_app` verified non-superuser without BYPASSRLS                                              |
+| Policy readback              | `monthlyBudgetUsd:10.000000`, `runCeilingUsd:2.000000`, provider `opencode-go`, model `deepseek-v4.1-flash`, pricing `opencode-go-2026-11`, input/output price `0.3000`/`1.2000` per million tokens, max input `1048576`, max output `4096`   |
+| Settings audit               | `studio.settings.updated`, id `043aee38-53e5-4e06-a619-fe8261c23167`, `aiConfigured:false` → `true`; settings and audit read back after the transaction                                                                                       |
+| Existing settings            | Enabled state, skill allowlist, retention and default home preserved                                                                                                                                                                          |
+| Production env               | `OPENCODE_GO_API_KEY` listed (value never displayed); `CONVERSATION_STUDIO_AI_ENABLED=true` added alongside existing Studio flag                                                                                                              |
+| Deployment                   | `dpl_D4uHVzUYrjm8D4imFC27sf7GPMkf`, Ready and aliased to `wukong-ecommerce-os.vercel.app`, based on `aa9d0be2`                                                                                                                                |
+| Route smoke                  | `/signin` 200, `/studio` 307 and `/api/studio/settings` 401 without a session                                                                                                                                                                 |
+| Release CI                   | PR #217 run `43475066246` and main run `43492256826` succeeded on attempt 1; the patch fixes a deterministically reproduced pristine-draft edit-loss race                                                                                     |
+| Live-call evidence           | Operator reported seeing AI output; the subsequent content-free query found zero runs, model events and reservations created after policy configuration. A successful live call, key validity, token usage and settled cost remain unverified |
+
+Next: submit a new authenticated `catalog.find` turn and record its thread/run id. Verify persisted
+provider/model, a completed model event, token usage, settled cost and reservation state before
+claiming A3 live acceptance. Do not copy merchant content into the evidence record.
+
+Rollback: unset or set `CONVERSATION_STUDIO_AI_ENABLED=false` and redeploy; an authorized admin can
+also clear the `ai` block through the audited settings surface. Keep deterministic Studio enabled.
+External MCP remains deferred; no MCP credential or encryption-key setup was authorized here.

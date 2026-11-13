@@ -1,12 +1,16 @@
 # Live model onboarding — OpenCode Go / `deepseek-v4.1-flash` (A3, prepared 2026-11-12)
 
-Status: **limits approved, not enabled**. On 2026-11-13 the operator approved OpenCode Go /
-`deepseek-v4.1-flash` with a **USD 10.00 cumulative workspace cap**, **USD 2.00 per-run ceiling**,
-**4,096 max output tokens** and pricing label **`opencode-go-2026-11`**. These values are authorized
-but have not been verified as applied. The operator will save `OPENCODE_GO_API_KEY` in the
-`wukong-ecommerce-os` project's Vercel **Production** environment and confirmed having an admin/owner
-account for the audited settings surface. The latest environment-name check did not list the key;
-AI remains disabled pending credential presence and settings readback.
+Status: **configured and deployed on 2026-11-14 (Asia/Singapore); first live-model call unverified**.
+The approved `opencode-go` / `deepseek-v4.1-flash` settings were applied through the existing admin
+settings service using the non-superuser, RLS-enforced `wukong_app` database role: **USD 10.00 cumulative
+workspace cap**, **USD 2.00 per-run ceiling**, **4,096 max output tokens**, pricing label
+**`opencode-go-2026-11`**. Server readback and `studio.settings.updated` audit
+`043aee38-53e5-4e06-a619-fe8261c23167` confirm the write; existing skills, retention and home settings
+were preserved. Vercel Production lists `OPENCODE_GO_API_KEY`, and
+`CONVERSATION_STUDIO_AI_ENABLED=true` is deployed in Ready deployment
+`dpl_D4uHVzUYrjm8D4imFC27sf7GPMkf` on the production alias. Credential validity, provider usage and
+settled cost still require a new model-backed run; the latest content-free database check found no
+runs, model events or reservations after configuration. See section 11 of the activation package.
 
 ## What is already implemented
 
@@ -110,7 +114,8 @@ Commitments already reserved are not refunded by disabling AI; the budget cap is
 
 ## What this does NOT decide
 
-The operator has approved the budget numbers and pricing label recorded above. Credential setup,
-admin settings application and the first live-model verification remain pending. This approval does
-not activate external MCP or authorize a workspace role change. No live Studio model request has
-been verified in this session.
+The first live-model verification remains pending; configured settings and a Ready deployment alone
+do not prove a successful provider request. The operator separately authorized the pilot's role
+change from `operator` to `admin` on 2026-11-14, recorded by audit
+`6d18556b-9e71-4cd7-90c6-d02994735d23`. External MCP was explicitly deferred for this pilot and stays
+disabled. No live Studio model request has been verified in this session.

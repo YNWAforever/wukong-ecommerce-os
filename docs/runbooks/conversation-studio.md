@@ -37,11 +37,13 @@ As of 2026-11-13 the deterministic activation is **live on production** (section
 migrations through `0057` applied, `ws_opak` enabled with one audited `studio.settings.updated` row,
 `CONVERSATION_STUDIO_ENABLED=true` deployed. On 2026-11-13 the operator reported passing the pilot
 question, answer/trace/evidence, reload and outputs checks (section 10 records the evidence limits).
-The pilot's `operator` role is denied settings access; configuration requires `admin` or `owner`.
-`CONVERSATION_STUDIO_AI_ENABLED`, `STUDIO_MCP_SERVER_ENABLED`, `STUDIO_EXTERNAL_MCP_ENABLED` and
-`STUDIO_MCP_ENCRYPTION_KEY` remain off. Companion sheets: [live-model onboarding](./conversation-studio-live-model-onboarding-2026-11-12.md)
-(A3, OpenCode Go selected) and [external MCP provider evaluation](./conversation-studio-external-mcp-provider-evaluation-2026-11-12.md)
-(C3).
+On 2026-11-14 the operator explicitly authorized the pilot membership change to `admin`. The approved
+OpenCode Go policy was applied through the audited admin service and
+`CONVERSATION_STUDIO_AI_ENABLED=true` deployed; the first successful provider call and cost settlement
+remain unverified (section 11). Hosted MCP stays off and external MCP is deferred for this pilot.
+Companion sheets: [live-model onboarding](./conversation-studio-live-model-onboarding-2026-11-12.md)
+(A3, configured/deployed) and [external MCP provider evaluation](./conversation-studio-external-mcp-provider-evaluation-2026-11-12.md)
+(C3, deferred).
 
 1. Deployment flags (Vercel env; do not set values in git):
    - `CONVERSATION_STUDIO_ENABLED=true` — the feature exists at all.
