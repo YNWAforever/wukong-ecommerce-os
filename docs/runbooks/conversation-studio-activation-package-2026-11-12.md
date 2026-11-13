@@ -287,10 +287,19 @@ pre-window rollback reference.
 | Route smoke                           | `/signin` 200, `/studio` 307 (auth redirect), `/` 307, `/api/studio/settings` 401 (auth boundary), `/api/mcp` 405 (hosted MCP still off)                                                                                                 |
 | Flags intentionally left off/unset    | `CONVERSATION_STUDIO_AI_ENABLED`, `STUDIO_MCP_SERVER_ENABLED`, `STUDIO_EXTERNAL_MCP_ENABLED`, `STUDIO_MCP_ENCRYPTION_KEY`; no model call, no external MCP, no SHOPLINE write                                                             |
 
-Remaining A2 action: **authenticated owner acceptance** (step 5 above) — sign in as the pilot owner,
-open `/studio`, ask a deterministic records question, check the trace/evidence/limitations, reload to
-confirm persistence, open `/studio/outputs` and `/studio/settings`, confirm no model call and no
-write. Record ids/counts only, then append the outcome here.
+### Operator-reported pilot acceptance (2026-11-13)
+
+The operator selected **“All pilot checks passed”** in this session, confirming that they sent a
+deterministic question, saw its answer/trace/evidence, reloaded successfully and opened outputs at
+`https://wukong-ecommerce-os.vercel.app/studio`. This closes the pending pilot interaction check for
+A2 on the basis of the operator's report. No thread/run ids, screenshots, log excerpts or counts were
+provided, and the assistant did not observe an authenticated browser session. This report does not
+independently verify model-call counts, mutation counts or the limitations display.
+
+The pilot membership recorded during activation is `operator`. The settings API and page require
+`admin` or `owner`, so settings access must be denied for the pilot operator; this acceptance neither
+requests nor grants elevated permissions. Admin configuration remains a separate role-gated check.
+AI and MCP activation require the separate A3/C3 decisions; this acceptance does not authorize them.
 
 Rollback: `CONVERSATION_STUDIO_ENABLED` off and redeploy (or promote the previous production
 deployment); `pnpm studio:activate -- --workspace-id ws_opak --owner-email <owner> --disable
