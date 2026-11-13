@@ -393,13 +393,15 @@ known posture; verified against the rehearsal branch's disable row.
 ### Production deterministic activation executed (2026-11-13)
 
 The operator approved the full deterministic window on 2026-11-13 and it was executed the same day:
-the production Neon database received migrations  054– 057 (60 files replayed idempotently, exit
-0), ws_opak was enabled with exactly one audited studio.settings.updated row (efore.enabled:null
-→ fter.enabled:true, source:"studio-activation-cli"), the resolver functions ended up owned by
-wukong_mcp_token_lookup, CONVERSATION_STUDIO_ENABLED=true was added to Vercel Production and
-redeployed as dpl_B54p7dNZPvs3MQGLpyRLUga4hagk (Ready, aliased to wukong-ecommerce-os.vercel.app).
-Route smoke: /signin 200, /studio 307, / 307, /api/studio/settings 401, /api/mcp 405.
-Authenticated owner acceptance is the remaining A2 action; CONVERSATION_STUDIO_AI_ENABLED,
-STUDIO_MCP_SERVER_ENABLED, STUDIO_EXTERNAL_MCP_ENABLED and STUDIO_MCP_ENCRYPTION_KEY remain off,
-so no model call or external MCP connection has happened. The dated record lives in section 10 of the
-activation package.
+the production Neon database received migrations `0054`–`0057` (60 files replayed idempotently, exit
+0), `ws_opak` was enabled with exactly one audited `studio.settings.updated` row (`before.enabled:null`
+→ `after.enabled:true`, `source:"studio-activation-cli"`), the resolver functions ended up owned by
+`wukong_mcp_token_lookup`, `CONVERSATION_STUDIO_ENABLED=true` was added to Vercel Production and
+redeployed as `dpl_B54p7dNZPvs3MQGLpyRLUga4hagk` (Ready, aliased to `wukong-ecommerce-os.vercel.app`).
+Route smoke: `/signin` 200, `/studio` 307, `/` 307, `/api/studio/settings` 401, `/api/mcp` 405.
+On 2026-11-13 the operator reported passing the pilot's deterministic question, answer/trace/evidence,
+reload and outputs checks. Section 10 of the activation package records this as operator-reported
+acceptance without thread/run ids or independently observed browser evidence. Settings access is
+expected to be denied for the pilot's `operator` role; configuration requires `admin` or `owner`.
+`CONVERSATION_STUDIO_AI_ENABLED`, `STUDIO_MCP_SERVER_ENABLED`, `STUDIO_EXTERNAL_MCP_ENABLED` and
+`STUDIO_MCP_ENCRYPTION_KEY` remain off; A3/C3 still need their separate inputs.
