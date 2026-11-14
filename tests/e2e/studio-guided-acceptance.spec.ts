@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { StudioRunResponse } from "../../apps/web/lib/studio/contracts";
 
 test.skip(
   process.env.STUDIO_GUIDED_ACCEPTANCE !== "1",
@@ -21,6 +22,20 @@ async function signIn(page: Page, baseURL: string, viewer = false) {
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: /^Sign in with/ }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/signin"));
+}
+async function readRun(
+  page: Page,
+  threadId: string,
+  runId: string,
+): Promise<StudioRunResponse> {
+  const response = await page.request.get(
+    `/api/studio/threads/${threadId}/runs/${runId}`,
+  );
+  expect(response.status()).toBe(200);
+  const run = (await response.json()) as StudioRunResponse;
+  expect(run.runId).toBe(runId);
+  expect(run.threadId).toBe(threadId);
+  return run;
 }
 function configuration(settings: Record<string, unknown>) {
   return {
@@ -111,12 +126,8 @@ test("guided listing journey uses records, resumes without sending and hands off
     await page.waitForURL(/\/studio\/t\//);
     const journey = page.locator('[data-guided-journey="true"]');
     await expect(journey).toContainText("Workspace audit");
-    const auditRun = await (
-      await page.request.get(
-        `/api/studio/threads/${audit.threadId}/runs/${audit.runId}`,
-      )
-    ).json();
-    expect(auditRun.run.model).toBeNull();
+    const auditRun = await readRun(page, audit.threadId, audit.runId);
+    expect(auditRun.model).toBeNull();
     await page.reload();
     await expect(
       journey.getByRole("button", { name: "Prepare gap review", exact: true }),
@@ -142,12 +153,8 @@ test("guided listing journey uses records, resumes without sending and hands off
     expect(messagePosts).toBe(1);
     const gap = await send(page);
     await expect(journey).toHaveAttribute("data-guided-stage", "gap_review");
-    const gapRun = await (
-      await page.request.get(
-        `/api/studio/threads/${gap.threadId}/runs/${gap.runId}`,
-      )
-    ).json();
-    expect(gapRun.run.model).toBeNull();
+    const gapRun = await readRun(page, gap.threadId, gap.runId);
+    expect(gapRun.model).toBeNull();
     const gapId = gap.reply.outputs[0]!.outputId;
     const gapDetail = await (
       await page.request.get(`/api/studio/outputs/${gapId}`)
@@ -205,12 +212,8 @@ test("guided listing journey uses records, resumes without sending and hands off
     const copy = await copyResponse.json();
     await expect(journey).toHaveAttribute("data-guided-stage", "copy_proposal");
     expect(messagePosts).toBe(3);
-    const run = await (
-      await page.request.get(
-        `/api/studio/threads/${copy.threadId}/runs/${copy.runId}`,
-      )
-    ).json();
-    expect(run.run.model).toBe("fake-studio-guided-acceptance");
+    const run = await readRun(page, copy.threadId, copy.runId);
+    expect(run.model).toBe("fake-studio-guided-acceptance");
     expect(
       run.events.filter((event: { kind: string }) => event.kind === "model"),
     ).toHaveLength(1);
@@ -250,7 +253,7 @@ test("guided listing journey uses records, resumes without sending and hands off
       fullPage: true,
     });
     // A separate explicitly submitted request cannot overdraw the cumulative cap.
-    const ceiling = run.run.reservedUsd;
+    const ceiling = run.reservedUsd;
     expect(Number(ceiling)).toBeGreaterThan(0);
     expect(
       (
@@ -282,12 +285,8 @@ test("guided listing journey uses records, resumes without sending and hands off
     expect(blocked.status()).toBe(200);
     const blockedBody = await blocked.json();
     expect(blockedBody.reply.outputs).toHaveLength(0);
-    const blockedRun = await (
-      await page.request.get(
-        `/api/studio/threads/${copy.threadId}/runs/${blockedBody.runId}`,
-      )
-    ).json();
-    expect(blockedRun.run.model).toBeNull();
+    const blockedRun = await readRun(page, copy.threadId, blockedBody.runId);
+    expect(blockedRun.model).toBeNull();
     const after = await (await page.request.get(`/api/listings/${ID}`)).json();
     expect(after.activeVersion).toEqual(before.activeVersion);
     expect(after.status).toBe(before.status);

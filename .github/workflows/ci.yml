@@ -116,7 +116,9 @@ jobs:
       - name: Lint
         run: pnpm lint
       - name: Typecheck
-        run: pnpm typecheck
+        run: |
+          pnpm typecheck
+          node apps/web/node_modules/typescript/bin/tsc --noEmit --strict --noUncheckedIndexedAccess --skipLibCheck --moduleResolution bundler --module esnext --target ES2022 --types node --esModuleInterop tests/e2e/studio-guided-acceptance.spec.ts
       - name: Unit tests
         run: pnpm test
       - name: Opak audit-fixture adapter (zero provider)
