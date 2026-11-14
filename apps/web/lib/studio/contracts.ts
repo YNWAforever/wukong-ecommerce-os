@@ -238,6 +238,12 @@ export type StudioOutputSummary = {
   threadId: string | null;
   createdAt: string;
   updatedAt: string;
+  confirmation?: {
+    status: "saved" | "signed_off" | "discarded";
+    revision: number;
+    contentDigest: string;
+  } | null;
+  freshness?: "current" | "stale" | "unavailable" | "not_applicable";
 };
 
 export type StudioOutputVersionResponse = {
@@ -266,11 +272,22 @@ export type OutputActionResult = {
   outputId: string;
   status: string;
   version: number;
+  contentDigest: string;
+  replayed: boolean;
 };
 
-export const outputActionBodySchema = z
-  .object({ action: z.enum(["save", "sign_off"]) })
-  .strict();
+export const outputVersionPinSchema = z.strictObject({
+  expectedRevision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  expectedDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type OutputVersionPin = z.infer<typeof outputVersionPinSchema>;
+
+export const outputActionBodySchema = z.strictObject({
+  action: z.enum(["save", "sign_off"]),
+  // Missing pins are a reloadable 409 after authorization, including old clients.
+  expectedRevision: outputVersionPinSchema.shape.expectedRevision.optional(),
+  expectedDigest: outputVersionPinSchema.shape.expectedDigest.optional(),
+});
 export type OutputActionBody = z.infer<typeof outputActionBodySchema>;
 
 /** Exact artifact kinds a filtered outputs list may request. */

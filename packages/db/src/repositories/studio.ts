@@ -449,7 +449,19 @@ export type StudioRepository = {
       scope?: Record<string, unknown>;
       createdBy: string;
     }): Promise<{ output: StudioOutput; version: StudioOutputVersion }>;
-    get(id: string): Promise<StudioOutput | null>;
+    get(
+      id: string,
+      input?: { forUpdate?: boolean },
+    ): Promise<StudioOutput | null>;
+    getVersion(
+      id: string,
+      revision: number,
+    ): Promise<StudioOutputVersion | null>;
+    statusConfirmation(id: string): Promise<{
+      status: Exclude<StudioOutputStatus, "draft">;
+      revision: number;
+      contentDigest: string;
+    } | null>;
     /**
      * `q` is a case-insensitive title search with LIKE wildcards escaped;
      * `kind`/`status` are exact filters. `offset` is applied after ORDER BY and
@@ -1230,7 +1242,7 @@ export function createStudioRepository(
           returning *
         `);
         const updated = await transaction.execute(sql`
-          update studio_outputs set current_version=${revision},updated_at=now()
+          update studio_outputs set current_version=${revision},status='draft',updated_at=now()
           where workspace_id=${workspaceId} and id=${input.outputId}::uuid
           returning *
         `);
@@ -1239,12 +1251,53 @@ export function createStudioRepository(
           version: readOutputVersion(versions[0] as Record<string, unknown>),
         };
       },
-      async get(id) {
+      async get(id, input = {}) {
         scope.assertOpen();
         const rows = await transaction.execute(
-          sql`select * from studio_outputs where workspace_id=${workspaceId} and id=${id}::uuid`,
+          sql`select * from studio_outputs where workspace_id=${workspaceId} and id=${id}::uuid ${input.forUpdate ? sql`for update` : sql``}`,
         );
         return rows[0] ? readOutput(rows[0] as Record<string, unknown>) : null;
+      },
+      async getVersion(id, revision) {
+        scope.assertOpen();
+        if (!Number.isSafeInteger(revision) || revision < 1)
+          throw new Error("invalid output revision");
+        const rows = await transaction.execute(
+          sql`select * from studio_output_versions where workspace_id=${workspaceId} and output_id=${id}::uuid and revision=${revision}`,
+        );
+        return rows[0]
+          ? readOutputVersion(rows[0] as Record<string, unknown>)
+          : null;
+      },
+      async statusConfirmation(id) {
+        scope.assertOpen();
+        const rows = await transaction.execute(sql`
+          select a.action, a.metadata->>'revision' as revision, a.metadata->>'contentDigest' as content_digest
+          from studio_outputs o
+          join studio_output_versions v on v.workspace_id=o.workspace_id and v.output_id=o.id and v.revision=o.current_version
+          join audit_events a on a.workspace_id=o.workspace_id and a.entity_id=o.id::text
+          where o.workspace_id=${workspaceId} and o.id=${id}::uuid
+            and o.status in ('saved','signed_off','discarded')
+            and a.action=('studio.output.' || o.status)
+            and a.metadata->>'revision'=o.current_version::text
+            and a.metadata->>'contentDigest'=v.content_digest
+          limit 1
+        `);
+        const row = rows[0];
+        if (!row) return null;
+        const revision = Number(row.revision);
+        const contentDigest = nullableText(row.content_digest);
+        if (
+          !Number.isSafeInteger(revision) ||
+          revision < 1 ||
+          !contentDigest ||
+          !/^[a-f0-9]{64}$/.test(contentDigest)
+        )
+          return null;
+        const status = text(row.action).slice(
+          "studio.output.".length,
+        ) as Exclude<StudioOutputStatus, "draft">;
+        return { status, revision, contentDigest };
       },
       async list(input = {}) {
         scope.assertOpen();

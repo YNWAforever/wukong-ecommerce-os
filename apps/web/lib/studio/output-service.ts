@@ -49,8 +49,12 @@ export function canonicalJson(value: unknown): string {
     .join(",")}}`;
 }
 
-export function copyProposalDigest(payload: CopyProposalPayload): string {
+export function outputPayloadDigest(payload: unknown): string {
   return createHash("sha256").update(canonicalJson(payload)).digest("hex");
+}
+
+export function copyProposalDigest(payload: CopyProposalPayload): string {
+  return outputPayloadDigest(payload);
 }
 
 export async function createCopyProposalOutput(

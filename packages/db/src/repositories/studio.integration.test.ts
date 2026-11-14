@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 
 import { createDatabase, type Database } from "../client.js";
@@ -847,6 +847,161 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(output.versions.map((version) => version.revision)).toEqual([2, 1]);
     expect(output.saved).toBe(true);
     expect(output.outputId).toBeTruthy();
+  });
+
+  it("confirms only the current status/revision/digest and clears approval on a new version", async () => {
+    const outputId = await studioRepositories(WORKSPACE_A, async (repos) => {
+      const output = await repos.studio.outputs.create({
+        kind: "merchant_audit",
+        title: "Pinned review",
+        createdBy: "actor-a",
+      });
+      await repos.studio.outputs.addVersion({
+        outputId: output.id,
+        payload: { checks: [] },
+        contentDigest: "a".repeat(64),
+        asOf: new Date(),
+        createdBy: "actor-a",
+      });
+      await repos.studio.outputs.setStatus(output.id, "signed_off");
+      expect(
+        await repos.studio.outputs.statusConfirmation(output.id),
+      ).toBeNull();
+      await repos.audit.write({
+        workspaceId: WORKSPACE_A,
+        actorId: "reviewer-a",
+        entityId: output.id,
+        action: "studio.output.signed_off",
+        metadata: { revision: 1, contentDigest: "b".repeat(64) },
+      });
+      expect(
+        await repos.studio.outputs.statusConfirmation(output.id),
+      ).toBeNull();
+      await repos.audit.write({
+        workspaceId: WORKSPACE_A,
+        actorId: "reviewer-a",
+        entityId: output.id,
+        action: "studio.output.signed_off",
+        metadata: { revision: 1, contentDigest: "a".repeat(64) },
+      });
+      expect(await repos.studio.outputs.statusConfirmation(output.id)).toEqual({
+        status: "signed_off",
+        revision: 1,
+        contentDigest: "a".repeat(64),
+      });
+      const next = await repos.studio.outputs.addVersion({
+        outputId: output.id,
+        payload: { checks: ["changed"] },
+        contentDigest: "b".repeat(64),
+        asOf: new Date(),
+        createdBy: "actor-a",
+      });
+      expect(next.output).toMatchObject({ currentVersion: 2, status: "draft" });
+      expect(
+        await repos.studio.outputs.statusConfirmation(output.id),
+      ).toBeNull();
+      expect(
+        (await repos.studio.outputs.getVersion(output.id, 1))?.contentDigest,
+      ).toBe("a".repeat(64));
+      return output.id;
+    });
+    await studioRepositories(WORKSPACE_B, async (repos) => {
+      expect(
+        await repos.studio.outputs.get(outputId, { forUpdate: true }),
+      ).toBeNull();
+      expect(await repos.studio.outputs.getVersion(outputId, 1)).toBeNull();
+      expect(
+        await repos.studio.outputs.statusConfirmation(outputId),
+      ).toBeNull();
+    });
+  });
+
+  it("serializes pinned review against version append and never inherits its approval", async () => {
+    const outputId = await studioRepositories(WORKSPACE_A, async (repos) => {
+      const output = await repos.studio.outputs.create({
+        kind: "merchant_audit",
+        title: "Concurrent pinned review",
+        createdBy: "actor-a",
+      });
+      await repos.studio.outputs.addVersion({
+        outputId: output.id,
+        payload: { checks: [] },
+        contentDigest: "a".repeat(64),
+        asOf: new Date(),
+        createdBy: "actor-a",
+      });
+      return output.id;
+    });
+    const contenderUrl = new URL(appUrl!);
+    contenderUrl.searchParams.set(
+      "application_name",
+      "studio-output-version-waiter",
+    );
+    const contender = createDatabase(contenderUrl.toString());
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked!: () => void;
+    const lockHeld = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const review = studioRepositories(WORKSPACE_A, async (repos) => {
+      const output = await repos.studio.outputs.get(outputId, {
+        forUpdate: true,
+      });
+      expect(output?.currentVersion).toBe(1);
+      expect(
+        (await repos.studio.outputs.getVersion(outputId, 1))?.contentDigest,
+      ).toBe("a".repeat(64));
+      locked();
+      await released;
+      await repos.studio.outputs.setStatus(outputId, "signed_off");
+      await repos.audit.write({
+        workspaceId: WORKSPACE_A,
+        actorId: "reviewer-a",
+        entityId: outputId,
+        action: "studio.output.signed_off",
+        metadata: { revision: 1, contentDigest: "a".repeat(64) },
+      });
+    });
+    await lockHeld;
+    let appended = false;
+    const append = contender.forWorkspace(WORKSPACE_A, async (repos) => {
+      const result = await repos.studio.outputs.addVersion({
+        outputId,
+        payload: { checks: ["new version"] },
+        contentDigest: "b".repeat(64),
+        asOf: new Date(),
+        createdBy: "actor-a",
+      });
+      appended = true;
+      return result;
+    });
+    try {
+      await vi.waitFor(
+        async () => {
+          const rows =
+            await admin!`select count(*)::int as blocked from pg_stat_activity where datname='wukong_studio_test' and application_name='studio-output-version-waiter' and wait_event_type='Lock'`;
+          expect(rows[0]?.blocked).toBe(1);
+        },
+        { timeout: 3000, interval: 20 },
+      );
+      expect(appended).toBe(false);
+    } finally {
+      release();
+      await Promise.allSettled([review, append]);
+      await contender.close();
+    }
+    await review;
+    const next = await append;
+    expect(next.output).toMatchObject({ currentVersion: 2, status: "draft" });
+    await studioRepositories(WORKSPACE_A, async (repos) => {
+      expect(
+        await repos.studio.outputs.statusConfirmation(outputId),
+      ).toBeNull();
+      expect((await repos.studio.outputs.get(outputId))?.status).toBe("draft");
+    });
   });
 
   it("preserves known model identity and settled usage on a failed run", async () => {

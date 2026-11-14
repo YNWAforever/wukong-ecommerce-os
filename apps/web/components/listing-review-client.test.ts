@@ -924,6 +924,8 @@ describe("ListingReviewClient Studio handoff banner", () => {
   let writeText: ReturnType<typeof vi.fn>;
 
   const handoff: ListingStudioHandoff = {
+    state: "current",
+    sourceHref: "/studio/outputs",
     outputId: "55555555-5555-4555-8555-555555555555",
     title: "Synthetic copy proposal",
     revision: 3,
@@ -985,6 +987,34 @@ describe("ListingReviewClient Studio handoff banner", () => {
     }
   });
 
+  it.each(["stale", "unpinned", "unavailable"] as const)(
+    "blocks copying from a %s handoff",
+    async (state) => {
+      const { container, root } = await mountReview(undefined, {
+        ...handoff,
+        state,
+      });
+      try {
+        const banner = container.querySelector(
+          "[data-studio-handoff]",
+        ) as HTMLElement;
+        expect(banner.querySelector('[role="status"]')).not.toBeNull();
+        const buttons = [...banner.querySelectorAll("button")];
+        expect(buttons.length).toBeGreaterThan(0);
+        expect(buttons.every((button) => button.disabled)).toBe(true);
+        await act(async () => {
+          buttons[0]?.click();
+        });
+        expect(writeText).not.toHaveBeenCalled();
+        expect(
+          banner.querySelector('a[href="/studio/outputs"]'),
+        ).not.toBeNull();
+      } finally {
+        await unmountReview(root);
+      }
+    },
+  );
+
   it("copies one proposed field and all proposed values", async () => {
     const { container, root } = await mountReview(undefined, handoff);
     try {
@@ -995,6 +1025,9 @@ describe("ListingReviewClient Studio handoff banner", () => {
         (button) => button.textContent === "Copy proposed",
       );
       expect(copyButtons).toHaveLength(2);
+      expect(copyButtons[0]?.getAttribute("aria-label")).toBe(
+        "Copy proposed: title.en",
+      );
       await act(async () => copyButtons[0]?.click());
       expect(writeText).toHaveBeenLastCalledWith("Synthetic proposed title");
       expect(banner.textContent).toContain("Copied");

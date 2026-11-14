@@ -646,6 +646,19 @@ function StudioHandoffBanner({
         {studioCopy(locale, "studio.handoff.notApplied")}{" "}
         {studioCopy(locale, "studio.handoff.source")}
       </p>
+      {handoff.state !== "current" ? (
+        <p className={studioStyles["studio-handoff-note"]} role="status">
+          {studioCopy(
+            locale,
+            handoff.state === "unpinned"
+              ? "studio.handoff.unpinned"
+              : "studio.handoff.notCurrent",
+          )}{" "}
+          <Link href={handoff.sourceHref}>
+            {studioCopy(locale, "studio.handoff.openSource")}
+          </Link>
+        </p>
+      ) : null}
       {handoff.fields.length > 0 ? (
         <ul className={studioStyles["studio-handoff-fields"]}>
           {handoff.fields.map((field) => (
@@ -677,6 +690,7 @@ function StudioHandoffBanner({
                 className={studioStyles["studio-handoff-copy"]}
                 aria-label={`${studioCopy(locale, "studio.handoff.copyField")}: ${field.field}`}
                 onClick={() => void copy(field.proposed, field.field)}
+                disabled={handoff.state !== "current"}
               >
                 {studioCopy(locale, "studio.handoff.copyField")}
               </button>
@@ -692,6 +706,7 @@ function StudioHandoffBanner({
             onClick={() =>
               void copy(formatProposedValues(handoff.fields), "all-values")
             }
+            disabled={handoff.state !== "current"}
           >
             {studioCopy(locale, "studio.handoff.copyAll")}
           </button>

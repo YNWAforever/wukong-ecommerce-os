@@ -7,9 +7,12 @@ import {
   createFakeStudio,
   fakeGetDatabase,
   fakeSessionContext,
+  reviewSnapshot,
+  reviewableContent,
   type FakeStudioOptions,
 } from "../../../../../lib/studio/test-fakes";
 import { createStudioOutputHandler } from "./route";
+import { outputPayloadDigest } from "../../../../../lib/studio/output-service";
 
 /**
  * Route-contract tests for `GET/POST /api/studio/outputs/[id]` (plan Task 9):
@@ -25,6 +28,19 @@ const WORKSPACE = "ws_test";
 const OUTPUT_ID = "55555555-5555-4555-8555-555555555555";
 const THREAD_ID = "66666666-6666-4666-8666-666666666666";
 const CREATED_AT = new Date("2026-11-08T10:00:00.000Z");
+const LISTING_ID = "11111111-1111-4111-8111-111111111111";
+const PROPOSAL_PAYLOAD = {
+  listingId: LISTING_ID,
+  activeVersionId: "version-1",
+  activeVersionSequence: 1,
+  fields: [],
+  limitations: [],
+  asOf: CREATED_AT.toISOString(),
+};
+const PIN = {
+  expectedRevision: 1,
+  expectedDigest: outputPayloadDigest(PROPOSAL_PAYLOAD),
+};
 
 function outputRow(overrides: Partial<StudioOutput> = {}): StudioOutput {
   return {
@@ -51,11 +67,8 @@ function versionRow(
     workspaceId: WORKSPACE,
     outputId: OUTPUT_ID,
     revision: 1,
-    payload: {
-      listingId: "11111111-1111-4111-8111-111111111111",
-      fields: [],
-    },
-    contentDigest: "a".repeat(64),
+    payload: PROPOSAL_PAYLOAD,
+    contentDigest: PIN.expectedDigest,
     asOf: CREATED_AT,
     scope: { listingId: "11111111-1111-4111-8111-111111111111" },
     createdBy: "actor_ops",
@@ -72,6 +85,12 @@ function fixture(input: {
   const fake = createFakeStudio({
     outputs: [outputRow()],
     outputVersions: [versionRow()],
+    snapshots: {
+      [LISTING_ID]: reviewSnapshot({
+        listingId: LISTING_ID,
+        content: reviewableContent(),
+      }),
+    },
     ...(input.options ?? {}),
     settings: { workspaceId: WORKSPACE, enabled: true },
   });
@@ -136,7 +155,7 @@ describe("POST /api/studio/outputs/[id]", () => {
   it("saves as operator and signs off as reviewer with audits", async () => {
     const save = fixture({ role: "operator" });
     const saved = await save.handlers.POST(
-      request({ action: "save" }),
+      request({ action: "save", ...PIN }),
       context,
     );
     expect(saved.status).toBe(200);
@@ -152,7 +171,7 @@ describe("POST /api/studio/outputs/[id]", () => {
 
     const sign = fixture({ role: "reviewer" });
     const signed = await sign.handlers.POST(
-      request({ action: "sign_off" }),
+      request({ action: "sign_off", ...PIN }),
       context,
     );
     expect(signed.status).toBe(200);
@@ -162,11 +181,169 @@ describe("POST /api/studio/outputs/[id]", () => {
     );
   });
 
+  it("requires a preview pin and rejects a stale revision or digest without mutation", async () => {
+    const { handlers, fake } = fixture({});
+    for (const body of [
+      { action: "save" },
+      { action: "save", ...PIN, expectedRevision: 2 },
+      { action: "sign_off", ...PIN, expectedDigest: "b".repeat(64) },
+    ]) {
+      expect((await handlers.POST(request(body), context)).status).toBe(409);
+    }
+    expect(fake.state.outputs[0]?.status).toBe("draft");
+    expect(fake.state.audits).toEqual([]);
+    expect(fake.state.writes).not.toContain("outputs.setStatus");
+  });
+
+  it("rejects altered payloads even when the preview matches the stored digest column", async () => {
+    const { handlers, fake } = fixture({
+      options: {
+        outputVersions: [
+          versionRow({
+            payload: {
+              ...PROPOSAL_PAYLOAD,
+              limitations: ["altered after persistence"],
+            },
+          }),
+        ],
+      },
+    });
+    for (const action of ["save", "sign_off"])
+      expect(
+        (await handlers.POST(request({ action, ...PIN }), context)).status,
+      ).toBe(409);
+    expect(fake.state.audits).toEqual([]);
+    expect(fake.state.writes).not.toContain("outputs.setStatus");
+    const readback = await handlers.GET(new Request("http://x"), context);
+    expect((await readback.json()).output).toMatchObject({
+      confirmation: null,
+      freshness: "unavailable",
+    });
+  });
+
+  it("replays a matching confirmation without another status write or audit", async () => {
+    const { handlers, fake } = fixture({ role: "operator" });
+    const first = await handlers.POST(
+      request({ action: "save", ...PIN }),
+      context,
+    );
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({
+      version: 1,
+      contentDigest: PIN.expectedDigest,
+      replayed: false,
+    });
+    const second = await handlers.POST(
+      request({ action: "save", ...PIN }),
+      context,
+    );
+    expect(second.status).toBe(200);
+    expect(await second.json()).toMatchObject({
+      version: 1,
+      contentDigest: PIN.expectedDigest,
+      replayed: true,
+    });
+    expect(
+      fake.state.writes.filter((entry) => entry === "outputs.setStatus"),
+    ).toHaveLength(1);
+    expect(fake.state.audits).toHaveLength(1);
+    expect(fake.state.audits[0]?.metadata).toMatchObject({
+      revision: 1,
+      contentDigest: PIN.expectedDigest,
+    });
+  });
+
+  it("rejects sign-off after a listing version changes while retaining save for history", async () => {
+    const { handlers, fake } = fixture({
+      options: {
+        snapshots: {
+          [LISTING_ID]: reviewSnapshot({
+            listingId: LISTING_ID,
+            versionId: "version-2",
+            sequence: 2,
+            content: reviewableContent(),
+          }),
+        },
+      },
+    });
+    const rejected = await handlers.POST(
+      request({ action: "sign_off", ...PIN }),
+      context,
+    );
+    expect(rejected.status).toBe(409);
+    expect(await rejected.json()).toMatchObject({ code: "proposal_outdated" });
+    expect(fake.state.audits).toEqual([]);
+    expect(
+      (await handlers.POST(request({ action: "save", ...PIN }), context))
+        .status,
+    ).toBe(200);
+    const readback = await handlers.GET(new Request("http://x"), context);
+    expect((await readback.json()).output).toMatchObject({
+      status: "saved",
+      freshness: "stale",
+    });
+  });
+
+  it("blocks sign-off when the target listing cannot be read", async () => {
+    const { handlers, fake } = fixture({ options: { snapshots: {} } });
+    expect(
+      (await handlers.POST(request({ action: "sign_off", ...PIN }), context))
+        .status,
+    ).toBe(409);
+    expect(fake.state.audits).toEqual([]);
+    expect(fake.state.writes).not.toContain("outputs.setStatus");
+  });
+
+  it("does not inherit an unconfirmed legacy approval and permits an explicit pinned review", async () => {
+    const { handlers, fake } = fixture({
+      options: { outputs: [outputRow({ status: "signed_off" })] },
+    });
+    const legacy = await handlers.GET(new Request("http://x"), context);
+    expect((await legacy.json()).output.confirmation).toBeNull();
+    expect(
+      (await handlers.POST(request({ action: "sign_off", ...PIN }), context))
+        .status,
+    ).toBe(200);
+    const confirmed = await handlers.GET(new Request("http://x"), context);
+    expect((await confirmed.json()).output.confirmation).toEqual({
+      status: "signed_off",
+      revision: 1,
+      contentDigest: PIN.expectedDigest,
+    });
+    expect(
+      (await handlers.POST(request({ action: "sign_off", ...PIN }), context))
+        .status,
+    ).toBe(200);
+    expect(fake.state.audits).toHaveLength(1);
+  });
+
+  it("never signs off a newer artifact version with a previous preview", async () => {
+    const { handlers, fake } = fixture({
+      options: {
+        outputs: [outputRow({ currentVersion: 2 })],
+        outputVersions: [
+          versionRow(),
+          versionRow({ revision: 2, contentDigest: "b".repeat(64) }),
+        ],
+      },
+    });
+    expect(
+      (await handlers.POST(request({ action: "sign_off", ...PIN }), context))
+        .status,
+    ).toBe(409);
+    expect(fake.state.outputs[0]?.status).toBe("draft");
+    expect(fake.state.audits).toEqual([]);
+  });
+
   it("rejects a viewer sign-off, an invalid body and a disabled Studio", async () => {
     const viewer = fixture({ role: "viewer" });
     expect(
-      (await viewer.handlers.POST(request({ action: "sign_off" }), context))
-        .status,
+      (
+        await viewer.handlers.POST(
+          request({ action: "sign_off", ...PIN }),
+          context,
+        )
+      ).status,
     ).toBe(403);
     expect(viewer.fake.state.outputs[0]?.status).toBe("draft");
 
@@ -178,8 +355,12 @@ describe("POST /api/studio/outputs/[id]", () => {
 
     const disabled = fixture({ env: {} as NodeJS.ProcessEnv });
     expect(
-      (await disabled.handlers.POST(request({ action: "save" }), context))
-        .status,
+      (
+        await disabled.handlers.POST(
+          request({ action: "save", ...PIN }),
+          context,
+        )
+      ).status,
     ).toBe(404);
   });
 });

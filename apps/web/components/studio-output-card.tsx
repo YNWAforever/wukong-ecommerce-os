@@ -55,6 +55,17 @@ const studioOutputViewSchema = z.object({
   threadId: z.string().max(200).nullable().optional(),
   createdAt: z.string().max(64),
   updatedAt: z.string().max(64),
+  confirmation: z
+    .object({
+      status: z.enum(["saved", "signed_off", "discarded"]),
+      revision: z.number().int().min(1),
+      contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .nullable()
+    .optional(),
+  freshness: z
+    .enum(["current", "stale", "unavailable", "not_applicable"])
+    .optional(),
 });
 export type StudioOutputView = z.infer<typeof studioOutputViewSchema>;
 
@@ -79,6 +90,8 @@ export const studioOutputActionResultSchema = z.object({
   outputId: z.string().min(1).max(200),
   status: outputStatusSchema,
   version: z.number().int().min(1),
+  contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  replayed: z.boolean(),
 });
 
 /**
@@ -162,11 +175,12 @@ async function getJson(url: string): Promise<HttpResult> {
 async function postAction(
   url: string,
   action: "save" | "sign_off",
+  expected: { expectedRevision: number; expectedDigest: string },
 ): Promise<HttpResult> {
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, ...expected }),
     cache: "no-store",
     credentials: "same-origin",
   });
@@ -193,18 +207,11 @@ export function outputActionErrorKey(input: {
   }
   if (input.status === 401) return "studio.error.auth";
   if (input.status === 404) return "studio.error.notFound";
+  if (input.status === 409) return "studio.outputs.reviewConflict";
   if (input.status === null) return "studio.error.network";
   return input.action === "save"
     ? "studio.outputs.saveFailed"
     : "studio.outputs.signOffFailed";
-}
-
-function latestVersion(
-  versions: readonly StudioOutputVersionView[],
-): StudioOutputVersionView {
-  return versions.reduce((latest, version) =>
-    version.revision > latest.revision ? version : latest,
-  );
 }
 
 export type StudioOutputCardProps = {
@@ -235,7 +242,9 @@ export function StudioOutputCard({
   expandable = false,
   initialSummary = null,
 }: StudioOutputCardProps) {
-  const [detail, setDetail] = useState<StudioOutputDetail | null>(null);
+  const [storedDetail, setDetail] = useState<StudioOutputDetail | null>(null);
+  const detail =
+    storedDetail?.output.outputId === outputId ? storedDetail : null;
   // A non-expandable card starts fetching immediately, so its first paint is
   // the honest loading state (also what server-side rendering shows); an
   // expandable row shows no body until the operator opens it.
@@ -248,9 +257,25 @@ export function StudioOutputCard({
     phase: "idle",
   });
   const inFlight = useRef(false);
+  const identity = useRef({ outputId, expandable });
+  if (
+    identity.current.outputId !== outputId ||
+    identity.current.expandable !== expandable
+  )
+    identity.current = { outputId, expandable };
+  useEffect(() => {
+    inFlight.current = false;
+    setDetail(null);
+    setLoading(!expandable);
+    setLoadError(null);
+    setActionState("idle");
+    setActionError(null);
+    setNotice(null);
+  }, [outputId, expandable]);
 
   const load = useCallback(async () => {
-    if (inFlight.current) return;
+    const context = identity.current;
+    if (inFlight.current || context.outputId !== outputId) return;
     inFlight.current = true;
     setLoading(true);
     setLoadError(null);
@@ -258,21 +283,30 @@ export function StudioOutputCard({
       const result = await getJson(
         `/api/studio/outputs/${encodeURIComponent(outputId)}`,
       );
+      if (identity.current !== context) return;
       if (result.status !== 200) {
         setLoadError(outputLoadErrorKey(result.status));
         return;
       }
       const parsed = studioOutputDetailSchema.safeParse(result.body);
-      if (!parsed.success) {
+      if (
+        !parsed.success ||
+        parsed.data.output.outputId !== outputId ||
+        !parsed.data.versions.some(
+          (version) => version.revision === parsed.data.output.currentVersion,
+        )
+      ) {
         setLoadError("studio.outputs.loadError");
         return;
       }
       setDetail(parsed.data);
     } catch {
-      setLoadError("studio.error.network");
+      if (identity.current === context) setLoadError("studio.error.network");
     } finally {
-      inFlight.current = false;
-      setLoading(false);
+      if (identity.current === context) {
+        inFlight.current = false;
+        setLoading(false);
+      }
     }
   }, [outputId]);
 
@@ -290,7 +324,19 @@ export function StudioOutputCard({
 
   const runAction = useCallback(
     async (action: "save" | "sign_off") => {
-      if (inFlight.current) return;
+      const context = identity.current;
+      if (
+        inFlight.current ||
+        context.outputId !== outputId ||
+        !detail ||
+        detail.output.outputId !== outputId
+      )
+        return;
+      const preview = detail.versions.find(
+        (entry) => entry.revision === detail.output.currentVersion,
+      );
+      if (!preview) return;
+      const targetStatus = action === "sign_off" ? "signed_off" : "saved";
       inFlight.current = true;
       setActionState(action === "save" ? "saving" : "signing_off");
       setActionError(null);
@@ -299,7 +345,12 @@ export function StudioOutputCard({
         const result = await postAction(
           `/api/studio/outputs/${encodeURIComponent(outputId)}`,
           action,
+          {
+            expectedRevision: preview.revision,
+            expectedDigest: preview.contentDigest,
+          },
         );
+        if (identity.current !== context) return;
         if (result.status !== 200) {
           setActionError(
             outputActionErrorKey({ action, status: result.status }),
@@ -307,7 +358,13 @@ export function StudioOutputCard({
           return;
         }
         const parsed = studioOutputActionResultSchema.safeParse(result.body);
-        if (!parsed.success) {
+        if (
+          !parsed.success ||
+          parsed.data.outputId !== outputId ||
+          parsed.data.version !== preview.revision ||
+          parsed.data.contentDigest !== preview.contentDigest ||
+          parsed.data.status !== targetStatus
+        ) {
           setActionError(
             action === "save"
               ? "studio.outputs.saveFailed"
@@ -325,6 +382,11 @@ export function StudioOutputCard({
                   ...previous.output,
                   status: parsed.data.status,
                   currentVersion: parsed.data.version,
+                  confirmation: {
+                    status: targetStatus,
+                    revision: parsed.data.version,
+                    contentDigest: parsed.data.contentDigest,
+                  },
                 },
               },
         );
@@ -334,24 +396,39 @@ export function StudioOutputCard({
             : "studio.outputs.signOffSucceeded",
         );
       } catch {
-        setActionError(
-          action === "save"
-            ? "studio.outputs.saveFailed"
-            : "studio.outputs.signOffFailed",
-        );
+        if (identity.current === context)
+          setActionError(
+            action === "save"
+              ? "studio.outputs.saveFailed"
+              : "studio.outputs.signOffFailed",
+          );
       } finally {
-        inFlight.current = false;
-        setActionState("idle");
+        if (identity.current === context) {
+          inFlight.current = false;
+          setActionState("idle");
+        }
       }
     },
-    [outputId],
+    [outputId, detail],
   );
 
   const status = detail?.output.status ?? initialSummary?.status ?? null;
   const title = detail?.output.title ?? initialSummary?.title ?? outputId;
   const kind = detail?.output.kind ?? initialSummary?.kind ?? null;
   const currentVersion = detail?.output.currentVersion ?? revision ?? null;
-  const version = detail?.versions ? latestVersion(detail.versions) : null;
+  const version =
+    detail?.versions.find(
+      (entry) => entry.revision === detail.output.currentVersion,
+    ) ?? null;
+  const confirmation = detail?.output.confirmation;
+  const confirmed =
+    version !== null &&
+    confirmation?.revision === version.revision &&
+    confirmation.contentDigest === version.contentDigest &&
+    confirmation.status === status;
+  const needsConfirmation = status === "signed_off" && !confirmed;
+  const staleProposal =
+    kind === "copy_proposal" && detail?.output.freshness !== "current";
   const threadId = detail?.output.threadId ?? null;
   const busy = actionState !== "idle";
   const exportable =
@@ -424,7 +501,12 @@ export function StudioOutputCard({
       <div className={styles["studio-output-meta"]}>
         {status ? (
           <span className={styles["studio-output-status"]} data-status={status}>
-            {studioCopy(locale, STATUS_KEYS[status])}
+            {studioCopy(
+              locale,
+              needsConfirmation
+                ? "studio.outputs.confirmationNeeded"
+                : STATUS_KEYS[status],
+            )}
           </span>
         ) : null}
         {currentVersion !== null ? (
@@ -480,6 +562,7 @@ export function StudioOutputCard({
                 outputId: detail.output.outputId,
                 status: detail.output.status,
                 digest: version.contentDigest,
+                revision: version.revision,
               }}
             />
           ) : detail.output.kind === "finding" ? (
@@ -559,6 +642,16 @@ export function StudioOutputCard({
             </section>
           ) : null}
 
+          {staleProposal ? (
+            <p className={styles["studio-evidence-note"]} role="status">
+              {studioCopy(locale, "studio.outputs.proposalOutdated")}
+            </p>
+          ) : null}
+          {needsConfirmation ? (
+            <p className={styles["studio-evidence-note"]}>
+              {studioCopy(locale, "studio.outputs.confirmationNeeded")}
+            </p>
+          ) : null}
           {notice !== null ? (
             <p className={styles["studio-output-notice"]} role="status">
               {studioCopy(locale, notice)}
@@ -567,6 +660,18 @@ export function StudioOutputCard({
           {actionError !== null ? (
             <div className={styles["studio-composer-error"]} role="alert">
               <p>{studioCopy(locale, actionError)}</p>
+              {actionError === "studio.outputs.reviewConflict" ? (
+                <button
+                  type="button"
+                  className={styles["studio-output-action"]}
+                  onClick={() => {
+                    setActionError(null);
+                    void load();
+                  }}
+                >
+                  {studioCopy(locale, "studio.outputs.reload")}
+                </button>
+              ) : null}
             </div>
           ) : null}
 
@@ -575,7 +680,13 @@ export function StudioOutputCard({
               type="button"
               className={styles["studio-output-action"]}
               onClick={() => void runAction("save")}
-              disabled={busy || detail.output.status !== "draft"}
+              disabled={
+                busy ||
+                !(
+                  detail.output.status === "draft" ||
+                  (detail.output.status === "saved" && !confirmed)
+                )
+              }
             >
               {actionState === "saving"
                 ? studioCopy(locale, "studio.outputs.saving")
@@ -585,13 +696,20 @@ export function StudioOutputCard({
               type="button"
               className={styles["studio-output-action"]}
               onClick={() => void runAction("sign_off")}
-              disabled={busy || !canSignOff || detail.output.status !== "saved"}
+              disabled={
+                busy ||
+                !canSignOff ||
+                staleProposal ||
+                !(detail.output.status === "saved" || needsConfirmation)
+              }
               title={
                 !canSignOff
                   ? studioCopy(locale, "studio.outputs.signOffRole")
-                  : detail.output.status !== "saved"
-                    ? studioCopy(locale, "studio.outputs.signOffNeedsSaved")
-                    : undefined
+                  : staleProposal
+                    ? studioCopy(locale, "studio.outputs.proposalOutdated")
+                    : detail.output.status !== "saved" && !needsConfirmation
+                      ? studioCopy(locale, "studio.outputs.signOffNeedsSaved")
+                      : undefined
               }
             >
               {actionState === "signing_off"

@@ -1155,6 +1155,19 @@ export const STUDIO_COPY = {
     "未能簽核，請重試。",
     "The artifact could not be signed off. Try again.",
   ],
+  "studio.outputs.reviewConflict": [
+    "成品或商品版本已變更，或缺少預覽版本。請重新載入後再審核。",
+    "The artifact or listing version changed, or the preview version is missing. Reload before reviewing.",
+  ],
+  "studio.outputs.reload": ["重新載入成品", "Reload artifact"],
+  "studio.outputs.confirmationNeeded": [
+    "此版本需要重新確認簽核",
+    "Review confirmation required for this version",
+  ],
+  "studio.outputs.proposalOutdated": [
+    "建議所依據的商品版本已變更或無法讀取。請重新產生建議後再簽核；商品資料尚未變更。",
+    "The proposal's listing version changed or is unavailable. Refresh the proposal before sign-off; listing data is unchanged.",
+  ],
   "studio.outputs.signOffRole": [
     "需要審核員或以上權限才能簽核。",
     "A reviewer or higher role is required to sign off.",
@@ -1325,6 +1338,15 @@ export const STUDIO_COPY = {
 
   // -- listing review handoff (B2) -------------------------------------------
   "studio.handoff.title": ["工作室建議", "Studio proposal"],
+  "studio.handoff.openSource": ["在工作室中開啟", "Open in Studio"],
+  "studio.handoff.unpinned": [
+    "此連結未指定建議版本。請開啟來源對話，取得指定版本的審核連結後再複製。",
+    "This link omits the proposal version. Open the source conversation for an exact-version review link before copying.",
+  ],
+  "studio.handoff.notCurrent": [
+    "此建議已過期，或其版本無法確認。請開啟來源對話，重新檢視目前版本後再複製。",
+    "This proposal is outdated or its version cannot be confirmed. Open the source conversation to review the current version before copying.",
+  ],
   "studio.handoff.requiresReview": [
     "工作室建議 — 須人工審核。此處不會自動套用任何內容。",
     "Studio proposal — requires human review. Nothing here is applied automatically.",

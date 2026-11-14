@@ -1,4 +1,4 @@
-﻿import { WorkbenchReturnLink } from "../../../../components/workbench-return-link";
+import { WorkbenchReturnLink } from "../../../../components/workbench-return-link";
 import { ListingReviewClient } from "../../../../components/listing-review-client";
 import { getDatabase } from "../../../../lib/intake-runtime";
 import { authSessionContext } from "../../../../lib/session-context";
@@ -23,6 +23,8 @@ export default async function ListingReviewPage({
     processing?: string;
     returnTo?: string;
     studioOutput?: string | string[];
+    studioRevision?: string | string[];
+    studioDigest?: string | string[];
   }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
@@ -32,10 +34,20 @@ export default async function ListingReviewPage({
       : undefined;
   // A repeated parameter is ambiguous, so it is ignored rather than guessed at.
   const studioOutput =
-    typeof query.studioOutput === "string" ? query.studioOutput : undefined;
+    typeof query.studioOutput === "string" &&
+    !Array.isArray(query.studioRevision) &&
+    !Array.isArray(query.studioDigest)
+      ? query.studioOutput
+      : undefined;
   const studioHandoff = await loadListingStudioHandoff({
     listingId: id,
     studioOutput,
+    studioRevision:
+      typeof query.studioRevision === "string"
+        ? query.studioRevision
+        : undefined,
+    studioDigest:
+      typeof query.studioDigest === "string" ? query.studioDigest : undefined,
     deps: {
       sessionContext: authSessionContext,
       getDatabase,

@@ -509,10 +509,26 @@ test("flags-on studio: copy-proposal handoff renders read-only and fails closed"
   const origin = baseURL ?? "http://127.0.0.1:49300";
   await signIn(page, origin);
 
-  // The valid artifact opens the banner above the existing review form.
-  await page.goto(
-    `/listings/${SUPPLIER_LISTING_ID}?studioOutput=${HANDOFF_OUTPUT_ID}`,
+  await page.setViewportSize({ width: 390, height: 844 });
+  const artifact = await page.request.get(
+    `/api/studio/outputs/${HANDOFF_OUTPUT_ID}`,
   );
+  expect(artifact.status()).toBe(200);
+  const detail = (await artifact.json()) as {
+    output: { currentVersion: number };
+    versions: Array<{ revision: number; contentDigest: string }>;
+  };
+  const version = detail.versions.find(
+    (entry) => entry.revision === detail.output.currentVersion,
+  );
+  if (!version) throw new Error("The handoff fixture has no current version");
+  const handoffQuery = new URLSearchParams({
+    studioOutput: HANDOFF_OUTPUT_ID,
+    studioRevision: String(version.revision),
+    studioDigest: version.contentDigest,
+  });
+  // The exact preview opens the banner above the existing review form.
+  await page.goto(`/listings/${SUPPLIER_LISTING_ID}?${handoffQuery}`);
   const banner = page.locator('[data-studio-handoff="true"]');
   await expect(banner).toBeVisible({ timeout: 30_000 });
   await expect(banner).toHaveAttribute("data-output-id", HANDOFF_OUTPUT_ID);
@@ -531,6 +547,33 @@ test("flags-on studio: copy-proposal handoff renders read-only and fails closed"
   await expect(
     banner.getByRole("button", { name: /apply|save|publish/i }),
   ).toHaveCount(0);
+
+  await expect(
+    banner.getByRole("button", {
+      name: "Copy proposed: title.en",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  await page.goto(
+    `/listings/${SUPPLIER_LISTING_ID}?studioOutput=${HANDOFF_OUTPUT_ID}`,
+  );
+  await expect(banner).toContainText("This link omits the proposal version");
+  await expect(
+    banner.getByRole("button", {
+      name: "Copy proposed: title.en",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  handoffQuery.set("studioDigest", "b".repeat(64));
+  await page.goto(`/listings/${SUPPLIER_LISTING_ID}?${handoffQuery}`);
+  await expect(banner).toContainText("its version cannot be confirmed");
+  await expect(banner.locator("[data-field]")).toHaveCount(0);
 
   // Dismissing drops the query parameter and the banner without any write.
   await banner

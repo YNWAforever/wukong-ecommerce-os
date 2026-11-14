@@ -52,7 +52,12 @@ import type {
   StudioOutputListQuery,
   StudioThreadListQuery,
 } from "./contracts";
-import { STUDIO_DEFAULT_THREAD_TITLE } from "./contracts";
+import {
+  STUDIO_DEFAULT_THREAD_TITLE,
+  outputVersionPinSchema,
+} from "./contracts";
+import { parseCopyProposalPayload } from "./copy-proposal";
+import { outputDigestMatches, proposalFreshness } from "./output-review";
 import {
   STUDIO_METRICS_WINDOW_DAYS,
   STUDIO_PAGE_SIZE,
@@ -1996,7 +2001,38 @@ export function createStudioService(deps: StudioServiceDeps) {
           const output = await repos.studio.outputs.get(outputId);
           if (!output) return null;
           const versions = await repos.studio.outputs.versions(outputId);
-          return { output, versions };
+          const version = versions.find(
+            (entry) => entry.revision === output.currentVersion,
+          );
+          const recorded =
+            await repos.studio.outputs.statusConfirmation(outputId);
+          const validDigest = !!version && outputDigestMatches(version);
+          const confirmation =
+            validDigest &&
+            recorded &&
+            recorded.status === output.status &&
+            recorded.revision === version?.revision &&
+            recorded.contentDigest === version?.contentDigest
+              ? recorded
+              : null;
+          let freshness:
+            "current" | "stale" | "unavailable" | "not_applicable" =
+            "not_applicable";
+          if (output.kind === "copy_proposal") {
+            const proposal = version
+              ? parseCopyProposalPayload(version.payload)
+              : null;
+            const listing = proposal
+              ? await buildStudioReadDeps(repos).getListing(proposal.listingId)
+              : null;
+            freshness = validDigest
+              ? proposalFreshness(
+                  version?.payload,
+                  listing?.activeVersion ?? null,
+                )
+              : "unavailable";
+          }
+          return { output, versions, confirmation, freshness };
         },
       );
       if (!bundle) throw studioNotFound();
@@ -2021,6 +2057,8 @@ export function createStudioService(deps: StudioServiceDeps) {
           threadId: bundle.output.threadId,
           createdAt: bundle.output.createdAt.toISOString(),
           updatedAt: bundle.output.updatedAt.toISOString(),
+          confirmation: bundle.confirmation,
+          freshness: bundle.freshness,
         },
         versions,
       };
@@ -2029,14 +2067,77 @@ export function createStudioService(deps: StudioServiceDeps) {
     async setOutputStatus(
       outputId: string,
       action: "save" | "sign_off",
+      expected?: unknown,
     ): Promise<OutputActionResult> {
       const minimum = action === "sign_off" ? "reviewer" : "operator";
       const { session } = await requireStudioSession(deps, minimum);
       if (!UUID.safeParse(outputId).success) throw studioNotFound();
+      const pin = outputVersionPinSchema.safeParse(expected);
+      if (!pin.success)
+        throw new ApiError(
+          409,
+          "output_version_required",
+          "Reload the artifact before changing its review status.",
+        );
       const status = action === "sign_off" ? "signed_off" : "saved";
       return database().forWorkspace(session.workspaceId, async (repos) => {
-        const output = await repos.studio.outputs.get(outputId);
+        // addVersion takes the same lock; pin validation, status and audit commit together.
+        const output = await repos.studio.outputs.get(outputId, {
+          forUpdate: true,
+        });
         if (!output) throw studioNotFound();
+        if (output.currentVersion !== pin.data.expectedRevision)
+          throw new ApiError(
+            409,
+            "output_version_changed",
+            "The artifact changed. Reload it before reviewing.",
+          );
+        const version = await repos.studio.outputs.getVersion(
+          outputId,
+          pin.data.expectedRevision,
+        );
+        if (
+          !version ||
+          version.contentDigest !== pin.data.expectedDigest ||
+          !outputDigestMatches(version)
+        )
+          throw new ApiError(
+            409,
+            "output_version_changed",
+            "The artifact changed. Reload it before reviewing.",
+          );
+        if (action === "sign_off" && output.kind === "copy_proposal") {
+          const proposal = parseCopyProposalPayload(version.payload);
+          const listing = proposal
+            ? await buildStudioReadDeps(repos).getListing(proposal.listingId)
+            : null;
+          if (
+            proposalFreshness(
+              version.payload,
+              listing?.activeVersion ?? null,
+            ) !== "current"
+          )
+            throw new ApiError(
+              409,
+              "proposal_outdated",
+              "The listing changed or its version is unavailable. Refresh the proposal before sign-off.",
+            );
+        }
+        const recorded =
+          await repos.studio.outputs.statusConfirmation(outputId);
+        if (
+          output.status === status &&
+          recorded?.status === status &&
+          recorded.revision === version.revision &&
+          recorded.contentDigest === version.contentDigest
+        )
+          return {
+            outputId,
+            status,
+            version: version.revision,
+            contentDigest: version.contentDigest,
+            replayed: true,
+          };
         const changed = await repos.studio.outputs.setStatus(outputId, status);
         if (!changed)
           throw new ApiError(
@@ -2045,7 +2146,11 @@ export function createStudioService(deps: StudioServiceDeps) {
             "The output has no saved version.",
           );
         const readback = await repos.studio.outputs.get(outputId);
-        if (!readback || readback.status !== status)
+        if (
+          !readback ||
+          readback.status !== status ||
+          readback.currentVersion !== version.revision
+        )
           throw new Error("studio_output_status_readback_mismatch");
         await repos.audit.write({
           workspaceId: session.workspaceId,
@@ -2059,6 +2164,7 @@ export function createStudioService(deps: StudioServiceDeps) {
             outputId,
             kind: output.kind,
             revision: readback.currentVersion,
+            contentDigest: version.contentDigest,
             status,
           },
         });
@@ -2066,6 +2172,8 @@ export function createStudioService(deps: StudioServiceDeps) {
           outputId,
           status: readback.status,
           version: readback.currentVersion,
+          contentDigest: version.contentDigest,
+          replayed: false,
         };
       });
     },
