@@ -93,6 +93,27 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
 
   // 390px has no horizontal overflow.
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByText("Execution trace").first().click();
+  await page.getByText("Run details and cost", { exact: true }).click();
+  const runDetails = page
+    .locator("details")
+    .filter({ has: page.getByText("Run details and cost", { exact: true }) })
+    .last();
+  await expect(
+    runDetails.getByText("No budget reservation", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    runDetails
+      .getByText("Model provider", { exact: true })
+      .locator("..")
+      .locator("dd"),
+  ).toHaveText("Not recorded");
+  await expect(
+    runDetails
+      .getByText("Recorded cost (USD)", { exact: true })
+      .locator("..")
+      .locator("dd"),
+  ).toHaveText("Not recorded");
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
   );

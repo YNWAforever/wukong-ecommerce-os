@@ -2,6 +2,7 @@ import type { Locale } from "../lib/locale";
 import { renderStudioLine } from "../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import type { StudioTraceStep } from "../lib/studio/types";
+import { StudioRunDetails } from "./studio-run-details";
 import styles from "./studio.module.css";
 
 /**
@@ -96,6 +97,7 @@ export type StudioTraceProps = {
   readonly loading?: boolean;
   readonly error?: boolean;
   readonly onLoad?: () => void;
+  readonly runContext?: { threadId: string; runId: string };
 };
 
 export function StudioTrace({
@@ -105,6 +107,7 @@ export function StudioTrace({
   loading = false,
   error = false,
   onLoad,
+  runContext,
 }: StudioTraceProps) {
   const summary = renderStudioLine(locale, {
     key: "studio.trace.summary",
@@ -115,6 +118,9 @@ export function StudioTrace({
     <details className={styles["studio-trace"]}>
       <summary className={styles["studio-trace-summary"]}>{summary}</summary>
       <div className={styles["studio-trace-body"]}>
+        {runContext ? (
+          <StudioRunDetails locale={locale} {...runContext} />
+        ) : null}
         {steps === null ? (
           loading ? (
             <p className={styles["studio-trace-note"]} role="status">

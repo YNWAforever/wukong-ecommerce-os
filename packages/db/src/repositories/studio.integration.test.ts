@@ -491,7 +491,7 @@ describe.skipIf(!enabled)("studio repositories", () => {
       const failed = await createRun("usage-r2");
       await repos.studio.runs.markRunning(failed.id);
       await repos.studio.runs.fail(failed.id, {
-        errorCode: "provider_error",
+        errorCode: "reply_persistence_failed",
         inputTokens: 10,
         outputTokens: 5,
         settledUsd: "0.005000",
@@ -517,7 +517,8 @@ describe.skipIf(!enabled)("studio repositories", () => {
         reservedUsd: "0.010000",
         workspaceCapUsd: "10.000000",
       });
-      await repos.studio.budget.release(failed.id);
+      // A failed reply can still have a settled provider cost.
+      await repos.studio.budget.settle(failed.id, "0.005000");
       await repos.studio.budget.reserve({
         runId: queued.id,
         pricingVersion: "p1",
@@ -587,7 +588,7 @@ describe.skipIf(!enabled)("studio repositories", () => {
     });
     expect(Number(summary.tokens.input)).toBe(110);
     expect(Number(summary.tokens.output)).toBe(55);
-    expect(Number(summary.spend.settledUsd)).toBeCloseTo(0.02, 6);
+    expect(Number(summary.spend.settledUsd)).toBeCloseTo(0.025, 6);
     expect(Number(summary.spend.reservedUsd)).toBeCloseTo(0.06, 6);
     expect(summary.mcpCalls).toEqual({
       total: 5,
@@ -783,6 +784,8 @@ describe.skipIf(!enabled)("studio repositories", () => {
         });
         await repos.studio.runs.markRunning(created.run.id);
         const completed = await repos.studio.runs.complete(created.run.id, {
+          provider: "opencode-go",
+          model: "deepseek-v4.1-flash",
           inputTokens: 100,
           outputTokens: 20,
           estimatedCostUsd: "0.010000",
@@ -799,6 +802,18 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(replayedRun.run.id).toBe(run.id);
     expect(completed?.status).toBe("succeeded");
     expect(completed?.settledUsd).toBe("0.010000");
+    const persisted = await db!.forWorkspace(WORKSPACE_A, (repos) =>
+      repos.studio.runs.get(run.id),
+    );
+    expect(persisted).toMatchObject({
+      provider: "opencode-go",
+      model: "deepseek-v4.1-flash",
+    });
+    expect(
+      await db!.forWorkspace(WORKSPACE_B, (repos) =>
+        repos.studio.runs.get(run.id),
+      ),
+    ).toBeNull();
 
     const output = await db!.forWorkspace(WORKSPACE_A, async (repos) => {
       const created = await repos.studio.outputs.create({
@@ -832,6 +847,48 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(output.versions.map((version) => version.revision)).toEqual([2, 1]);
     expect(output.saved).toBe(true);
     expect(output.outputId).toBeTruthy();
+  });
+
+  it("preserves known model identity and settled usage on a failed run", async () => {
+    const failed = await db!.forWorkspace(WORKSPACE_A, async (repos) => {
+      const thread = await repos.studio.threads.create({
+        createdBy: "actor-a",
+        title: "Failed accounting",
+      });
+      const message = await repos.studio.messages.append({
+        threadId: thread.id,
+        role: "operator",
+        content: { text: "accounting" },
+        createdBy: "actor-a",
+      });
+      const { run } = await repos.studio.runs.create({
+        threadId: thread.id,
+        triggerMessageId: message.message.id,
+        skillKey: "catalog.find",
+        skillVersion: "1.0.0",
+        idempotencyKey: "failed-usage-identity",
+      });
+      await repos.studio.runs.markRunning(run.id);
+      await repos.studio.runs.fail(run.id, {
+        errorCode: "reply_persistence_failed",
+        provider: "opencode-go",
+        model: "deepseek-v4.1-flash",
+        inputTokens: 927,
+        outputTokens: 1385,
+        estimatedCostUsd: "0.001941",
+        settledUsd: "0.001941",
+      });
+      return repos.studio.runs.get(run.id);
+    });
+    expect(failed).toMatchObject({
+      status: "failed",
+      provider: "opencode-go",
+      model: "deepseek-v4.1-flash",
+      inputTokens: 927,
+      outputTokens: 1385,
+      estimatedCostUsd: "0.001941",
+      settledUsd: "0.001941",
+    });
   });
 
   it("reserves studio budget atomically and settles it once", async () => {
@@ -877,12 +934,35 @@ describe.skipIf(!enabled)("studio repositories", () => {
       });
       await repos.studio.budget.settle(run1.run.id, "0.500000");
       const committed = await repos.studio.budget.committedUsd();
-      return { first, second, duplicate, committed };
+      const reservation = await repos.studio.budget.getForRun(run1.run.id);
+      const unreserved = await repos.studio.budget.getForRun(run2.run.id);
+      return {
+        first,
+        second,
+        duplicate,
+        committed,
+        reservation,
+        unreserved,
+        runId: run1.run.id,
+      };
     });
     expect(outcome.first.accepted).toBe(true);
     expect(outcome.second.accepted).toBe(false);
     expect(outcome.duplicate.accepted).toBe(true);
     expect(outcome.committed).toBe("0.500000");
+    expect(outcome.reservation).toMatchObject({
+      runId: outcome.runId,
+      state: "settled",
+      reservedUsd: "0.600000",
+      settledUsd: "0.500000",
+      pricingVersion: "studio-v1",
+    });
+    expect(outcome.unreserved).toBeNull();
+    expect(
+      await db!.forWorkspace(WORKSPACE_A, (repos) =>
+        repos.studio.budget.getForRun(outcome.runId),
+      ),
+    ).toBeNull();
   });
 
   it("stores MCP connections, call receipts and hashed API tokens", async () => {

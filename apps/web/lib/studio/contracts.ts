@@ -109,6 +109,13 @@ export type StudioRunResponse = {
   estimatedCostUsd: string | null;
   reservedUsd: string | null;
   settledUsd: string | null;
+  /** Ledger-backed reservation; absent on older deployments, null when none exists. */
+  reservation?: {
+    state: "reserved" | "settled" | "released" | "uncertain";
+    pricingVersion: string;
+    reservedUsd: string;
+    settledUsd: string | null;
+  } | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;

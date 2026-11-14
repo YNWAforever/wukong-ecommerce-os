@@ -1016,6 +1016,32 @@
   padding: 0 12px 12px;
 }
 
+.studio-run-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.studio-run-data {
+  display: grid;
+  gap: 8px;
+  margin-block: 12px;
+}
+
+.studio-run-data > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+
+.studio-run-data dt {
+  color: var(--muted);
+}
+
+.studio-run-data dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .studio-trace-list {
   display: grid;
   gap: 8px;

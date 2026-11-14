@@ -405,3 +405,38 @@ acceptance without thread/run ids or independently observed browser evidence. Se
 expected to be denied for the pilot's `operator` role; configuration requires `admin` or `owner`.
 `CONVERSATION_STUDIO_AI_ENABLED`, `STUDIO_MCP_SERVER_ENABLED`, `STUDIO_EXTERNAL_MCP_ENABLED` and
 `STUDIO_MCP_ENCRYPTION_KEY` remain off; A3/C3 still need their separate inputs.
+
+### Current status and approved next cycle (2026-11-14, Asia/Singapore)
+
+This entry supersedes the earlier dated activation-status notes. A1, A2, A4, A5, B1, B2, B4 and C1
+are delivered. A3 is now live: the first authenticated `catalog.find` run completed with 927 input /
+1,385 output tokens and USD 0.001941 settled, confirmed by the persisted model event, completion audit
+and reservation ledger. PR #219 is merged at `1ed4021a`; its production deployment is Ready and
+post-merge main CI `43511042057` passed on attempt 1. The
+[activation record](../../runbooks/conversation-studio-activation-package-2026-11-12.md#11-a3-configuration-and-deployment-record-2026-11-14-asiasingapore)
+records evidence and limitations. External MCP remains explicitly deferred; hosted MCP and SHOPLINE
+publishing remain gated.
+
+The operator approved the following three-PR development cycle:
+
+1. **Run metadata and cost visibility.** Persist the configured backend and returned usage model when
+   a model supplies usage; preserve known usage/cost if subsequent reply persistence fails. Project
+   reservation state and amounts from the existing ledger, and provide lazy bilingual run details
+   within the trace. Keep unknown values distinct from zero and preserve historical unknown identity
+   fields. Implementation and local service/UI/repository checks are ready; browser CI and release
+   verification remain pending.
+2. **Product-shot dispatch recovery.** Recover a rejected enqueue using the same source and attempt,
+   expose an explicit dispatch retry with version fences and audit, distinguish ingress rejection
+   from transport failure, and retain CI diagnostics. Verify one provider execution despite duplicate
+   delivery. The PR #219 first-attempt HTTP503 queue rejection is preserved as evidence; its second
+   attempt passed, which does not establish the underlying cause or resolve the recovery gap.
+3. **Catalog evidence and answer usefulness.** Supply the executed query and bounded, allowlisted
+   catalog/job facts with evidence references, improve deterministic zero-result presentation and
+   composer refinement, version the Studio prompt, and add adversarial/zero-result/missing-source
+   fixtures. Keep generated suggestions labelled unverified.
+
+Use existing tables and endpoints where possible. The reviewed model, USD 10 cumulative workspace
+cap, USD 2 run ceiling and 4,096 output-token limit remain the operating policy. Each PR must pass
+required CI before merging and receive commit-specific production and post-merge main-CI verification.
+The next milestone after this cycle is a separately planned guided audit → gap review → copy proposal
+→ reviewer handoff journey, using the existing skills and artifacts.
