@@ -133,6 +133,53 @@ describe("Cloudflare queue ingress runtime", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [401, "unauthorized"],
+    [429, "rate_limited"],
+    [503, "server_error"],
+    [400, "client_error"],
+  ] as const)(
+    "records bounded HTTP %s diagnostics without body, payload or signatures",
+    async (status, category) => {
+      const log = vi.spyOn(console, "info").mockImplementation(() => {});
+      const secret = "private-signing-key-for-test-only";
+      const fetch = vi.fn(
+        async () => new Response("PRIVATE_RESPONSE_BODY", { status }),
+      );
+      try {
+        const client = createCloudflareIngressClient({
+          env: {
+            QUEUE_INGRESS_URL: "https://queue.example",
+            QUEUE_INGRESS_SECRET: secret,
+          },
+          fetch,
+        });
+        await expect(
+          client.enqueue(LISTING_INGRESS_PATH, payload),
+        ).rejects.toMatchObject({
+          reason: "rejected",
+          message: "queue_unavailable",
+        });
+        expect(fetch).toHaveBeenCalledOnce();
+        expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+          event: "queue_ingress_failure",
+          stage: "transport",
+          code: "http_rejected",
+          ingressPath: LISTING_INGRESS_PATH,
+          httpStatus: status,
+          category,
+        });
+        const logged = JSON.stringify(log.mock.calls);
+        expect(logged).not.toContain(secret);
+        expect(logged).not.toContain("PRIVATE_RESPONSE_BODY");
+        expect(logged).not.toContain(payload.workspaceId);
+        expect(logged).not.toContain("x-wukong-signature");
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+
   it("uses a five-second abort and retries once before failing safely on timeout", async () => {
     const timeout = vi
       .spyOn(AbortSignal, "timeout")

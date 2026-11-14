@@ -211,7 +211,7 @@ describe("exact image review", () => {
     ).toBe("/original.png");
   });
 
-  it("reloads a committed attachment after its source request response fails", async () => {
+  it("refreshes a committed attachment after its source request response fails", async () => {
     const replacementId = "10000000-0000-4000-8000-000000000099";
     let reads = 0;
     const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
@@ -267,14 +267,17 @@ describe("exact image review", () => {
     input.files = transfer.files;
     await act(async () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.waitFor(() =>
+        expect(
+          fetcher.mock.calls.filter(
+            ([url, options]) =>
+              url === "/api/listings/listing/product-shot" &&
+              options?.method !== "POST",
+          ),
+        ).toHaveLength(2),
+      );
     });
-    await vi.waitFor(() =>
-      expect(host.querySelector('[role="alert"]')).not.toBeNull(),
-    );
-    const reload = [...host.querySelectorAll("button")].find(
-      (button) => button.textContent === "Reload",
-    )!;
-    await act(async () => reload.click());
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
 
     expect(
       host.querySelector(`input[type="radio"][value="${replacementId}"]`),

@@ -59,6 +59,8 @@ describe("strict scoped product shot routes", () => {
     { ...body, sourceAssetId: [id(3), id(4)] },
     { ...body, expectedVersionId: "bad" },
     { ...body, sourceDigest: "a".repeat(64) },
+    { ...body, retryAttemptId: "bad" },
+    { ...body, retryAttemptId: id(9), explicitFreshAttempt: true },
   ])("rejects invalid input", async (data) => {
     const f = fixture();
     expect(
@@ -85,6 +87,23 @@ describe("strict scoped product shot routes", () => {
       listingId: id(1),
     });
   });
+  it("forwards the observed retry attempt with the server-resolved scope", async () => {
+    const f = fixture();
+    const response = await createProductShotHandler(f.deps, "request")(
+      request({ ...body, retryAttemptId: id(9) }),
+      context,
+    );
+    expect(response.status).toBe(200);
+    expect(f.requestShot).toHaveBeenCalledWith({
+      ...body,
+      retryAttemptId: id(9),
+      explicitFreshAttempt: false,
+      workspaceId: "ws",
+      actorId: "actor",
+      listingId: id(1),
+    });
+  });
+
   it("rejects foreign listing before requesting", async () => {
     const f = fixture();
     f.repos.listings.getReviewSnapshot = async () => null;

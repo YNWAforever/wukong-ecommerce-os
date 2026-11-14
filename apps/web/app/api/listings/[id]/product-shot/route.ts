@@ -44,8 +44,13 @@ const sourceBody = z
     expectedVersionId: z.uuid().nullable(),
     expectedInputRevision: z.number().int().nonnegative().optional(),
     explicitFreshAttempt: z.boolean().default(false),
+    retryAttemptId: z.uuid().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (body) => !body.retryAttemptId || !body.explicitFreshAttempt,
+    "A dispatch retry cannot request a fresh attempt.",
+  );
 const attachBody = z
   .object({
     sourceAssetId: z.uuid(),

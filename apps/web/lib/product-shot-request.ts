@@ -14,6 +14,8 @@ export type ProductShotRequestInput = {
   expectedVersionId?: string | null;
   expectedInputRevision?: number;
   explicitFreshAttempt?: boolean;
+  /** Re-dispatch only this already-observed queued attempt. */
+  retryAttemptId?: string;
 };
 export type ProductShotRequestResult = { state: string; attemptId?: string };
 export type ProductShotAttachInput = {
@@ -198,6 +200,32 @@ export async function requestProductShot(
     return r.productShots.currentForListing(input.listingId);
   });
   if (
+    existing &&
+    (existing.workspaceId !== input.workspaceId ||
+      existing.listingId !== input.listingId)
+  )
+    throw new ApiError(
+      404,
+      "attempt_not_found",
+      "Product image attempt not found.",
+    );
+  if (
+    input.retryAttemptId !== undefined &&
+    (!existing ||
+      existing.attemptId !== input.retryAttemptId ||
+      existing.state !== "queued" ||
+      input.explicitFreshAttempt ||
+      existing.providerVersion !== `${deps.providerName}:1.0.0` ||
+      existing.renderVersion !== PRODUCT_SHOT_RENDER_VERSION ||
+      (input.sourceAssetId !== undefined &&
+        input.sourceAssetId !== existing.sourceAssetId))
+  )
+    throw new ApiError(
+      409,
+      "dispatch_retry_not_allowed",
+      "Reload the selected image before retrying dispatch.",
+    );
+  if (
     input.explicitFreshAttempt &&
     (!existing || !["failed", "outcome_unknown"].includes(existing.state))
   )
@@ -213,13 +241,40 @@ export async function requestProductShot(
     (!input.sourceAssetId || input.sourceAssetId === existing.sourceAssetId) &&
     !input.explicitFreshAttempt
   ) {
-    if (existing.state === "queued" || existing.state === "processing")
+    if (existing.state === "queued") {
+      // Recheck the observation and audit intent before external queue I/O.
+      // A retry resends this attempt; it never creates a fresh paid attempt.
+      await deps.forWorkspace(input.workspaceId, async (r) => {
+        await assertObservedVersion(r);
+        const current = await r.productShots.currentForListing(input.listingId);
+        if (
+          !current ||
+          current.attemptId !== existing.attemptId ||
+          current.state !== "queued"
+        )
+          throw new ApiError(
+            409,
+            "selection_changed",
+            "Reload the image state before retrying dispatch.",
+          );
+        await r.audit.write({
+          workspaceId: input.workspaceId,
+          actorId: input.actorId,
+          entityId: input.listingId,
+          action: "product_shot.dispatch_retry_requested",
+          metadata: {
+            attemptId: existing.attemptId,
+            sourceAssetId: existing.sourceAssetId,
+          },
+        });
+      });
       await deps.enqueue({
         kind: "product_shot",
         workspaceId: input.workspaceId,
         draftId: input.listingId,
         attemptId: existing.attemptId,
       });
+    }
     return { state: existing.state, attemptId: existing.attemptId };
   }
   const assets = await deps.forWorkspace(input.workspaceId, (r) =>
@@ -291,7 +346,7 @@ export async function requestProductShot(
     r.productShots.get(attemptId),
   );
   if (!row) throw new Error("attempt_not_found");
-  if (row.state === "queued" || row.state === "processing")
+  if (row.state === "queued")
     await deps.enqueue({
       kind: "product_shot",
       workspaceId: input.workspaceId,

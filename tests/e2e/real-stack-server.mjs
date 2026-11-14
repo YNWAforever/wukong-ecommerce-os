@@ -3,6 +3,7 @@ import { spawn, execFileSync } from "node:child_process";
 import http from "node:http";
 import https from "node:https";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { connect as connectTls } from "node:tls";
@@ -216,8 +217,13 @@ function sanitize(value, sensitiveValuePattern, sensitiveBindings) {
   }
   return safe
     .replace(/\bpostgres(?:ql)?:\/\/[^\s"'<>]+/gi, "[database-url]")
+    .replace(/\bhttps?:\/\/[^\s"'<>]+/gi, "[http-url]")
     .replace(
-      /(secret|token|password|api[_-]?key)\s*=\s*(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\S+)/gi,
+      /\b(?:authorization|cookie|set-cookie)\s*[:=][^\r\n]*/gi,
+      "[sensitive-header]",
+    )
+    .replace(
+      /(secret|token|password|api[_-]?key|signature|credential)\s*=\s*(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\S+)/gi,
       "$1=[redacted]",
     );
 }
@@ -264,6 +270,42 @@ export function createSanitizedLineWriter({
     },
   };
 }
+/** Bounded, sanitized CI diagnostics; raw child output must never reach an artifact. */
+export function createBoundedDiagnosticLog(
+  directory,
+  label,
+  maxBytes = 262144,
+) {
+  if (
+    !/^[a-z0-9-]{1,40}$/i.test(label) ||
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 64 ||
+    maxBytes > 2097152
+  )
+    throw new Error("invalid_diagnostic_log_options");
+  mkdirSync(directory, { recursive: true });
+  const file = resolve(directory, `${label}.log`);
+  writeFileSync(file, "");
+  let written = 0;
+  return (safe) => {
+    if (written >= maxBytes) return;
+    const content = Buffer.from(sanitizeRuntime(String(safe)));
+    const remaining = maxBytes - written;
+    if (content.length <= remaining) {
+      appendFileSync(file, content);
+      written += content.length;
+      return;
+    }
+    const notice = Buffer.from("\n[diagnostic log truncated]\n");
+    const prefix = content.subarray(0, Math.max(0, remaining - notice.length));
+    appendFileSync(
+      file,
+      Buffer.concat([prefix, notice.subarray(0, remaining - prefix.length)]),
+    );
+    written = maxBytes;
+  };
+}
+
 export function spawnProcessGroup(command, args, options = {}) {
   return spawn(command, args, {
     ...options,
@@ -364,6 +406,16 @@ function recordLogs(label, safe) {
 }
 
 function start(label, args, environment = runtimeEnv) {
+  const retain = productShotFixtureEnabled
+    ? createBoundedDiagnosticLog(
+        resolve(root, "node_modules/.product-shot-evidence"),
+        label,
+      )
+    : () => {};
+  const onSanitizedOutput = (safe) => {
+    recordLogs(label, safe);
+    retain(safe);
+  };
   const command =
     process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "pnpm";
   const commandArgs =
@@ -379,12 +431,12 @@ function start(label, args, environment = runtimeEnv) {
   const stdout = createSanitizedLineWriter({
     label,
     sink: process.stdout,
-    onSanitizedOutput: (safe) => recordLogs(label, safe),
+    onSanitizedOutput,
   });
   const stderr = createSanitizedLineWriter({
     label,
     sink: process.stderr,
-    onSanitizedOutput: (safe) => recordLogs(label, safe),
+    onSanitizedOutput,
   });
   children.add(child);
   child.stdout.on("data", (chunk) => stdout.write(chunk));
