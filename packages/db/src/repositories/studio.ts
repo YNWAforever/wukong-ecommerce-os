@@ -397,6 +397,8 @@ export type StudioRepository = {
     complete(
       id: string,
       input: {
+        provider?: string | null;
+        model?: string | null;
         inputTokens?: number | null;
         outputTokens?: number | null;
         estimatedCostUsd?: string | null;
@@ -407,6 +409,8 @@ export type StudioRepository = {
       id: string,
       input: {
         errorCode: string;
+        provider?: string | null;
+        model?: string | null;
         inputTokens?: number | null;
         outputTokens?: number | null;
         estimatedCostUsd?: string | null;
@@ -466,6 +470,7 @@ export type StudioRepository = {
     ): Promise<boolean>;
   };
   budget: {
+    getForRun(runId: string): Promise<StudioBudgetReservation | null>;
     reserve(input: {
       runId: string;
       pricingVersion: string;
@@ -1096,6 +1101,8 @@ export function createStudioRepository(
         const rows = await transaction.execute(sql`
           update studio_runs set
             status='succeeded',finished_at=now(),updated_at=now(),
+            provider=coalesce(${input.provider ?? null},provider),
+            model=coalesce(${input.model ?? null},model),
             input_tokens=${input.inputTokens ?? null},
             output_tokens=${input.outputTokens ?? null},
             estimated_cost_usd=${estimated}::numeric,
@@ -1114,12 +1121,19 @@ export function createStudioRepository(
         const rows = await transaction.execute(sql`
           update studio_runs set
             status=${status},finished_at=now(),updated_at=now(),error_code=${input.errorCode},
+            provider=coalesce(${input.provider ?? null},provider),
+            model=coalesce(${input.model ?? null},model),
             input_tokens=${input.inputTokens ?? null},
             output_tokens=${input.outputTokens ?? null},
             estimated_cost_usd=${
               input.estimatedCostUsd == null
                 ? null
                 : money(input.estimatedCostUsd, "estimatedCostUsd", true)
+            }::numeric,
+            settled_usd=${
+              input.settledUsd == null
+                ? null
+                : money(input.settledUsd, "settledUsd", true)
             }::numeric
           where workspace_id=${workspaceId} and id=${id}::uuid
             and status in ('queued','running')
@@ -1278,6 +1292,14 @@ export function createStudioRepository(
     },
 
     budget: {
+      async getForRun(runId) {
+        scope.assertOpen();
+        const rows = await transaction.execute(sql`
+          select * from studio_budget_reservations
+          where workspace_id=${workspaceId} and run_id=${runId}::uuid
+        `);
+        return rows[0] ? readBudget(rows[0] as Record<string, unknown>) : null;
+      },
       async reserve(input) {
         scope.assertOpen();
         const reserved = money(input.reservedUsd, "reservedUsd");

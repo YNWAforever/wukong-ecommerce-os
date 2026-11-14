@@ -750,17 +750,16 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         },
         complete: async (
           id: string,
-          input: {
-            inputTokens?: number | null;
-            outputTokens?: number | null;
-            estimatedCostUsd?: string | null;
-            settledUsd?: string | null;
-          },
+          input: Parameters<
+            WorkspaceRepositories["studio"]["runs"]["complete"]
+          >[1],
         ) => {
           state.writes.push("runs.complete");
           const run = state.runs.find((entry) => entry.id === id);
           if (!run || !["queued", "running"].includes(run.status)) return null;
           run.status = "succeeded";
+          run.provider = input.provider ?? run.provider;
+          run.model = input.model ?? run.model;
           run.inputTokens = input.inputTokens ?? null;
           run.outputTokens = input.outputTokens ?? null;
           run.estimatedCostUsd = input.estimatedCostUsd ?? null;
@@ -770,13 +769,19 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         },
         fail: async (
           id: string,
-          input: { errorCode: string; outcomeUnknown?: boolean },
+          input: Parameters<WorkspaceRepositories["studio"]["runs"]["fail"]>[1],
         ) => {
           state.writes.push("runs.fail");
           const run = state.runs.find((entry) => entry.id === id);
           if (!run || !["queued", "running"].includes(run.status)) return null;
           run.status = input.outcomeUnknown ? "outcome_unknown" : "failed";
           run.errorCode = input.errorCode;
+          run.provider = input.provider ?? run.provider;
+          run.model = input.model ?? run.model;
+          run.inputTokens = input.inputTokens ?? null;
+          run.outputTokens = input.outputTokens ?? null;
+          run.estimatedCostUsd = input.estimatedCostUsd ?? null;
+          run.settledUsd = input.settledUsd ?? null;
           run.finishedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
           return run;
         },
@@ -941,6 +946,18 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         },
       },
       budget: {
+        getForRun: async (runId: string) => {
+          const budget = state.budgets.find((entry) => entry.runId === runId);
+          return budget
+            ? {
+                ...budget,
+                id: `budget-${runId}`,
+                workspaceId: state.settings.workspaceId,
+                createdAt: FIXED_NOW,
+                updatedAt: FIXED_NOW,
+              }
+            : null;
+        },
         reserve: async (input: {
           runId: string;
           pricingVersion: string;

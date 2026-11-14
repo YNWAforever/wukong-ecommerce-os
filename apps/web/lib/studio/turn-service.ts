@@ -18,6 +18,7 @@ import {
   type StudioAiPolicy,
 } from "@wukong/core";
 import type {
+  StudioBudgetReservation,
   StudioMessage,
   StudioRun,
   StudioRunEvent,
@@ -212,7 +213,11 @@ function eventView(event: StudioRunEvent): StudioRunEventResponse {
   };
 }
 
-function runView(run: StudioRun, events: StudioRunEvent[]): StudioRunResponse {
+function runView(
+  run: StudioRun,
+  events: StudioRunEvent[],
+  reservation: StudioBudgetReservation | null,
+): StudioRunResponse {
   return {
     runId: run.id,
     threadId: run.threadId,
@@ -226,8 +231,16 @@ function runView(run: StudioRun, events: StudioRunEvent[]): StudioRunResponse {
     inputTokens: run.inputTokens,
     outputTokens: run.outputTokens,
     estimatedCostUsd: run.estimatedCostUsd,
-    reservedUsd: run.reservedUsd,
+    reservedUsd: reservation?.reservedUsd ?? run.reservedUsd,
     settledUsd: run.settledUsd,
+    reservation: reservation
+      ? {
+          state: reservation.state,
+          pricingVersion: reservation.pricingVersion,
+          reservedUsd: reservation.reservedUsd,
+          settledUsd: reservation.settledUsd,
+        }
+      : null,
     createdAt: run.createdAt.toISOString(),
     startedAt: asIso(run.startedAt),
     finishedAt: asIso(run.finishedAt),
@@ -1130,6 +1143,7 @@ export function createStudioService(deps: StudioServiceDeps) {
     now: Date;
     limits: StudioTurnLimits;
     startedAt: number;
+    recordUsage: (usage: AIUsage, settledUsd: string | null) => void;
   }): Promise<StudioSendResult> {
     const packResult = await database().forWorkspace(
       input.workspaceId,
@@ -1397,6 +1411,8 @@ export function createStudioService(deps: StudioServiceDeps) {
       }
     }
 
+    // Preserve known usage if the subsequent message/audit transaction fails.
+    if (usage) input.recordUsage(usage, settledUsd);
     const assistant = await database().forWorkspace(
       input.workspaceId,
       async (repos) => {
@@ -1414,6 +1430,12 @@ export function createStudioService(deps: StudioServiceDeps) {
           createdBy: STUDIO_MESSAGE_ACTOR,
         });
         await repos.studio.runs.complete(input.run.id, {
+          ...(usage
+            ? {
+                provider: input.settings.ai?.provider ?? null,
+                model: usage.model,
+              }
+            : {}),
           inputTokens: usage?.inputTokens ?? null,
           outputTokens: usage?.outputTokens ?? null,
           estimatedCostUsd: usage ? formatUsd(usage.estimatedCostUsd) : null,
@@ -1658,6 +1680,10 @@ export function createStudioService(deps: StudioServiceDeps) {
         return replayTurn(workspaceId, threadId, prepared.run);
       }
 
+      const accounting: { usage: AIUsage | null; settledUsd: string | null } = {
+        usage: null,
+        settledUsd: null,
+      };
       try {
         return await completeTurn({
           session,
@@ -1670,6 +1696,10 @@ export function createStudioService(deps: StudioServiceDeps) {
           now,
           limits,
           startedAt,
+          recordUsage: (usage, settledUsd) => {
+            accounting.usage = usage;
+            accounting.settledUsd = settledUsd;
+          },
         });
       } catch (error) {
         // A turn that already started running must never disappear silently:
@@ -1688,7 +1718,21 @@ export function createStudioService(deps: StudioServiceDeps) {
         ).slice(0, 120);
         try {
           await database().forWorkspace(workspaceId, async (repos) => {
-            await repos.studio.runs.fail(prepared.run.id, { errorCode });
+            await repos.studio.runs.fail(prepared.run.id, {
+              errorCode,
+              ...(accounting.usage
+                ? {
+                    provider: settings.ai?.provider ?? null,
+                    model: accounting.usage.model,
+                    inputTokens: accounting.usage.inputTokens,
+                    outputTokens: accounting.usage.outputTokens,
+                    estimatedCostUsd: formatUsd(
+                      accounting.usage.estimatedCostUsd,
+                    ),
+                    settledUsd: accounting.settledUsd,
+                  }
+                : {}),
+            });
             await repos.audit.write({
               workspaceId,
               actorId: session.actorId,
@@ -1723,7 +1767,7 @@ export function createStudioService(deps: StudioServiceDeps) {
             traceSteps: 0,
             outputCount: 0,
             limitationCount: 0,
-            settledUsd: null,
+            settledUsd: accounting.settledUsd,
             errorCode,
           }),
         );
@@ -1755,10 +1799,11 @@ export function createStudioService(deps: StudioServiceDeps) {
           const run = await repos.studio.runs.get(runId);
           if (!run || run.threadId !== threadId) throw studioNotFound();
           const events = await repos.studio.runEvents.list(runId);
-          return { run, events };
+          const reservation = await repos.studio.budget.getForRun(runId);
+          return { run, events, reservation };
         },
       );
-      return runView(result.run, result.events);
+      return runView(result.run, result.events, result.reservation);
     },
 
     async overview(): Promise<StudioOverviewResult> {

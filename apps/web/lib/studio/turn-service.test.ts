@@ -542,6 +542,7 @@ describe("studio thread and message reads", () => {
     });
     const { service } = harness({
       role: "viewer",
+      settings: AI_SETTINGS,
       options: {
         threads: [thread],
         runs: [run],
@@ -564,6 +565,9 @@ describe("studio thread and message reads", () => {
     const result = await service.getRun(thread.id, run.id);
     expect(result.runId).toBe(run.id);
     expect(result.status).toBe("succeeded");
+    expect(result.provider).toBeNull();
+    expect(result.model).toBeNull();
+    expect(result.reservation).toBeNull();
     expect(result.events.map((event) => event.sequence)).toEqual([1]);
     expect(result.events[0]?.payload.key).toBe("studio.trace.tool.done");
 
@@ -914,10 +918,24 @@ describe("studio optional model analysis", () => {
 
     const run = fake.state.runs[0]!;
     expect(run.status).toBe("succeeded");
+    expect(run.provider).toBe("opencode-go");
+    expect(run.model).toBe(fakeStudioUsage().model);
     expect(run.inputTokens).toBe(100);
     expect(run.outputTokens).toBe(50);
     expect(run.estimatedCostUsd).toBe("0.010000");
     expect(run.settledUsd).toBe("0.010000");
+    const detail = await service.getRun(threadId, run.id);
+    expect(detail).toMatchObject({
+      provider: "opencode-go",
+      model: fakeStudioUsage().model,
+      reservedUsd: "0.638976",
+      reservation: {
+        state: "settled",
+        pricingVersion: "go-2026-11",
+        reservedUsd: "0.638976",
+        settledUsd: "0.010000",
+      },
+    });
 
     const modelEvent = fake.state.runEvents.find(
       (event) => event.runId === run.id && event.kind === "model",
@@ -966,7 +984,15 @@ describe("studio optional model analysis", () => {
     const run = fake.state.runs[0]!;
     expect(run.status).toBe("succeeded");
     expect(run.inputTokens).toBeNull();
+    expect(run.provider).toBeNull();
+    expect(run.model).toBeNull();
     expect(fake.state.budgets[0]?.state).toBe("uncertain");
+    const detail = await service.getRun(threadId, run.id);
+    expect(detail.reservation).toMatchObject({
+      state: "uncertain",
+      settledUsd: null,
+    });
+    expect(detail.settledUsd).toBeNull();
     const modelEvent = fake.state.runEvents.find(
       (event) => event.kind === "model",
     );
@@ -975,6 +1001,45 @@ describe("studio optional model analysis", () => {
       key: "studio.trace.model.failed",
       values: { category: "provider_unavailable" },
     });
+  });
+
+  it("preserves returned model usage when persisting the assistant reply fails", async () => {
+    const usage = fakeStudioUsage({
+      model: "reported-model",
+      estimatedCostUsd: 0.01,
+    });
+    const model = answeredModel(async () => ({
+      analysis: {
+        sections: [],
+        claims: [],
+        limitations: [],
+        followUps: [],
+        clarification: null,
+      },
+      usage,
+    }));
+    const { service, fake } = harness({
+      options: { ...populatedOptions(), failOnAssistantAppend: true },
+      settings: AI_SETTINGS,
+      env: AI_ENV,
+      createModel: () => model,
+    });
+    const threadId = await openThread(service);
+    await expect(service.sendMessage(threadId, body())).rejects.toThrow();
+    const run = fake.state.runs[0]!;
+    expect(run).toMatchObject({
+      status: "failed",
+      provider: "opencode-go",
+      model: "reported-model",
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      settledUsd: "0.010000",
+    });
+    expect(fake.state.budgets[0]).toMatchObject({
+      state: "settled",
+      settledUsd: "0.010000",
+    });
+    expect(auditActions(fake)).toContain("studio.run.failed");
   });
 
   it("does not reserve or call a model when the AI flag is off", async () => {

@@ -372,6 +372,9 @@ function AssistantTurn({
         steps={trace ?? null}
         loading={traceLoading}
         error={traceError}
+        {...(threadId && message.runId
+          ? { runContext: { threadId, runId: message.runId } }
+          : {})}
         {...(onLoadTrace ? { onLoad: onLoadTrace } : {})}
       />
 
