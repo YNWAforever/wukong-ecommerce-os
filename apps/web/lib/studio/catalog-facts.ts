@@ -92,13 +92,11 @@ export function composerEvidenceForPack(pack: EvidencePack) {
   ];
   return {
     recordFacts,
-    sources: ordered
-      .slice(0, 20)
-      .map((source) => ({
-        ref: source.ref.slice(0, 200),
-        kind: source.kind,
-        label: source.label.slice(0, 120),
-      })),
+    sources: ordered.slice(0, 20).map((source) => ({
+      ref: source.ref.slice(0, 200),
+      kind: source.kind,
+      label: source.label.slice(0, 120),
+    })),
     checks: pack.checks
       .filter((check) => {
         if (check.key === "studio.check.catalog_query")
