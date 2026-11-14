@@ -4,7 +4,7 @@ import { transitionListing } from "./workflow";
 const auditContext = {
   workspaceId: "workspace-1",
   actorId: "reviewer-1",
-  entityId: "listing-1"
+  entityId: "listing-1",
 };
 
 type TestAuditEvent = {
@@ -22,8 +22,8 @@ function createAuditWriter() {
     writer: {
       async write(event: TestAuditEvent) {
         events.push(event);
-      }
-    }
+      },
+    },
   };
 }
 
@@ -37,10 +37,13 @@ const statuses = [
   "publishing",
   "published",
   "publish_failed",
-  "failed"
+  "failed",
 ] as const;
 
 const actions = [
+  "abandon_processing",
+  "save_inputs",
+  "submit_manual",
   "start_processing",
   "request_info",
   "submit_review",
@@ -50,10 +53,27 @@ const actions = [
   "publish_succeeded",
   "publish_failed",
   "fail",
-  "retry"
+  "retry",
 ] as const;
 
 const legalTransitions = [
+  ["received", "abandon_processing", "failed"],
+  ["processing", "abandon_processing", "failed"],
+  ["needs_info", "abandon_processing", "failed"],
+  ["failed", "abandon_processing", "failed"],
+  ["received", "save_inputs", "received"],
+  ["processing", "save_inputs", "needs_info"],
+  ["needs_info", "save_inputs", "needs_info"],
+  ["in_review", "save_inputs", "in_review"],
+  ["approved", "save_inputs", "reopened"],
+  ["reopened", "save_inputs", "reopened"],
+  ["published", "save_inputs", "reopened"],
+  ["publish_failed", "save_inputs", "reopened"],
+  ["failed", "save_inputs", "failed"],
+  ["received", "submit_manual", "in_review"],
+  ["processing", "submit_manual", "in_review"],
+  ["needs_info", "submit_manual", "in_review"],
+  ["failed", "submit_manual", "in_review"],
   ["received", "start_processing", "processing"],
   ["processing", "request_info", "needs_info"],
   ["processing", "submit_review", "in_review"],
@@ -68,11 +88,11 @@ const legalTransitions = [
   ["published", "reopen", "reopened"],
   ["publish_failed", "retry", "publishing"],
   ["publish_failed", "reopen", "reopened"],
-  ["failed", "retry", "processing"]
+  ["failed", "retry", "processing"],
 ] as const;
 
 const legalPairs = new Set(
-  legalTransitions.map(([status, action]) => `${status}:${action}`)
+  legalTransitions.map(([status, action]) => `${status}:${action}`),
 );
 
 describe("transitionListing", () => {
@@ -80,18 +100,35 @@ describe("transitionListing", () => {
     "permits and audits %s -> %s -> %s",
     async (status, action, expected) => {
       const { events, writer } = createAuditWriter();
+      const audit = Promise.withResolvers<void>();
+      let settled = false;
+      const transition = transitionListing(status, action, auditContext, {
+        async write(event) {
+          await writer.write(event);
+          await audit.promise;
+        },
+      }).then((next) => {
+        settled = true;
+        return next;
+      });
 
-      await expect(
-        transitionListing(status, action, auditContext, writer)
-      ).resolves.toBe(expected);
+      try {
+        // Drain microtasks without relying on a wall-clock delay.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(settled).toBe(false);
+      } finally {
+        audit.resolve();
+      }
+
+      await expect(transition).resolves.toBe(expected);
       expect(events).toEqual([
         {
           ...auditContext,
           action: "listing.transition",
-          metadata: { fromStatus: status, action, toStatus: expected }
-        }
+          metadata: { fromStatus: status, action, toStatus: expected },
+        },
       ]);
-    }
+    },
   );
 
   it("rejects every transition outside the independently defined legal pairs", async () => {
@@ -102,23 +139,27 @@ describe("transitionListing", () => {
 
         await expect(
           Promise.resolve().then(() =>
-            transitionListing(status, action, auditContext, writer)
-          )
+            transitionListing(status, action, auditContext, writer),
+          ),
         ).rejects.toThrow(`Illegal transition: ${status} -> ${action}`);
         expect(events).toEqual([]);
       }
     }
   });
 
-  it("propagates audit writer failure instead of returning a successful transition", async () => {
-    const writer = {
-      async write() {
-        throw new Error("audit unavailable");
-      }
-    };
+  it.each(legalTransitions)(
+    "refuses %s -> %s when the audit write fails",
+    async (status, action) => {
+      const failure = new Error("audit unavailable");
+      const writer = {
+        async write() {
+          throw failure;
+        },
+      };
 
-    await expect(
-      transitionListing("in_review", "approve", auditContext, writer)
-    ).rejects.toThrow("audit unavailable");
-  });
+      await expect(
+        transitionListing(status, action, auditContext, writer),
+      ).rejects.toBe(failure);
+    },
+  );
 });
