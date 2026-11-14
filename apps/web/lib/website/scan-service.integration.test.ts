@@ -3,10 +3,15 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
 import { createDatabase } from "@wukong/db";
 import { createWebsiteDocumentHandler } from "../../app/api/internal/website-document/route";
+import { createWebsiteScansHandler } from "../../app/api/website-scans/route";
+import { createWebsiteScanRetryHandler } from "../../app/api/website-scans/[id]/retry/route";
+import { QueueIngressError } from "../cloudflare-queue-runtime";
 import { createPublicFetch } from "./public-fetch";
 import { consumeWebsiteMessage } from "../../../worker/src/website-consumer";
+import type { WorkerEnv } from "../../../worker/src/worker-env";
 import {
   WEBSITE_DOCUMENT_PATH,
+  websiteJobSchema,
   signQueueRequest,
   type WebsiteJob,
 } from "@wukong/jobs";
@@ -74,6 +79,133 @@ async function signed(body: unknown) {
   });
 }
 describe("real database signed website orchestration", () => {
+  it("recovers an unconfirmed initial delivery through the authenticated factory without duplicate document work", async () => {
+    const session = {
+      resolve: async () => ({
+        workspaceId,
+        actorId,
+        role: "operator" as const,
+      }),
+    };
+    const start = createWebsiteScansHandler({
+      session,
+      getDatabase: () => database,
+      now: () => instant,
+      enqueue: async () => {
+        throw new QueueIngressError("unreachable");
+      },
+    });
+    const createdResponse = await start(
+      new Request("https://app.example/api/website-scans", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          url: "https://store.example/",
+          requestKey: randomUUID(),
+        }),
+      }),
+    );
+    expect(createdResponse.status).toBe(202);
+    const created = await createdResponse.json();
+    expect(created.dispatch).toMatchObject({
+      recoveryState: "retryable",
+      revision: 0,
+      attempts: 1,
+    });
+    const original = (await read(created.id))!;
+    const queued: WebsiteJob[] = [];
+    const enqueue = vi.fn(async (job: WebsiteJob) => {
+      queued.push(job);
+    });
+    const retry = createWebsiteScanRetryHandler({
+      session,
+      getDatabase: () => database,
+      now: () => instant,
+      enqueue,
+    });
+    const retryRequest = () =>
+      new Request(
+        `https://app.example/api/website-scans/${original.id}/retry`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            revision: original.revision,
+            attempts: original.dispatchAttempts,
+          }),
+        },
+      );
+    const context = { params: Promise.resolve({ id: original.id }) };
+    expect((await retry(retryRequest(), context)).status).toBe(202);
+    expect((await retry(retryRequest(), context)).status).toBe(409);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    const requestDocument = vi.fn(async () => ({
+      status: 200,
+      contentType: "text/plain",
+      body: ["User-agent: *\nAllow: /"],
+    }));
+    const route = createWebsiteDocumentHandler({
+      secret: () => secret,
+      now: () => instant,
+      getDatabase: () => database,
+      publicFetch: createPublicFetch({
+        now: () => instant,
+        resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+        request: requestDocument,
+      }),
+    });
+    const callback = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) =>
+      route(new Request(url, init)),
+    );
+    const unusedBinding = (): never => {
+      throw new Error("Unexpected fixture binding access");
+    };
+    const env = {
+      WEBSITE_FETCH_BASE_URL: "https://app.example",
+      QUEUE_INGRESS_SECRET: secret,
+      HYPERDRIVE: {
+        connectionString: "unused",
+        host: "unused",
+        port: 0,
+        user: "unused",
+        password: "unused",
+        database: "unused",
+        connect: unusedBinding,
+      },
+      SHOPLINE_QUEUE: {
+        send: async () => unusedBinding(),
+        sendBatch: async () => unusedBinding(),
+        metrics: async () => unusedBinding(),
+      },
+      LISTING_QUEUE: {
+        send: async (value: unknown) => {
+          queued.push(websiteJobSchema.parse(value));
+          return {
+            metadata: {
+              metrics: { backlogCount: queued.length, backlogBytes: 0 },
+            },
+          };
+        },
+        sendBatch: async () => unusedBinding(),
+        metrics: async () => unusedBinding(),
+      },
+    } satisfies WorkerEnv;
+    const job = queued.shift()!;
+    const dependencies = {
+      createDatabase: workerDb,
+      fetch: callback,
+      now: () => instant,
+    };
+    expect(await consumeWebsiteMessage(job, env, dependencies)).toBe("ack");
+    expect(requestDocument).toHaveBeenCalledTimes(1);
+    expect(await consumeWebsiteMessage(job, env, dependencies)).toBe("ack");
+    expect(requestDocument).toHaveBeenCalledTimes(1);
+    const progressed = (await read(original.id))!;
+    expect(progressed.id).toBe(original.id);
+    expect(progressed.revision).toBe(1);
+    expect(progressed.requestKey).toBe(original.requestKey);
+    expect(progressed.deadlineAt).toEqual(original.deadlineAt);
+  });
   it("reapproves canonical origin before the first new-host page and saves immutable preview", async () => {
     const calls: string[] = [];
     const publicFetch = createPublicFetch({

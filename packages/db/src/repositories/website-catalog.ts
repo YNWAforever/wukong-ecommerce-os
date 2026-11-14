@@ -4,6 +4,7 @@ import { and, asc, eq, lte, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   normalizeWebsiteUrl,
+  websiteDispatchRecoveryState,
   robotsPolicySchema,
   websiteScanEnvelopeSchema,
   websiteUrlSchema,
@@ -117,10 +118,19 @@ export type WebsiteCatalogRepository = {
   completeStep(
     input: LeaseInput & { observation: WebsiteStepResult },
   ): Promise<WebsiteScan>;
+  claimDispatch(input: {
+    scanId: string;
+    revision: number;
+    expectedAttempts: number;
+    actorId: string;
+    now: Date;
+  }): Promise<WebsiteScan | null>;
   recordDispatch(input: {
     scanId: string;
     revision: number;
     status: "sent" | "failed";
+    expectedAttempts?: number;
+    actorId?: string;
     now: Date;
   }): Promise<boolean>;
   listDispatchable(input: {
@@ -612,21 +622,87 @@ export function createWebsiteCatalogRepository(
         await event(scan, "website.scan_finished", { state: result.state });
       return updated!;
     },
-    async recordDispatch({ scanId, revision, status, now }) {
+    async claimDispatch({ scanId, revision, expectedAttempts, actorId, now }) {
+      scope.assertOpen();
       instant(now);
+      z.number().int().safe().min(0).parse(revision);
+      z.number().int().safe().min(0).parse(expectedAttempts);
+      await requireOperator(actorId);
+      const scan = await read(scanId, true);
+      if (
+        !scan ||
+        scan.revision !== revision ||
+        scan.dispatchAttempts !== expectedAttempts ||
+        scan.dispatchAttempts >= 2_147_483_647 ||
+        websiteDispatchRecoveryState(scan, now) !== "retryable"
+      )
+        return null;
+      const [claimed] = await transaction
+        .update(websiteScans)
+        .set({
+          dispatchStatus: "pending",
+          dispatchAt: now,
+          dispatchAttempts: scan.dispatchAttempts + 1,
+          updatedAt: now,
+        })
+        .where(whereScan(scanId))
+        .returning();
+      await event(
+        scan,
+        "website.scan_dispatch_requested",
+        { revision, attempt: claimed!.dispatchAttempts },
+        actorId,
+      );
+      return claimed!;
+    },
+    async recordDispatch({
+      scanId,
+      revision,
+      status,
+      expectedAttempts,
+      actorId,
+      now,
+    }) {
+      scope.assertOpen();
+      instant(now);
+      if (expectedAttempts !== undefined)
+        z.number().int().safe().positive().parse(expectedAttempts);
+      if (actorId !== undefined) await requireOperator(actorId);
       z.enum(["sent", "failed"]).parse(status);
       const scan = await read(scanId, true);
-      if (!scan || !active(scan) || scan.revision !== revision) return false;
+      if (
+        !scan ||
+        !active(scan) ||
+        scan.revision !== revision ||
+        (expectedAttempts !== undefined &&
+          (scan.dispatchAttempts !== expectedAttempts ||
+            scan.dispatchStatus !== "pending"))
+      )
+        return false;
       await transaction
         .update(websiteScans)
         .set({
           dispatchStatus: status,
           dispatchAt: now,
-          dispatchAttempts: scan.dispatchAttempts + 1,
+          dispatchAttempts:
+            expectedAttempts === undefined
+              ? scan.dispatchAttempts + 1
+              : scan.dispatchAttempts,
           updatedAt: now,
         })
         .where(whereScan(scanId));
-      await event(scan, "website.scan_dispatched", { revision, status });
+      await event(
+        scan,
+        "website.scan_dispatched",
+        {
+          revision,
+          status,
+          ...(expectedAttempts === undefined
+            ? {}
+            : { attempt: expectedAttempts }),
+        },
+        actorId,
+      );
       return true;
     },
     async listDispatchable({ now, limit = 100 }) {

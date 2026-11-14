@@ -7,6 +7,13 @@ describe("read website scan", () => {
       id,
       requestedUrl: "https://store.example/",
       state: "ready",
+      revision: 4,
+      dispatchAttempts: 4,
+      dispatchStatus: "sent",
+      dispatchAt: new Date("2026-09-06Z"),
+      leaseExpiresAt: null,
+      deadlineAt: new Date("2026-09-06T00:15:00Z"),
+      nextEligibleAt: new Date("2026-09-06Z"),
       updatedAt: new Date("2026-09-06Z"),
       productRequests: 1,
       leaseToken: "secret",
@@ -40,6 +47,7 @@ describe("read website scan", () => {
     expect(Object.keys(body).sort()).toEqual(
       [
         "id",
+        "dispatch",
         "state",
         "sourceUrl",
         "capturedAt",

@@ -8,6 +8,11 @@ type Scan = {
   id: string;
   state: "queued" | "running" | "ready" | "partial" | "failed";
   sourceUrl: string;
+  dispatch?: {
+    recoveryState: "retryable" | "waiting" | "expired" | "unavailable";
+    revision: number;
+    attempts: number;
+  };
   products: WebsiteProduct[];
   warnings: string[];
   progress: { scanned: number; selectedCandidates: number };
@@ -57,6 +62,7 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
   const [preview, setPreview] = useState<Scan | null>(null);
   const [keys, setKeys] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [checkingDelivery, setCheckingDelivery] = useState(false);
   const [error, setError] = useState<number | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
   const generation = useRef(0);
@@ -89,8 +95,10 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
     request.current?.abort();
     pending.current = false;
     setBusy(false);
+    setCheckingDelivery(false);
   }
   function accept(next: Scan) {
+    setCheckingDelivery(false);
     setScan(next);
     if (next.state === "ready" || next.state === "partial") {
       setPreview(next);
@@ -130,7 +138,9 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
       setUrl(next.sourceUrl);
       accept(next);
       setError(null);
-      continuePolling = next.state === "queued" || next.state === "running";
+      continuePolling =
+        (next.state === "queued" || next.state === "running") &&
+        next.dispatch?.recoveryState !== "expired";
     } catch (cause) {
       if (current()) setError(typeof cause === "number" ? cause : 500);
     } finally {
@@ -185,11 +195,71 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
       requestKey.current = null;
       accept(next);
       persist(next.id);
-      if (next.state === "queued" || next.state === "running")
+      if (
+        (next.state === "queued" || next.state === "running") &&
+        next.dispatch?.recoveryState !== "expired"
+      )
         schedulePoll(next.id, 1500);
     } catch (cause) {
       if (version === generation.current && !controller.signal.aborted)
         setError(typeof cause === "number" ? cause : 500);
+    } finally {
+      if (version === generation.current) {
+        pending.current = false;
+        setBusy(false);
+      }
+    }
+  }
+  async function retryDelivery() {
+    if (
+      !canScan ||
+      pending.current ||
+      checkingDelivery ||
+      !scan ||
+      scan.dispatch?.recoveryState !== "retryable"
+    )
+      return;
+    const selected = {
+      id: scan.id,
+      revision: scan.dispatch.revision,
+      attempts: scan.dispatch.attempts,
+    };
+    invalidate();
+    const version = generation.current;
+    const controller = new AbortController();
+    request.current = controller;
+    pending.current = true;
+    setBusy(true);
+    setCheckingDelivery(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/website-scans/${encodeURIComponent(selected.id)}/retry`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            revision: selected.revision,
+            attempts: selected.attempts,
+          }),
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) throw response.status;
+      const next = (await response.json()) as Scan;
+      if (version !== generation.current || controller.signal.aborted) return;
+      accept(next);
+      persist(next.id);
+      if (
+        (next.state === "queued" || next.state === "running") &&
+        next.dispatch?.recoveryState !== "expired"
+      )
+        schedulePoll(next.id, 1500);
+    } catch (cause) {
+      if (version === generation.current && !controller.signal.aborted) {
+        setError(typeof cause === "number" ? cause : 500);
+        schedulePoll(selected.id, 0);
+      }
     } finally {
       if (version === generation.current) {
         pending.current = false;
@@ -240,10 +310,13 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
       }
     }
   }
-  const active = scan?.state === "queued" || scan?.state === "running";
+  const expired = scan?.dispatch?.recoveryState === "expired";
+  const active =
+    (scan?.state === "queued" || scan?.state === "running") && !expired;
   const previous = preview !== null && preview.id !== scan?.id;
-  const status =
-    scan?.state === "queued"
+  const status = expired
+    ? t("掃描已逾時。請開始新的掃描。", "This scan expired. Start a new scan.")
+    : scan?.state === "queued"
       ? t("已排程", "Queued")
       : scan?.state === "running"
         ? t("掃描中", "Scanning")
@@ -357,7 +430,30 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
           ))}
         </ul>
       ) : null}
+      {checkingDelivery ? (
+        <p role="status">
+          {t("正在查閱已記錄的掃描狀態…", "Checking the recorded scan state…")}
+        </p>
+      ) : null}
+      {active && scan?.dispatch?.recoveryState === "retryable" ? (
+        <div>
+          <p>
+            {t(
+              "傳送尚未確認。重試傳送會繼續同一次掃描，先前預覽會保持唯讀。",
+              "Delivery was not confirmed. Retry delivery to continue the same scan; the previous preview stays read only.",
+            )}
+          </p>
+          <button
+            type="button"
+            disabled={!canScan || busy || checkingDelivery}
+            onClick={() => void retryDelivery()}
+          >
+            {t("重試傳送", "Retry delivery")}
+          </button>
+        </div>
+      ) : null}
       {(error !== null ||
+        expired ||
         scan?.state === "failed" ||
         scan?.state === "partial") && (
         <button
@@ -370,7 +466,9 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
             } else void start();
           }}
         >
-          {t("重試掃描", "Retry scan")}
+          {expired
+            ? t("開始新掃描", "Start new scan")
+            : t("重試掃描", "Retry scan")}
         </button>
       )}
       {previous && (

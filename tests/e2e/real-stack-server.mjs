@@ -406,12 +406,15 @@ function recordLogs(label, safe) {
 }
 
 function start(label, args, environment = runtimeEnv) {
-  const retain = productShotFixtureEnabled
-    ? createBoundedDiagnosticLog(
-        resolve(root, "node_modules/.product-shot-evidence"),
-        label,
-      )
-    : () => {};
+  const retain = createBoundedDiagnosticLog(
+    resolve(
+      root,
+      productShotFixtureEnabled
+        ? "node_modules/.product-shot-evidence"
+        : "node_modules/.real-stack-evidence",
+    ),
+    label,
+  );
   const onSanitizedOutput = (safe) => {
     recordLogs(label, safe);
     retain(safe);
