@@ -549,7 +549,10 @@ test("flags-on studio: copy-proposal handoff renders read-only and fails closed"
   ).toHaveCount(0);
 
   await expect(
-    banner.getByRole("button", { name: "Copy proposed", exact: true }).first(),
+    banner.getByRole("button", {
+      name: "Copy proposed: title.en",
+      exact: true,
+    }),
   ).toBeEnabled();
   expect(
     await page.evaluate(
@@ -562,7 +565,10 @@ test("flags-on studio: copy-proposal handoff renders read-only and fails closed"
   );
   await expect(banner).toContainText("This link omits the proposal version");
   await expect(
-    banner.getByRole("button", { name: "Copy proposed", exact: true }).first(),
+    banner.getByRole("button", {
+      name: "Copy proposed: title.en",
+      exact: true,
+    }),
   ).toBeDisabled();
   handoffQuery.set("studioDigest", "b".repeat(64));
   await page.goto(`/listings/${SUPPLIER_LISTING_ID}?${handoffQuery}`);

@@ -1025,6 +1025,9 @@ describe("ListingReviewClient Studio handoff banner", () => {
         (button) => button.textContent === "Copy proposed",
       );
       expect(copyButtons).toHaveLength(2);
+      expect(copyButtons[0]?.getAttribute("aria-label")).toBe(
+        "Copy proposed: title.en",
+      );
       await act(async () => copyButtons[0]?.click());
       expect(writeText).toHaveBeenLastCalledWith("Synthetic proposed title");
       expect(banner.textContent).toContain("Copied");
