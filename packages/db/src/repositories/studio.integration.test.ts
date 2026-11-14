@@ -126,7 +126,19 @@ describe.skipIf(!enabled)("studio repositories", () => {
       expect((await repos.studio.runs.findByIdempotencyKey(key))?.id).toBe(
         run.run.id,
       );
-      return { threadId: thread.id, key };
+      const output = await repos.studio.outputs.create({
+        threadId: thread.id,
+        runId: run.run.id,
+        kind: "merchant_audit",
+        title: "Recorded recovery artifact",
+        createdBy: "actor-a",
+      });
+      expect(
+        (await repos.studio.outputs.list({ runId: run.run.id })).items.map(
+          (item) => item.id,
+        ),
+      ).toEqual([output.id]);
+      return { threadId: thread.id, key, runId: run.run.id };
     });
     await studioRepositories(WORKSPACE_B, async (repos) => {
       expect(
@@ -138,6 +150,9 @@ describe.skipIf(!enabled)("studio repositories", () => {
       expect(
         await repos.studio.runs.findByIdempotencyKey(known.key),
       ).toBeNull();
+      expect(
+        (await repos.studio.outputs.list({ runId: known.runId })).items,
+      ).toEqual([]);
     });
   });
 
@@ -721,9 +736,8 @@ describe.skipIf(!enabled)("studio repositories", () => {
   });
 
   it("appends messages with a stable sequence and idempotent client ids", async () => {
-    const { thread, first, replay, second, loaded } = await db!.forWorkspace(
-      WORKSPACE_B,
-      async (repos) => {
+    const { thread, first, replay, second, loaded, earliest, latest } =
+      await db!.forWorkspace(WORKSPACE_B, async (repos) => {
         const thread = await repos.studio.threads.create({
           createdBy: "actor-b",
           title: "Idempotent thread",
@@ -749,15 +763,27 @@ describe.skipIf(!enabled)("studio repositories", () => {
           createdBy: "assistant",
         });
         const loaded = await repos.studio.threads.getWithMessages(thread.id);
-        return { thread, first, replay, second, loaded };
-      },
-    );
+        const earliest = await repos.studio.threads.getWithMessages(thread.id, {
+          messageLimit: 1,
+        });
+        const latest = await repos.studio.threads.getWithMessages(thread.id, {
+          messageLimit: 1,
+          latest: true,
+        });
+        return { thread, first, replay, second, loaded, earliest, latest };
+      });
     expect(first.replayed).toBe(false);
     expect(first.message.sequence).toBe(1);
     expect(replay.replayed).toBe(true);
     expect(replay.message.id).toBe(first.message.id);
     expect(second.message.sequence).toBe(2);
     expect(loaded?.messages.map((message) => message.sequence)).toEqual([1, 2]);
+    expect(earliest?.messages.map((message) => message.id)).toEqual([
+      first.message.id,
+    ]);
+    expect(latest?.messages.map((message) => message.id)).toEqual([
+      second.message.id,
+    ]);
     expect(loaded?.thread.lastMessageAt).not.toBeNull();
   });
 

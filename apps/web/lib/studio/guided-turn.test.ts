@@ -306,6 +306,11 @@ describe("guided listing turns", () => {
     const first = f.service.sendMessage(gap.threadId, body);
     await started;
     try {
+      const resumed = await f.service.getThread(gap.threadId);
+      expect(resumed.latestGuidedAttempt).toMatchObject({
+        clientMessageId: "concurrent-copy",
+        status: "running",
+      });
       await expect(
         f.service.sendMessage(gap.threadId, body),
       ).rejects.toMatchObject({ status: 409 });
@@ -321,6 +326,60 @@ describe("guided listing turns", () => {
     expect(propose).toHaveBeenCalledTimes(1);
   });
 
+  it("recovers the original artifact when model work succeeds but the assistant reply cannot be saved", async () => {
+    const f = fixture();
+    const gap = await f.gaps();
+    const append = f.fake.repos.studio.messages.append.bind(
+      f.fake.repos.studio.messages,
+    );
+    vi.spyOn(f.fake.repos.studio.messages, "append").mockImplementation(
+      async (input) => {
+        if (input.role === "assistant")
+          throw new Error("Synthetic reply persistence failure");
+        return append(input);
+      },
+    );
+    const propose = vi.spyOn(f.model, "propose");
+    await expect(
+      f.service.sendMessage(
+        gap.threadId,
+        message("reply-lost-copy", source("copy_proposal", gap.result, f.fake)),
+      ),
+    ).rejects.toThrow();
+    const resumed = await f.service.getThread(gap.threadId);
+    expect(resumed.latestGuidedAttempt).toMatchObject({
+      clientMessageId: "reply-lost-copy",
+      status: "failed",
+      reservationState: "settled",
+      artifacts: [
+        {
+          outputId: f.fake.state.outputs.at(-1)!.id,
+          revision: 1,
+          contentDigest: f.fake.state.outputVersions.at(-1)!.contentDigest,
+        },
+      ],
+    });
+    expect(propose).toHaveBeenCalledTimes(1);
+  });
+  it("exposes an uncertain hold on a completed partial reply without resubmitting it", async () => {
+    const f = fixture();
+    const gap = await f.gaps();
+    const propose = vi
+      .spyOn(f.model, "propose")
+      .mockRejectedValue(new Error("Synthetic uncertain response"));
+    const result = await f.service.sendMessage(
+      gap.threadId,
+      message("uncertain-copy", source("copy_proposal", gap.result, f.fake)),
+    );
+    expect(result.reply.outputs).toHaveLength(0);
+    const resumed = await f.service.getThread(gap.threadId);
+    expect(resumed.latestGuidedAttempt).toMatchObject({
+      clientMessageId: "uncertain-copy",
+      status: "succeeded",
+      reservationState: "uncertain",
+    });
+    expect(propose).toHaveBeenCalledTimes(1);
+  });
   it("blocks sign-off when quality changes behind the same canonical version", async () => {
     const f = fixture();
     const gap = await f.gaps();

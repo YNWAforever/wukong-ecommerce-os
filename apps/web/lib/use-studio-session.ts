@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 import type { Locale } from "./locale";
+import type { GuidedAction } from "./studio/guided-contracts";
+import {
+  guidedAttemptSchema,
+  type GuidedAttemptResponse,
+} from "./studio/contracts";
 import type { StudioCopyKey } from "./studio-copy";
 import type {
   StudioMessageResponse,
@@ -70,6 +75,7 @@ const messageViewSchema = z.object({
 export const getThreadResultSchema = z.object({
   thread: threadViewSchema,
   messages: z.array(messageViewSchema),
+  latestGuidedAttempt: guidedAttemptSchema.nullable().optional(),
 });
 
 const traceStepSchema = z.object({
@@ -143,6 +149,7 @@ export type StudioSendInput = {
   readonly text: string;
   readonly skillKey?: string | null;
   readonly attachmentAssetIds?: readonly string[];
+  readonly guidedAction?: GuidedAction;
   readonly locale: Locale;
   readonly clientMessageId: string;
 };
@@ -156,6 +163,7 @@ export type StudioRefreshOutcome =
       readonly ok: true;
       readonly thread: StudioThreadResponse;
       readonly messages: StudioMessageResponse[];
+      readonly latestGuidedAttempt?: GuidedAttemptResponse | null;
     }
   | { readonly ok: false; readonly error: StudioSessionError };
 
@@ -422,6 +430,9 @@ export function useStudioSession(): StudioSessionState {
               clientMessageId: input.clientMessageId,
               text: input.text.slice(0, 2000),
               locale: input.locale,
+              ...(input.guidedAction
+                ? { guidedAction: input.guidedAction }
+                : {}),
               ...(input.skillKey ? { skillKey: input.skillKey } : {}),
               ...(input.attachmentAssetIds &&
               input.attachmentAssetIds.length > 0
@@ -476,6 +487,9 @@ export function useStudioSession(): StudioSessionState {
           ok: true,
           thread: parsed.data.thread,
           messages: parsed.data.messages,
+          ...(parsed.data.latestGuidedAttempt !== undefined
+            ? { latestGuidedAttempt: parsed.data.latestGuidedAttempt }
+            : {}),
         };
       } catch (caught) {
         return { ok: false, error: asSessionError(caught, threadId) };
@@ -561,6 +575,7 @@ export function operatorMessageFromSend(input: {
   locale: Locale;
   text: string;
   skillKey?: string | null;
+  guidedAction?: GuidedAction;
   createdAt: string;
 }): StudioMessageResponse {
   return {
@@ -570,6 +585,7 @@ export function operatorMessageFromSend(input: {
     content: {
       text: input.text,
       locale: input.locale,
+      ...(input.guidedAction ? { guidedAction: input.guidedAction } : {}),
       ...(input.skillKey ? { skillKey: input.skillKey } : {}),
     },
     clientMessageId: input.clientMessageId,

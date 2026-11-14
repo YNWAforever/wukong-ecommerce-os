@@ -362,7 +362,7 @@ export type StudioRepository = {
     }>;
     getWithMessages(
       id: string,
-      input?: { messageLimit?: number },
+      input?: { messageLimit?: number; latest?: boolean },
     ): Promise<{ thread: StudioThread; messages: StudioMessage[] } | null>;
     touchLastMessage(id: string, at?: Date): Promise<void>;
     archive(id: string): Promise<boolean>;
@@ -477,6 +477,7 @@ export type StudioRepository = {
       limit?: number;
       kind?: StudioOutputKind;
       status?: StudioOutputStatus;
+      runId?: string;
       q?: string;
       offset?: number;
     }): Promise<{ items: StudioOutput[]; truncated: boolean }>;
@@ -966,12 +967,12 @@ export function createStudioRepository(
         const messages = await transaction.execute(sql`
           select * from studio_messages
           where workspace_id=${workspaceId} and thread_id=${id}::uuid
-          order by sequence asc limit ${limit}
+          order by sequence ${input.latest ? sql`desc` : sql`asc`} limit ${limit}
         `);
         return {
           thread: readThread(row as Record<string, unknown>),
-          messages: messages.map((message) =>
-            readMessage(message as Record<string, unknown>),
+          messages: (input.latest ? [...messages].reverse() : messages).map(
+            (message) => readMessage(message as Record<string, unknown>),
           ),
         };
       },
@@ -1328,6 +1329,7 @@ export function createStudioRepository(
         const status = input.status ?? null;
         const rows = await transaction.execute(sql`
           select * from studio_outputs where workspace_id=${workspaceId}
+            ${input.runId ? sql`and run_id=${input.runId}::uuid` : sql``}
             ${kind ? sql`and kind=${kind}` : sql``}
             ${status ? sql`and status=${status}` : sql``}
             ${pattern ? sql`and title ilike ${pattern} escape '\\'` : sql``}

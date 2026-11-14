@@ -62,6 +62,7 @@ import {
   GUIDED_REVIEW_VERSION,
   GUIDED_SKILLS,
   guidedActionSchema,
+  guidedScopeSchema,
   type GuidedScope,
 } from "./guided-contracts";
 import {
@@ -1609,6 +1610,43 @@ export function createStudioService(deps: StudioServiceDeps) {
   }
 
   return {
+    async guidedAvailability(): Promise<boolean> {
+      try {
+        const { settings } = await requireStudioSession(deps, "operator");
+        return Object.values(GUIDED_SKILLS).every(
+          (key) =>
+            getSkill(key)?.status === "pilot" &&
+            (settings.allowedSkills.length === 0 ||
+              settings.allowedSkills.includes(key)),
+        );
+      } catch (error) {
+        if (error instanceof ApiError && [401, 403, 404].includes(error.status))
+          return false;
+        throw error;
+      }
+    },
+    async guidedEntry(input: unknown) {
+      const { session, settings } = await requireStudioSession(
+        deps,
+        "operator",
+      );
+      if (
+        !Object.values(GUIDED_SKILLS).every(
+          (key) =>
+            settings.allowedSkills.length === 0 ||
+            settings.allowedSkills.includes(key),
+        )
+      )
+        throw studioNotFound();
+      const action = guidedActionSchema.safeParse(input);
+      if (!action.success || action.data.kind !== "audit")
+        throw studioNotFound();
+      const selected = action.data;
+      await database().forWorkspace(session.workspaceId, (repos) =>
+        prepareGuidedReview({ action: selected, threadId: "", repos }),
+      );
+      return selected;
+    },
     async createThread(body: CreateThreadBody): Promise<CreateThreadResult> {
       const { session } = await requireStudioSession(deps, "operator");
       let skillKey: string | null = null;
@@ -1672,19 +1710,95 @@ export function createStudioService(deps: StudioServiceDeps) {
     async getThread(threadId: string): Promise<GetThreadResult> {
       const { session, role } = await requireStudioSession(deps, "viewer");
       if (!UUID.safeParse(threadId).success) throw studioNotFound();
-      const bundle = await database().forWorkspace(
-        session.workspaceId,
-        (repos) =>
-          repos.studio.threads.getWithMessages(threadId, {
-            messageLimit: 100,
-          }),
-      );
-      if (!bundle) throw studioNotFound();
-      assertThreadVisible(bundle.thread, session.actorId, role);
-      return {
-        thread: threadView(bundle.thread),
-        messages: bundle.messages.map(messageView),
-      };
+      return database().forWorkspace(session.workspaceId, async (repos) => {
+        const bundle = await repos.studio.threads.getWithMessages(threadId, {
+          messageLimit: 100,
+          latest: true,
+        });
+        if (!bundle) throw studioNotFound();
+        assertThreadVisible(bundle.thread, session.actorId, role);
+        const operator = [...bundle.messages]
+          .reverse()
+          .find(
+            (message) =>
+              message.role === "operator" &&
+              guidedActionSchema.safeParse(message.content.guidedAction)
+                .success,
+          );
+        const run = operator?.clientMessageId
+          ? await repos.studio.runs.findByIdempotencyKey(
+              `studio:${bundle.thread.id}:${operator.clientMessageId}`,
+            )
+          : null;
+        const visibleRun =
+          run &&
+          run.threadId === bundle.thread.id &&
+          run.triggerMessageId === operator?.id
+            ? run
+            : null;
+        const reservation = visibleRun
+          ? await repos.studio.budget.getForRun(visibleRun.id)
+          : null;
+        const artifacts: Array<{
+          outputId: string;
+          revision: number;
+          contentDigest: string;
+        }> = [];
+        if (
+          visibleRun &&
+          !bundle.messages.some(
+            (message) =>
+              message.role === "assistant" && message.runId === visibleRun.id,
+          )
+        ) {
+          const action = guidedActionSchema.parse(
+            operator!.content.guidedAction,
+          );
+          const outputs = await repos.studio.outputs.list({
+            runId: visibleRun.id,
+            limit: 4,
+          });
+          for (const output of outputs.items) {
+            if (
+              output.threadId !== bundle.thread.id ||
+              output.runId !== visibleRun.id
+            )
+              continue;
+            const version = await repos.studio.outputs.getVersion(output.id, 1);
+            const scope = guidedScopeSchema.safeParse(
+              version?.scope.guidedReview,
+            );
+            if (
+              version &&
+              outputDigestMatches(version) &&
+              scope.success &&
+              scope.data.stage === action.kind
+            )
+              artifacts.push({
+                outputId: output.id,
+                revision: version.revision,
+                contentDigest: version.contentDigest,
+              });
+          }
+        }
+        return {
+          thread: threadView(bundle.thread),
+          messages: bundle.messages.map(messageView),
+          ...(operator?.clientMessageId
+            ? {
+                latestGuidedAttempt: visibleRun
+                  ? {
+                      clientMessageId: operator.clientMessageId,
+                      runId: visibleRun.id,
+                      status: visibleRun.status,
+                      reservationState: reservation?.state ?? null,
+                      ...(artifacts.length > 0 ? { artifacts } : {}),
+                    }
+                  : null,
+              }
+            : {}),
+        };
+      });
     },
 
     async sendMessage(

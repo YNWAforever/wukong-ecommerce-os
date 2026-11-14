@@ -3,6 +3,7 @@ import { ListingReviewClient } from "../../../../components/listing-review-clien
 import { getDatabase } from "../../../../lib/intake-runtime";
 import { authSessionContext } from "../../../../lib/session-context";
 import { loadListingStudioHandoff } from "../../../../lib/studio/listing-handoff";
+import { studioService } from "../../studio/studio-service";
 
 /**
  * `/listings/[id]` ??listing review (B2 adds the optional Studio handoff).
@@ -53,6 +54,14 @@ export default async function ListingReviewPage({
       getDatabase,
     },
   });
+  const studioGuideEnabled = await studioService()
+    .guidedAvailability()
+    .catch(() => {
+      console.info(
+        JSON.stringify({ event: "studio.guided.entry_unavailable" }),
+      );
+      return false;
+    });
   return (
     <>
       {typeof query.returnTo === "string" ? (
@@ -60,6 +69,7 @@ export default async function ListingReviewPage({
       ) : null}
       <ListingReviewClient
         listingId={id}
+        studioGuideEnabled={studioGuideEnabled}
         initialProcessing={initialProcessing}
         {...(studioHandoff ? { studioHandoff } : {})}
       />

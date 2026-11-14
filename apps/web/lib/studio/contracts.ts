@@ -70,9 +70,37 @@ export type ListThreadsResult = {
   offset: number;
 };
 
+export const guidedAttemptSchema = z.object({
+  clientMessageId: z.string(),
+  runId: z.string(),
+  status: z.enum([
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "outcome_unknown",
+  ]),
+  artifacts: z
+    .array(
+      z.object({
+        outputId: z.string().uuid(),
+        revision: z.number().int().positive(),
+        contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
+      }),
+    )
+    .max(4)
+    .optional(),
+  reservationState: z
+    .enum(["reserved", "settled", "released", "uncertain"])
+    .nullable()
+    .optional(),
+});
+export type GuidedAttemptResponse = z.infer<typeof guidedAttemptSchema>;
 export type GetThreadResult = {
   thread: StudioThreadResponse;
   messages: StudioMessageResponse[];
+  latestGuidedAttempt?: GuidedAttemptResponse | null;
 };
 
 /** What `POST /api/studio/threads/[id]/messages` returns. */

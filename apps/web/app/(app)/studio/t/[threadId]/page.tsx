@@ -48,6 +48,7 @@ export default async function StudioThreadPage({
     ? requireWorkspaceRole("reviewer", session.role)
     : false;
   const aiEnabled = await studioAiEnabled();
+  const canGuide = canSend ? await studioService().guidedAvailability() : false;
 
   return (
     <StudioThreadView
@@ -57,6 +58,10 @@ export default async function StudioThreadPage({
       aiEnabled={aiEnabled}
       canSend={canSend}
       canSignOff={canSignOff}
+      canGuide={canGuide}
+      {...(result.latestGuidedAttempt !== undefined
+        ? { latestGuidedAttempt: result.latestGuidedAttempt }
+        : {})}
     />
   );
 }

@@ -1,11 +1,17 @@
 # Next development roadmap — from deployed Studio to a commerce orchestration OS
 
-Status: proposed plan, 2026-11-09. Baseline: Conversation Studio merged into `main` (`e53d2026`)
-and deployed to production with every flag off; hosted MCP server and external-MCP registry built
-but dormant; five pilot skills and one live browser acceptance recorded. This document sequences the
-next development so the product can move from "deployed but not activated" to the intended
-operator surface: **conversation → grounded evidence → proposed artifact → human-approved action
-across commerce connectors**, with every action auditable.
+Status: updated 2026-11-14 (Asia/Singapore). The Opak Studio pilot is live. A1–A5, attachment upload,
+pinned listing handoff, hosted-MCP hardening, run/cost visibility, product-shot recovery and catalog
+evidence work have shipped; external MCP activation and SHOPLINE writes remain separately gated.
+The approved current milestone is **workspace audit → selected-listing gap review → copy proposal
+→ reviewer handoff**, using explicit Send and existing Studio records. Exact-version review integrity
+shipped in PR #223 and structured context/durable gap reports in PR #224. The guided UI and its
+authenticated fake-model acceptance are the final change in this milestone.
+
+The dated sections below preserve the original sequencing and release history. Their historical
+"not built"/"flags off" statements are superseded by the latest dated status entries. Runtime policy
+remains OpenCode Go / deepseek-v4.1-flash, USD10 cumulative workspace cap, USD2 run ceiling and
+4,096 output tokens. This cycle adds no paid development calls or production workspace activation.
 
 ## Product north star
 
@@ -20,7 +26,7 @@ reference) where Studio, versioned skills and MCP tools replace ad-hoc screens; 
 Ads-Copilot-style assistant that can inspect, recommend and act on paid/marketing operations once a
 connector exists.
 
-## Current baseline (shipped and verified)
+## Original 2026-11-09 baseline (historical)
 
 - **Studio surfaces**: `/studio`, `/studio/t/[id]`, `/studio/threads`, `/studio/outputs`,
   `/studio/connections`, admin `/studio/settings`.
@@ -462,5 +468,24 @@ The operator approved the following three-PR development cycle:
 Use existing tables and endpoints where possible. The reviewed model, USD 10 cumulative workspace
 cap, USD 2 run ceiling and 4,096 output-token limit remain the operating policy. Each PR must pass
 required CI before merging and receive commit-specific production and post-merge main-CI verification.
-The next milestone after this cycle is a separately planned guided audit → gap review → copy proposal
-→ reviewer handoff journey, using the existing skills and artifacts.
+
+### Guided listing-improvement milestone (approved 2026-11-14)
+
+The [approved three-PR plan](2026-11-14-guided-listing-improvement.md) is the current delivery cycle.
+PR #223 binds review status/readback to exact revision and digest and makes listing handoff links
+immutable. PR #224 binds guided transitions to one selected listing/version and exact parent output,
+persists deterministic gap reports and checks selected-quality freshness before copy generation and
+sign-off. Both have exact-head CI, post-merge main CI and matching Ready production deployment
+proof in the approved plan.
+
+The final UI change adds a listing entry behind role/Studio/allowed-skill gates, explicit workspace
+versus selected-listing scope, a persisted journey card, draft/attachment/retry protection, locale-stable
+retries, readable gap snapshots and confirmed exact-version reviewer handoff. Reloads read recorded
+messages, outputs and run status; they do not submit another model request. Missing quality or
+active version, stale evidence, disabled AI and uncertain attempts remain visible and block copy.
+The new authenticated browser scenario uses a guarded local fake adapter for the seeded workspace
+and verifies full flow, budget admission, mobile and bilingual rendering while keeping canonical
+listing data unchanged. Required CI and production/main verification remain the release gates.
+
+Scheduling, batches, assignments/notifications, new connectors and external MCP activation remain
+later decisions. No generic workflow engine or schema migration is introduced by this milestone.

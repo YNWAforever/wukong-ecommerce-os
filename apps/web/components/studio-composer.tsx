@@ -73,6 +73,8 @@ export type StudioComposerProps = {
   readonly disabledReason?: StudioCopyKey | null;
   /** Disables Send (not typing) when the role cannot send yet. */
   readonly sendDisabled?: boolean;
+  /** A pending guided retry keeps its captured draft selectable but immutable. */
+  readonly readOnly?: boolean;
   readonly sendDisabledReason?: StudioCopyKey | null;
   readonly skillKey?: string | null;
   readonly onClearSkill?: () => void;
@@ -98,6 +100,7 @@ export function StudioComposer({
   disabled = false,
   disabledReason = null,
   sendDisabled = false,
+  readOnly = false,
   sendDisabledReason = null,
   skillKey = null,
   onClearSkill,
@@ -201,6 +204,7 @@ export function StudioComposer({
         onKeyDown={handleKeyDown}
         aria-describedby={`${hintId} ${disclaimerId}`}
         disabled={disabled}
+        readOnly={readOnly}
       />
 
       {skillKey ? (

@@ -149,6 +149,60 @@ afterEach(async () => {
 });
 
 describe("StudioHome", () => {
+  it("keeps a selected listing and the original locale/context through retry", async () => {
+    const action = {
+      kind: "audit" as const,
+      listingId: "11111111-1111-4111-8111-111111111111",
+      expectedActiveVersionId: "22222222-2222-4222-8222-222222222222",
+    };
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/studio/threads")
+        return new Response(JSON.stringify({ threadId: "thread-new" }), {
+          status: 201,
+        });
+      bodies.push(JSON.parse(String(init?.body)));
+      return bodies.length === 1
+        ? new Response(JSON.stringify({ code: "internal_error" }), {
+            status: 500,
+          })
+        : new Response(JSON.stringify(sendResultBody()));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount({ initialGuidedAction: action });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(textarea(container).value).toBe(
+      "Audit workspace records before reviewing the selected listing.",
+    );
+    await act(async () =>
+      buttonByText(container, "Fill the composer")?.click(),
+    );
+    expect(textarea(container).value).toBe(
+      "Audit workspace records before reviewing the selected listing.",
+    );
+    await act(async () => buttonByText(container, "Send")?.click());
+    expect(bodies).toHaveLength(1);
+    await act(async () =>
+      roots[roots.length - 1]!.render(
+        <StudioHome
+          locale="zh-Hant"
+          overview={overview}
+          canCreateThread
+          initialGuidedAction={action}
+        />,
+      ),
+    );
+    await act(async () =>
+      buttonByText(container, STUDIO_COPY["studio.composer.retry"][0])?.click(),
+    );
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual(bodies[0]);
+    expect(bodies[1]).toMatchObject({
+      locale: "en",
+      guidedAction: action,
+      skillKey: "merchant.audit",
+    });
+  });
   it("renders the greeting, composer, overview and permanent disclaimer", () => {
     const html = render();
 
@@ -428,6 +482,33 @@ describe("StudioHome", () => {
     return fetcher;
   }
 
+  it("selects a template after upload without losing the attachment or sending early", async () => {
+    const fetcher = assetTransport();
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount();
+    await chooseFiles(container, [
+      new File([new Uint8Array(5)], "photo.png", { type: "image/png" }),
+    ]);
+    await settle();
+    const card = Array.from(container.querySelectorAll("li")).find((item) =>
+      item.textContent?.includes("Listing draft"),
+    );
+    await act(async () => card?.querySelector("button")?.click());
+    expect(container.textContent).toContain("listing.draft_from_sources");
+    expect(container.textContent).toContain("Uploaded");
+    expect(textarea(container).value.length).toBeGreaterThan(0);
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).endsWith("/messages")),
+    ).toHaveLength(0);
+    await act(async () => buttonByText(container, "Send")?.click());
+    const sent = fetcher.mock.calls.find(([url]) =>
+      String(url).endsWith("/messages"),
+    );
+    expect(JSON.parse(String(sent?.[1]?.body))).toMatchObject({
+      skillKey: "listing.draft_from_sources",
+      attachmentAssetIds: ["asset_1"],
+    });
+  });
   it("uploads an attachment, sends its finalized asset id and clears it", async () => {
     const fetcher = assetTransport();
     vi.stubGlobal("fetch", fetcher);

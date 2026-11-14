@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Locale } from "../lib/locale";
+import {
+  GUIDED_SKILLS,
+  type GuidedAction,
+} from "../lib/studio/guided-contracts";
+import type { GuidedAttemptResponse } from "../lib/studio/contracts";
+import { guidedCopy } from "../lib/studio/guided-copy";
+import { StudioGuidedJourney } from "./studio-guided-journey";
 import type {
   StudioMessageResponse,
   StudioThreadResponse,
@@ -50,6 +57,8 @@ type TraceState = {
 };
 
 type PendingAttempt = {
+  locale: Locale;
+  guidedAction: GuidedAction | null;
   text: string;
   skillKey: string | null;
   clientMessageId: string;
@@ -68,6 +77,8 @@ export type StudioThreadViewProps = {
   readonly canSend: boolean;
   /** Reviewer-or-higher: gates artifact sign-off inside output cards. */
   readonly canSignOff: boolean;
+  readonly latestGuidedAttempt?: GuidedAttemptResponse | null;
+  readonly canGuide?: boolean;
 };
 
 function nextSequence(messages: readonly StudioMessageResponse[]): number {
@@ -93,6 +104,8 @@ export function StudioThreadView({
   aiEnabled,
   canSend,
   canSignOff,
+  latestGuidedAttempt = null,
+  canGuide = canSend,
 }: StudioThreadViewProps) {
   const session = useStudioSession();
   const attachments = useStudioAttachments();
@@ -102,6 +115,9 @@ export function StudioThreadView({
     readonly StudioMessageResponse[]
   >([]);
   const [draft, setDraft] = useState("");
+  const [guidedAction, setGuidedAction] = useState<GuidedAction | null>(null);
+  const [guideAttempt, setGuideAttempt] =
+    useState<GuidedAttemptResponse | null>(latestGuidedAttempt);
   const [skillKey, setSkillKey] = useState<string | null>(thread.skillKey);
   const [pendingClientMessageId, setPendingClientMessageId] = useState<
     string | null
@@ -119,11 +135,15 @@ export function StudioThreadView({
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const refineDisabled =
-    session.inFlight || pendingAttempt !== null || draft.length > 0;
+    session.inFlight ||
+    pendingAttempt !== null ||
+    draft.length > 0 ||
+    attachments.items.length > 0;
   const refineSearch = useCallback(
     (query: string) => {
       if (!canSend || refineDisabled) return;
       setDraft(query);
+      setGuidedAction(null);
       setSkillKey("catalog.find");
       composerRef.current?.focus();
     },
@@ -190,7 +210,8 @@ export function StudioThreadView({
         threadId: attempt.threadId,
         text: attempt.text,
         skillKey: attempt.skillKey,
-        locale,
+        locale: attempt.locale,
+        ...(attempt.guidedAction ? { guidedAction: attempt.guidedAction } : {}),
         clientMessageId: attempt.clientMessageId,
         attachmentAssetIds: attempt.attachmentAssetIds,
       });
@@ -206,7 +227,10 @@ export function StudioThreadView({
         operatorMessageFromSend({
           clientMessageId: attempt.clientMessageId,
           sequence: sequenceBase,
-          locale,
+          locale: attempt.locale,
+          ...(attempt.guidedAction
+            ? { guidedAction: attempt.guidedAction }
+            : {}),
           text: attempt.text,
           skillKey: attempt.skillKey,
           createdAt,
@@ -222,6 +246,7 @@ export function StudioThreadView({
         },
       }));
       setDraft("");
+      setGuidedAction(null);
       setPendingClientMessageId(null);
       setPendingAttempt(null);
       setReplayed(result.replayed);
@@ -238,6 +263,8 @@ export function StudioThreadView({
       pendingClientMessageId ?? createStudioClientMessageId();
     setPendingClientMessageId(clientMessageId);
     const attempt: PendingAttempt = {
+      locale,
+      guidedAction,
       text,
       skillKey,
       clientMessageId,
@@ -249,6 +276,8 @@ export function StudioThreadView({
   }, [
     attachments,
     canSend,
+    locale,
+    guidedAction,
     draft,
     pendingClientMessageId,
     session.inFlight,
@@ -271,6 +300,7 @@ export function StudioThreadView({
       }
       setReloadError(null);
       setServerMessages(outcome.messages);
+      setGuideAttempt(outcome.latestGuidedAttempt ?? null);
       setLocalMessages([]);
       setTraces({});
       setReplayed(false);
@@ -300,6 +330,38 @@ export function StudioThreadView({
 
   return (
     <div className={styles["studio-thread"]}>
+      <StudioGuidedJourney
+        locale={locale}
+        threadId={thread.threadId}
+        messages={visibleMessages}
+        attempt={guideAttempt}
+        canSend={canGuide && canSend}
+        canSignOff={canSignOff}
+        aiEnabled={aiEnabled}
+        blocked={refineDisabled}
+        onReload={handleReload}
+        onPrepare={(action) => {
+          if (!canSend || !canGuide || refineDisabled) return;
+          setGuidedAction(action);
+          setSkillKey(GUIDED_SKILLS[action.kind]);
+          setDraft(
+            guidedCopy(
+              locale,
+              action.kind === "audit"
+                ? "auditRequest"
+                : action.kind === "gap_review"
+                  ? "gapRequest"
+                  : "copyRequest",
+            ),
+          );
+          composerRef.current?.focus();
+        }}
+      />
+      {visibleMessages[0] && visibleMessages[0].sequence > 1 ? (
+        <p className={styles["studio-notice"]}>
+          {guidedCopy(locale, "history")}
+        </p>
+      ) : null}
       <header className={styles["studio-thread-header"]}>
         <div className={styles["studio-thread-heading"]}>
           <p className={styles["studio-eyebrow"]}>
@@ -449,12 +511,24 @@ export function StudioThreadView({
               {...(pendingAttempt ? { onRetry: handleRetry } : {})}
               sending={session.inFlight}
               error={sendErrorKey}
-              sendDisabled={!canSend}
-              sendDisabledReason="studio.composer.viewerNote"
+              readOnly={Boolean(pendingAttempt?.guidedAction)}
+              sendDisabled={!canSend || Boolean(pendingAttempt?.guidedAction)}
+              sendDisabledReason={
+                canSend ? "studio.composer.retry" : "studio.composer.viewerNote"
+              }
               skillKey={skillKey}
-              onClearSkill={() => setSkillKey(null)}
+              {...(!pendingAttempt?.guidedAction
+                ? {
+                    onClearSkill: () => {
+                      setSkillKey(null);
+                      setGuidedAction(null);
+                    },
+                  }
+                : {})}
               attachments={attachments.items}
-              onAttachFiles={attachments.addFiles}
+              {...(!guidedAction
+                ? { onAttachFiles: attachments.addFiles }
+                : {})}
               onRemoveAttachment={attachments.removeAttachment}
               onRetryAttachment={attachments.retryAttachment}
               attachmentNotice={attachments.notice}

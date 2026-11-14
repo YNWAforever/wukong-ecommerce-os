@@ -14,6 +14,7 @@ import { copyTextToClipboard } from "../lib/studio/clipboard";
 import { formatProposedValues } from "../lib/studio/copy-proposal";
 import type { ListingStudioHandoff } from "../lib/studio/listing-handoff";
 import { studioCopy } from "../lib/studio-copy";
+import { guidedCopy } from "../lib/studio/guided-copy";
 import { localized, commonCopy, stateLabel, safeUiError } from "../lib/ui-copy";
 import studioStyles from "./studio.module.css";
 
@@ -727,8 +728,10 @@ export function ListingReviewClient({
   listingId,
   initialProcessing,
   studioHandoff,
+  studioGuideEnabled = false,
 }: {
   listingId: string;
+  studioGuideEnabled?: boolean;
   initialProcessing?: "queued" | "retry_required";
   /** Optional read-only copy-proposal banner resolved by the server page. */
   studioHandoff?: ListingStudioHandoff;
@@ -1219,6 +1222,16 @@ export function ListingReviewClient({
         </span>
       </div>
       <SourceReadinessSummary readiness={snapshot.sourceReadiness} banner />
+      {studioGuideEnabled ? (
+        <p>
+          <Link
+            className={studioStyles["studio-secondary-button"]}
+            href={`/studio?guideListing=${encodeURIComponent(listingId)}&guideVersion=${encodeURIComponent(snapshot.activeVersion?.id ?? "none")}`}
+          >
+            {guidedCopy(locale, "entry")}
+          </Link>
+        </p>
+      ) : null}
       {studioHandoff ? (
         <StudioHandoffBanner
           locale={locale}

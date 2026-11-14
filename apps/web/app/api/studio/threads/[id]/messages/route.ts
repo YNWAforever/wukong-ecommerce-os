@@ -6,6 +6,7 @@ import {
 } from "../../../../../../lib/route-support";
 import { authSessionContext } from "../../../../../../lib/session-context";
 import { sendMessageBodySchema } from "../../../../../../lib/studio/contracts";
+import { studioAcceptanceModelFactory } from "../../../../../../lib/studio/acceptance-model";
 import {
   studioServiceDeps,
   type StudioRouteDeps,
@@ -44,9 +45,11 @@ export function createStudioMessageHandler(deps: StudioRouteDeps) {
     });
 }
 
+const acceptanceModel = studioAcceptanceModelFactory(process.env);
 const handlers = createStudioMessageHandler({
   sessionContext: authSessionContext,
   getDatabase,
+  ...(acceptanceModel ? { createModel: acceptanceModel } : {}),
 });
 
 export const POST = handlers;
