@@ -200,8 +200,7 @@ export function StudioHome({
         !template.starterKey ||
         draft.length > 0 ||
         pendingAttempt ||
-        session.inFlight ||
-        attachments.items.length > 0
+        session.inFlight
       )
         return;
       setGuidedAction(null);
@@ -212,7 +211,7 @@ export function StudioHome({
       session.clearError();
       textareaRef.current?.focus();
     },
-    [locale, session, draft, pendingAttempt, attachments.items.length],
+    [locale, session, draft, pendingAttempt],
   );
 
   const runSend = useCallback(

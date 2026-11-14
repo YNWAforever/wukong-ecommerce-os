@@ -482,6 +482,33 @@ describe("StudioHome", () => {
     return fetcher;
   }
 
+  it("selects a template after upload without losing the attachment or sending early", async () => {
+    const fetcher = assetTransport();
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount();
+    await chooseFiles(container, [
+      new File([new Uint8Array(5)], "photo.png", { type: "image/png" }),
+    ]);
+    await settle();
+    const card = Array.from(container.querySelectorAll("li")).find((item) =>
+      item.textContent?.includes("Listing draft"),
+    );
+    await act(async () => card?.querySelector("button")?.click());
+    expect(container.textContent).toContain("listing.draft_from_sources");
+    expect(container.textContent).toContain("Uploaded");
+    expect(textarea(container).value.length).toBeGreaterThan(0);
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).endsWith("/messages")),
+    ).toHaveLength(0);
+    await act(async () => buttonByText(container, "Send")?.click());
+    const sent = fetcher.mock.calls.find(([url]) =>
+      String(url).endsWith("/messages"),
+    );
+    expect(JSON.parse(String(sent?.[1]?.body))).toMatchObject({
+      skillKey: "listing.draft_from_sources",
+      attachmentAssetIds: ["asset_1"],
+    });
+  });
   it("uploads an attachment, sends its finalized asset id and clears it", async () => {
     const fetcher = assetTransport();
     vi.stubGlobal("fetch", fetcher);
