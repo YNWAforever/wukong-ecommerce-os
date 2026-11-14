@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import { MemoryAssetStore } from "@wukong/assets";
 import type { Database } from "@wukong/db";
+import type { ProductShotJob } from "@wukong/jobs";
 import {
   attachProductShotSource,
   requestProductShot,
@@ -40,7 +41,9 @@ async function fixture(count = 1) {
     current = { ...data, attemptId: id(9), state: "queued" };
     return { attemptId: id(9) };
   });
+  const auditWrite = vi.fn(async () => {});
   const repos = {
+    audit: { write: auditWrite },
     sourceAssets: { listForListing: async () => assets },
     productShots: {
       currentForListing: async () => current,
@@ -50,10 +53,13 @@ async function fixture(count = 1) {
   };
   const forWorkspace: Database["forWorkspace"] = async (_ws, fn) =>
     fn(repos as never);
-  const enqueue = vi.fn(async () => ({ accepted: true as const })),
+  const enqueue = vi.fn(async (_job: ProductShotJob) => ({
+      accepted: true as const,
+    })),
     validateSource = vi.fn(async () => ({ width: 10, height: 20 }));
   return {
     ensure,
+    auditWrite,
     assets,
     bytes,
     enqueue,
@@ -67,6 +73,8 @@ async function fixture(count = 1) {
     },
     setCurrent: (value: any) =>
       (current = {
+        workspaceId: input.workspaceId,
+        listingId: input.listingId,
         providerVersion: "fake:1.0.0",
         renderVersion: "white-v1",
         ...value,
@@ -136,11 +144,143 @@ describe("independent selected-source request", () => {
     await expect(requestProductShot(input, f.deps)).rejects.toThrow(
       "queue_unavailable",
     );
-    await expect(requestProductShot(input, f.deps)).resolves.toMatchObject({
+    await expect(
+      requestProductShot(
+        { ...input, retryAttemptId: id(9), sourceAssetId: id(2) },
+        f.deps,
+      ),
+    ).resolves.toMatchObject({
       state: "queued",
+      attemptId: id(9),
     });
     expect(f.ensure).toHaveBeenCalledOnce();
     expect(f.enqueue).toHaveBeenCalledTimes(2);
+    expect(f.auditWrite).toHaveBeenCalledWith({
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      entityId: input.listingId,
+      action: "product_shot.dispatch_retry_requested",
+      metadata: { attemptId: id(9), sourceAssetId: id(2) },
+    });
+  });
+});
+
+describe("fenced dispatch recovery", () => {
+  it.each(["processing", "outcome_unknown", "failed", "approved"])(
+    "refuses a retry of a %s attempt without creating a new one",
+    async (state) => {
+      const f = await fixture();
+      f.setCurrent({ attemptId: id(9), sourceAssetId: id(2), state });
+      await expect(
+        requestProductShot({ ...input, retryAttemptId: id(9) }, f.deps),
+      ).rejects.toMatchObject({
+        status: 409,
+        code: "dispatch_retry_not_allowed",
+      });
+      expect(f.ensure).not.toHaveBeenCalled();
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.auditWrite).not.toHaveBeenCalled();
+    },
+  );
+  it("does not reenqueue an active attempt through an ordinary request", async () => {
+    const f = await fixture();
+    f.setCurrent({
+      attemptId: id(9),
+      sourceAssetId: id(2),
+      state: "processing",
+    });
+    expect(await requestProductShot(input, f.deps)).toMatchObject({
+      state: "processing",
+      attemptId: id(9),
+    });
+    expect(f.enqueue).not.toHaveBeenCalled();
+  });
+  it.each(["attempt", "source", "provider", "render"])(
+    "refuses stale %s observations without another paid attempt",
+    async (change) => {
+      const f = await fixture(2);
+      f.setCurrent({
+        attemptId: id(9),
+        sourceAssetId: id(2),
+        state: "queued",
+        ...(change === "render" ? { renderVersion: "old-render" } : {}),
+      });
+      if (change === "provider") f.deps.providerName = "photoroom";
+      await expect(
+        requestProductShot(
+          {
+            ...input,
+            retryAttemptId: change === "attempt" ? id(8) : id(9),
+            sourceAssetId: change === "source" ? id(3) : id(2),
+          },
+          f.deps,
+        ),
+      ).rejects.toMatchObject({ code: "dispatch_retry_not_allowed" });
+      expect(f.ensure).not.toHaveBeenCalled();
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.auditWrite).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps repeated dispatch rejections on the same audited attempt", async () => {
+    const f = await fixture();
+    f.enqueue.mockRejectedValue(new Error("queue_unavailable"));
+    await expect(requestProductShot(input, f.deps)).rejects.toThrow(
+      "queue_unavailable",
+    );
+    await expect(
+      requestProductShot({ ...input, retryAttemptId: id(9) }, f.deps),
+    ).rejects.toThrow("queue_unavailable");
+    expect(f.ensure).toHaveBeenCalledOnce();
+    expect(f.enqueue).toHaveBeenCalledTimes(2);
+    expect(f.enqueue.mock.calls.every(([job]) => job.attemptId === id(9))).toBe(
+      true,
+    );
+    expect(f.auditWrite).toHaveBeenCalledOnce();
+  });
+
+  it("rejects foreign attempt rows before audit or enqueue", async () => {
+    const f = await fixture();
+    f.setCurrent({
+      workspaceId: "foreign",
+      attemptId: id(9),
+      sourceAssetId: id(2),
+      state: "queued",
+    });
+    await expect(
+      requestProductShot({ ...input, retryAttemptId: id(9) }, f.deps),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.auditWrite).not.toHaveBeenCalled();
+  });
+  it("rechecks the version fence before recording retry intent", async () => {
+    const f = await fixture();
+    f.setCurrent({ attemptId: id(9), sourceAssetId: id(2), state: "queued" });
+    let reads = 0;
+    const original = f.deps.forWorkspace;
+    f.deps.forWorkspace = async (ws, fn) =>
+      original(ws, (r) =>
+        fn({
+          ...r,
+          listings: {
+            lockReviewState: async () => {},
+            getReviewSnapshot: async () => {
+              const version = ++reads === 1 ? id(20) : id(21);
+              return {
+                listing: { activeVersionId: version },
+                activeVersion: { id: version },
+              };
+            },
+          },
+        } as never),
+      );
+    await expect(
+      requestProductShot(
+        { ...input, retryAttemptId: id(9), expectedVersionId: id(20) },
+        f.deps,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.auditWrite).not.toHaveBeenCalled();
   });
 });
 

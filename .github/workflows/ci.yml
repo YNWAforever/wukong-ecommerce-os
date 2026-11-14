@@ -434,7 +434,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts
+          include-hidden-files: true
           path: |
             playwright-report/
             test-results/
+            node_modules/.product-shot-evidence/*.log
           if-no-files-found: ignore

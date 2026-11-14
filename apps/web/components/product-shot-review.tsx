@@ -86,7 +86,7 @@ export function ProductShotReview({
     auto = useRef(new Set<string>()),
     replaceInput = useRef<HTMLInputElement | null>(null);
   const load = useCallback(
-    async (signal: AbortSignal) => {
+    async (signal: AbortSignal, keepError = false) => {
       const revision = ++sequence.current;
       // Signing previews can race normal worker state changes. Retry only the
       // rejected read snapshot; never repeat a processing or approval request.
@@ -109,7 +109,7 @@ export function ProductShotReview({
         }
         const next = await response.json();
         if (!signal.aborted && revision === sequence.current) {
-          setError(false);
+          if (!keepError) setError(false);
           setView(next);
           setSelected(
             next.sourceAssetId ??
@@ -126,6 +126,7 @@ export function ProductShotReview({
     scope.current = controller;
     auto.current.clear();
     setView(null);
+    setBusy(false);
     setError(false);
     setCharge(false);
     void load(controller.signal).catch(() => {
@@ -146,6 +147,7 @@ export function ProductShotReview({
       ++sequence.current;
       setBusy(true);
       setError(false);
+      let refreshAttempted = false;
       try {
         const response = await fetch(
           `/api/listings/${listingId}/product-shot${action === "request" ? "" : "/" + action}`,
@@ -163,10 +165,22 @@ export function ProductShotReview({
           setView((v) => (v ? { ...v, state: "setup_required" } : v));
           return;
         }
+        refreshAttempted = true;
         await load(signal);
         setCharge(false);
       } catch {
-        if (!signal.aborted) setError(true);
+        if (!signal.aborted) {
+          setError(true);
+          // The attempt can have committed even when enqueue/response failed.
+          // Refresh only the read; an explicit action owns the next dispatch.
+          if (!refreshAttempted) {
+            try {
+              await load(signal, true);
+            } catch {
+              if (!signal.aborted) setError(true);
+            }
+          }
+        }
       } finally {
         if (!signal.aborted) setBusy(false);
       }
@@ -191,9 +205,12 @@ export function ProductShotReview({
       ++sequence.current;
       setBusy(true);
       setError(false);
+      let sourceRequestSent = false;
+      let refreshAttempted = false;
       try {
         const { assetId: sourceAssetId } = await uploadSourceAsset(file);
         if (signal.aborted) return;
+        sourceRequestSent = true;
         const response = await fetch(
           `/api/listings/${listingId}/product-shot/source`,
           {
@@ -207,9 +224,19 @@ export function ProductShotReview({
           },
         );
         if (!response.ok) throw new Error("source_attach_failed");
+        refreshAttempted = true;
         await load(signal);
       } catch {
-        if (!signal.aborted) setError(true);
+        if (!signal.aborted) {
+          setError(true);
+          if (sourceRequestSent && !refreshAttempted) {
+            try {
+              await load(signal, true);
+            } catch {
+              if (!signal.aborted) setError(true);
+            }
+          }
+        }
       } finally {
         if (!signal.aborted) setBusy(false);
       }
@@ -471,21 +498,33 @@ export function ProductShotReview({
           {t("重試準備預覽", "Retry preparation")}
         </button>
       ) : null}
-      {canOperate && view.allowedActions?.includes("retry_queue") ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            void mutate("request", {
-              sourceAssetId: view.sourceAssetId,
-              expectedVersionId: view.expectedVersionId,
-              explicitFreshAttempt: false,
-              expectedInputRevision: view.inputRevision,
-            })
-          }
-        >
-          {t("重試排程", "Retry queue")}
-        </button>
+      {canOperate &&
+      view.state === "queued" &&
+      view.attemptId &&
+      view.allowedActions?.includes("retry_queue") ? (
+        <div>
+          <p>
+            {t(
+              "重新傳送目前的處理嘗試，不會建立新的付費嘗試。",
+              "Resend the current processing attempt. This does not create a fresh paid attempt.",
+            )}
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void mutate("request", {
+                sourceAssetId: view.sourceAssetId,
+                expectedVersionId: view.expectedVersionId,
+                explicitFreshAttempt: false,
+                expectedInputRevision: view.inputRevision,
+                retryAttemptId: view.attemptId,
+              })
+            }
+          >
+            {t("重試傳送", "Retry dispatch")}
+          </button>
+        </div>
       ) : null}
       {canApprove &&
       view.allowedActions?.includes("approve") &&

@@ -423,13 +423,25 @@ The operator approved the following three-PR development cycle:
    a model supplies usage; preserve known usage/cost if subsequent reply persistence fails. Project
    reservation state and amounts from the existing ledger, and provide lazy bilingual run details
    within the trace. Keep unknown values distinct from zero and preserve historical unknown identity
-   fields. Implementation and local service/UI/repository checks are ready; browser CI and release
-   verification remain pending.
+   fields. Delivered in [PR #220](https://github.com/YNWAforever/wukong-ecommerce-os/pull/220):
+   PR CI `43550287787` passed on attempt 1, including the 390px run-details browser check, and merge
+   `5ca18b69` is deployed Ready as `dpl_Cf8PyBzsHYQKtUtSk85PxCBEsVY6` with the production alias and
+   expected route smoke results. Post-merge main CI is tracked in
+   [run 43552427861](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/43552427861).
 2. **Product-shot dispatch recovery.** Recover a rejected enqueue using the same source and attempt,
    expose an explicit dispatch retry with version fences and audit, distinguish ingress rejection
    from transport failure, and retain CI diagnostics. Verify one provider execution despite duplicate
    delivery. The PR #219 first-attempt HTTP503 queue rejection is preserved as evidence; its second
-   attempt passed, which does not establish the underlying cause or resolve the recovery gap.
+   attempt passed, which does not establish the underlying cause. The recovery candidate now refreshes
+   committed image state after a failed source/request response and reuses the existing retry action.
+   The existing request endpoint accepts an optional `retryAttemptId` fence so a changed attempt,
+   source, backend or render version cannot silently turn a retry into another paid attempt. A queued
+   retry rechecks the version/selection and writes `product_shot.dispatch_retry_requested` before
+   external queue I/O; processing and uncertain outcomes are not re-dispatched. HTTP rejection logs
+   contain only the ingress path, numeric status and bounded category. Product-shot CI retains bounded,
+   sanitized per-process logs, including URL/header redaction. Local request/UI, Worker lease/idempotency
+   and diagnostic checks pass; full Linux CI and release verification remain pending. The existing
+   Windows startup-port test is locally blocked by the host's reserved port range covering 49218.
 3. **Catalog evidence and answer usefulness.** Supply the executed query and bounded, allowlisted
    catalog/job facts with evidence references, improve deterministic zero-result presentation and
    composer refinement, version the Studio prompt, and add adversarial/zero-result/missing-source

@@ -188,7 +188,36 @@ export function createCloudflareIngressClient(
           throw queueUnavailable("unreachable");
         }
       }
-      if (response.status !== 202) throw queueUnavailable("rejected");
+      if (response.status !== 202) {
+        const httpStatus =
+          Number.isInteger(response.status) &&
+          response.status >= 100 &&
+          response.status <= 599
+            ? response.status
+            : null;
+        const category =
+          httpStatus === 401 || httpStatus === 403
+            ? "unauthorized"
+            : httpStatus === 429
+              ? "rate_limited"
+              : (httpStatus ?? 0) >= 500
+                ? "server_error"
+                : (httpStatus ?? 0) >= 400
+                  ? "client_error"
+                  : "unexpected_status";
+        // Record only bounded status metadata, never the response body or request.
+        console.info(
+          JSON.stringify({
+            event: "queue_ingress_failure",
+            stage: "transport",
+            code: "http_rejected",
+            ingressPath: path,
+            httpStatus,
+            category,
+          }),
+        );
+        throw queueUnavailable("rejected");
+      }
 
       return { accepted: true };
     } catch (error) {
