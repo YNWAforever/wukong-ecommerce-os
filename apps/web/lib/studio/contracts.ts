@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guidedActionSchema } from "./guided-contracts";
 
 import type { StudioTraceStep, StudioTurnReply } from "./types";
 
@@ -27,6 +28,7 @@ export const sendMessageBodySchema = z.strictObject({
   text: z.string().min(1).max(2000),
   skillKey: z.string().trim().min(1).max(120).optional(),
   attachmentAssetIds: z.array(z.string().min(1).max(200)).max(8).optional(),
+  guidedAction: guidedActionSchema.optional(),
   locale: z.enum(["zh-Hant", "en"]),
 });
 export type SendMessageBody = z.infer<typeof sendMessageBodySchema>;

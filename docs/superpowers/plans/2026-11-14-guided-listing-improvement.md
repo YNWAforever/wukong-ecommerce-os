@@ -35,5 +35,6 @@ One listing per journey: workspace audit → selected-listing gap review → cop
 
 ## Implementation record
 
-- Branch PR1: `claude/studio-output-version-pins` from `d8de06fc643c7fab9963ac2bbc0b65b857832223`.
+- PR1 shipped as [#223](https://github.com/YNWAforever/wukong-ecommerce-os/pull/223), merge `524e7df2502beb18d242063bf220d8a4f2c4c182`. Exact-head CI [43573276734](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/43573276734) and main CI [43574803391](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/43574803391) passed. Production deployment `dpl_9Py6QqAK9bpUxuuFWruz5RpCouPf` is READY/production and the production alias resolves to that commit; smoke: `/signin` 200, `/studio` 307, `/api/studio/settings` 401.
+- PR2 branch: `claude/studio-guided-context`. Guided transitions stay in the source conversation so private context is not widened. Version scopes store root-run, selected-listing/version, exact parent pin and selected-quality fingerprint; changed quality flags invalidate copy generation and sign-off even if the active listing version is unchanged. Completed retries resolve their original run before rechecking live evidence, so they cannot create a second paid run after canonical changes.
 - Output confirmations identify immutable reviewed content, not timestamp order: PostgreSQL `now()` is transaction-start time, so concurrent lock waiters cannot safely use latest audit timestamp as status ordering. Match current output status/revision/digest against an audit event carrying that exact tuple.

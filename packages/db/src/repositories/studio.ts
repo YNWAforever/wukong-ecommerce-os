@@ -368,6 +368,10 @@ export type StudioRepository = {
     archive(id: string): Promise<boolean>;
   };
   messages: {
+    findByClientMessageId(
+      threadId: string,
+      clientMessageId: string,
+    ): Promise<StudioMessage | null>;
     append(input: {
       threadId: string;
       role: StudioMessageRole;
@@ -419,6 +423,7 @@ export type StudioRepository = {
       },
     ): Promise<StudioRun | null>;
     get(id: string): Promise<StudioRun | null>;
+    findByIdempotencyKey(key: string): Promise<StudioRun | null>;
   };
   runEvents: {
     appendMany(
@@ -989,6 +994,13 @@ export function createStudioRepository(
     },
 
     messages: {
+      async findByClientMessageId(threadId, clientMessageId) {
+        scope.assertOpen();
+        const rows = await transaction.execute(
+          sql`select * from studio_messages where workspace_id=${workspaceId} and thread_id=${threadId}::uuid and client_message_id=${clientMessageId} limit 1`,
+        );
+        return rows[0] ? readMessage(rows[0] as Record<string, unknown>) : null;
+      },
       async append(input) {
         scope.assertOpen();
         // Serializes the sequence allocation per thread.
@@ -1048,6 +1060,13 @@ export function createStudioRepository(
     },
 
     runs: {
+      async findByIdempotencyKey(key) {
+        scope.assertOpen();
+        const rows = await transaction.execute(
+          sql`select * from studio_runs where workspace_id=${workspaceId} and idempotency_key=${key} limit 1`,
+        );
+        return rows[0] ? readRun(rows[0] as Record<string, unknown>) : null;
+      },
       async create(input) {
         scope.assertOpen();
         if (!input.skillKey || input.skillKey.length > 120)

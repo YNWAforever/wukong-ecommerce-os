@@ -93,6 +93,54 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(foreign.output).toBeNull();
   });
 
+  it("resolves message and run idempotency keys only inside their workspace", async () => {
+    const known = await studioRepositories(WORKSPACE_A, async (repos) => {
+      const thread = await repos.studio.threads.create({
+        createdBy: "actor-a",
+        title: "Guided lookup",
+      });
+      const message = await repos.studio.messages.append({
+        threadId: thread.id,
+        role: "operator",
+        content: { text: "Synthetic guided lookup" },
+        clientMessageId: "guided-lookup",
+        createdBy: "actor-a",
+      });
+      const key = `studio:${thread.id}:guided-lookup`;
+      const run = await repos.studio.runs.create({
+        threadId: thread.id,
+        triggerMessageId: message.message.id,
+        skillKey: "merchant.audit",
+        skillVersion: "1.0.0",
+        idempotencyKey: key,
+        promptVersions: {},
+      });
+      expect(
+        (
+          await repos.studio.messages.findByClientMessageId(
+            thread.id,
+            "guided-lookup",
+          )
+        )?.id,
+      ).toBe(message.message.id);
+      expect((await repos.studio.runs.findByIdempotencyKey(key))?.id).toBe(
+        run.run.id,
+      );
+      return { threadId: thread.id, key };
+    });
+    await studioRepositories(WORKSPACE_B, async (repos) => {
+      expect(
+        await repos.studio.messages.findByClientMessageId(
+          known.threadId,
+          "guided-lookup",
+        ),
+      ).toBeNull();
+      expect(
+        await repos.studio.runs.findByIdempotencyKey(known.key),
+      ).toBeNull();
+    });
+  });
+
   it("searches threads server-side with LIKE escaping and workspace isolation", async () => {
     const ids = await studioRepositories(WORKSPACE_A, async (repos) => {
       const make = (title: string, skillKey: string) =>
@@ -451,9 +499,8 @@ describe.skipIf(!enabled)("studio repositories", () => {
   });
 
   it("aggregates windowed studio usage for one workspace", async () => {
-    // Start the window just before this test's fixtures so rows left by earlier
-    // tests in the shared workspace are not counted here.
-    const since = new Date(Date.now() - 50);
+    // Use this fixture's database timestamp, avoiding wall-clock skew and an
+    // arbitrary lookback that could include rows from the preceding test.
     const made = await studioRepositories(WORKSPACE_A, async (repos) => {
       const thread = await repos.studio.threads.create({
         createdBy: "actor-a",
@@ -544,6 +591,7 @@ describe.skipIf(!enabled)("studio repositories", () => {
       }
       return { thread, unknown, queued, mcpIds, succeeded };
     });
+    const since = made.thread.createdAt;
 
     // A second workspace's rows must never contribute to A's summary.
     const foreign = await studioRepositories(WORKSPACE_B, async (repos) => {

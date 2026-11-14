@@ -644,6 +644,16 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         archive: async () => false,
       },
       messages: {
+        findByClientMessageId: async (
+          threadId: string,
+          clientMessageId: string,
+        ) =>
+          state.messages.find(
+            (message) =>
+              message.threadId === threadId &&
+              message.clientMessageId === clientMessageId &&
+              message.workspaceId === settings.workspaceId,
+          ) ?? null,
         append: async (input: {
           threadId: string;
           role: StudioMessage["role"];
@@ -697,6 +707,12 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         },
       },
       runs: {
+        findByIdempotencyKey: async (key: string) =>
+          state.runs.find(
+            (run) =>
+              run.idempotencyKey === key &&
+              run.workspaceId === settings.workspaceId,
+          ) ?? null,
         create: async (input: {
           threadId: string;
           triggerMessageId: string;

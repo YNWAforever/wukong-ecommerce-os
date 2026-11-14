@@ -24,6 +24,7 @@ import {
 import {
   merchantAuditPayloadSchema,
   type MerchantAuditPayload,
+  type GapReportPayload,
 } from "./report-payload";
 import {
   auditPeriodPayload,
@@ -383,15 +384,34 @@ async function buildGapReview(
   input: BuildEvidenceInput,
   pack: EvidencePack,
 ): Promise<void> {
-  const requested = [...new Set(input.listingIds ?? [])].slice(0, MAX_LISTINGS);
+  const allRequested = [...new Set(input.listingIds ?? [])];
+  const requested = allRequested.slice(0, MAX_LISTINGS);
   let targets = requested;
+  const rows: NonNullable<GapReportPayload["listings"]> = [];
+  const report: GapReportPayload = {
+    schemaVersion: "wukong-gap-report/v1",
+    asOf: asOf(input.now),
+    scope: {
+      mode: requested.length > 0 ? "selected" : "workspace_sample",
+      listingIds: requested,
+      truncated:
+        requested.length > 0 ? allRequested.length > requested.length : null,
+    },
+    listings: requested.length > 0 ? rows : null,
+    quality: null,
+    checks: [],
+    evidenceTruncated: false,
+    coverage: {},
+    limitations: [],
+  };
+  pack.context.gapReport = report;
   // With an explicit selection this turn does not query the catalog at all, so
   // the source is not applicable rather than missing.
   if (requested.length > 0) markCoverage(pack, "catalog", "unsupported");
   if (targets.length === 0) {
     const search = await callTool(pack, {
       toolId: "catalog.search",
-      rawInput: { query: "", limit: MAX_LISTINGS },
+      rawInput: { limit: MAX_LISTINGS },
       deps: input.deps,
       role: input.role,
       limits: input.limits,
@@ -408,6 +428,8 @@ async function buildGapReview(
     for (const hit of hits.items)
       pack.sources.push(catalogSource(input.now, hit.listingId, hit.title));
     targets = hits.items.map((hit) => hit.listingId);
+    report.listings = rows;
+    report.scope.truncated = hits.truncated;
     if (hits.truncated) pushLimitation(pack, "studio.limit.results_truncated");
   }
 
@@ -421,6 +443,13 @@ async function buildGapReview(
     });
     if (detail.state !== "done") {
       pushLimitation(pack, "studio.limit.listing_unavailable", { listingId });
+      rows.push({
+        listingId,
+        title: null,
+        status: null,
+        activeVersion: null,
+        gaps: null,
+      });
       continue;
     }
     const listing = detail.output as {
@@ -429,6 +458,13 @@ async function buildGapReview(
       title: string;
       activeVersion: { versionId: string; sequence: number } | null;
     };
+    rows.push({
+      listingId: listing.listingId,
+      title: listing.title.slice(0, 300),
+      status: listing.status,
+      activeVersion: listing.activeVersion,
+      gaps: null,
+    });
     markCoverage(pack, "listing", "present");
     pushSource(
       pack,
@@ -476,6 +512,10 @@ async function buildGapReview(
         gaps: Array<{ listingId: string; code: string; blocking: boolean }>;
       };
       markCoverage(pack, "quality", "present");
+      for (const row of rows)
+        row.gaps = output.gaps
+          .filter((gap) => gap.listingId === row.listingId)
+          .map((gap) => ({ code: gap.code, blocking: gap.blocking }));
       for (const gap of output.gaps)
         pushCheck(pack, {
           key: "studio.check.content_gap",
@@ -491,6 +531,11 @@ async function buildGapReview(
 
   try {
     const quality = await input.deps.getQuality();
+    report.quality = {
+      assessmentVersion: quality.assessmentVersion,
+      projectionState: quality.projectionState,
+      asOf: quality.asOf,
+    };
     markCoverage(pack, "quality", "present");
     pushSource(
       pack,
@@ -713,6 +758,8 @@ async function buildCopyProposal(
   input: BuildEvidenceInput,
   pack: EvidencePack,
 ): Promise<void> {
+  let observedGaps: Array<{ code: string; blocking: boolean }> | null = null;
+  let observedAssessmentVersion: string | null = null;
   const listingId = input.listingId;
   if (!listingId) return;
   const detail = await callTool(pack, {
@@ -805,6 +852,9 @@ async function buildCopyProposal(
     const output = gaps.output as {
       gaps: Array<{ listingId: string; code: string; blocking: boolean }>;
     };
+    observedGaps = output.gaps
+      .filter((gap) => gap.listingId === listingId)
+      .map((gap) => ({ code: gap.code, blocking: gap.blocking }));
     for (const gap of output.gaps)
       pushCheck(pack, {
         key: "studio.check.copy_gap",
@@ -819,6 +869,7 @@ async function buildCopyProposal(
 
   try {
     const quality = await input.deps.getQuality();
+    observedAssessmentVersion = quality.assessmentVersion;
     markCoverage(pack, "quality", "present");
     pushSource(
       pack,
@@ -839,6 +890,10 @@ async function buildCopyProposal(
 
   // Immutable proposal target for the turn service; never model-authored.
   pack.context = {
+    copyQuality:
+      observedGaps !== null && observedAssessmentVersion
+        ? { assessmentVersion: observedAssessmentVersion, gaps: observedGaps }
+        : null,
     copyProposal: {
       listingId: copy.listingId,
       activeVersionId: copy.activeVersionId,
