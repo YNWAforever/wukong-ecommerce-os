@@ -622,7 +622,7 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         },
         getWithMessages: async (
           id: string,
-          input: { messageLimit?: number } = {},
+          input: { messageLimit?: number; latest?: boolean } = {},
         ) => {
           state.writes.push("threads.getWithMessages");
           const thread = state.threads.find(
@@ -633,9 +633,13 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           const limit = Math.min(Math.max(input.messageLimit ?? 100, 1), 200);
           const messages = state.messages
             .filter((message) => message.threadId === id)
-            .sort((left, right) => left.sequence - right.sequence)
-            .slice(0, limit);
-          return { thread, messages };
+            .sort((left, right) => left.sequence - right.sequence);
+          return {
+            thread,
+            messages: input.latest
+              ? messages.slice(-limit)
+              : messages.slice(0, limit),
+          };
         },
         touchLastMessage: async (id: string, at?: Date) => {
           const thread = state.threads.find((entry) => entry.id === id);
@@ -958,6 +962,7 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
             q?: string;
             kind?: string;
             status?: string;
+            runId?: string;
           } = {},
         ) => {
           state.writes.push("outputs.list");
@@ -971,6 +976,7 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
               (output) =>
                 (search.length === 0 ||
                   output.title.toLocaleLowerCase().includes(search)) &&
+                (input.runId === undefined || output.runId === input.runId) &&
                 (input.kind === undefined || output.kind === input.kind) &&
                 (input.status === undefined || output.status === input.status),
             )

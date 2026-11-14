@@ -6,6 +6,8 @@ import { useCallback, useRef, useState } from "react";
 import { getSkill } from "@wukong/core";
 
 import type { Locale } from "../lib/locale";
+import type { GuidedAction } from "../lib/studio/guided-contracts";
+import { guidedCopy } from "../lib/studio/guided-copy";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import { useStudioAttachments } from "../lib/studio/attachments";
 import type { StudioOverviewResult } from "../lib/studio/contracts";
@@ -146,6 +148,8 @@ export const STUDIO_TEMPLATES: readonly StudioTemplate[] =
   }));
 
 type PendingHomeAttempt = {
+  locale: Locale;
+  guidedAction: GuidedAction | null;
   text: string;
   skillKey: string | null;
   clientMessageId: string;
@@ -159,19 +163,30 @@ export type StudioHomeProps = {
   /** `null` when the deterministic overview read failed closed. */
   readonly overview?: StudioOverviewResult | null;
   readonly canCreateThread?: boolean;
+  readonly initialGuidedAction?: Extract<GuidedAction, { kind: "audit" }>;
+  readonly guideUnavailable?: boolean;
 };
 
 export function StudioHome({
   locale,
   overview = null,
   canCreateThread = false,
+  initialGuidedAction,
+  guideUnavailable = false,
 }: StudioHomeProps) {
   const router = useRouter();
   const session = useStudioSession();
   const attachments = useStudioAttachments();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [draft, setDraft] = useState("");
-  const [skillKey, setSkillKey] = useState<string | null>(null);
+  const [draft, setDraft] = useState(
+    initialGuidedAction ? guidedCopy(locale, "auditRequest") : "",
+  );
+  const [guidedAction, setGuidedAction] = useState<GuidedAction | null>(
+    initialGuidedAction ?? null,
+  );
+  const [skillKey, setSkillKey] = useState<string | null>(
+    initialGuidedAction ? "merchant.audit" : null,
+  );
   const [pendingClientMessageId, setPendingClientMessageId] = useState<
     string | null
   >(null);
@@ -181,7 +196,15 @@ export function StudioHome({
 
   const fillComposer = useCallback(
     (template: StudioTemplate) => {
-      if (!template.starterKey) return;
+      if (
+        !template.starterKey ||
+        draft.length > 0 ||
+        pendingAttempt ||
+        session.inFlight ||
+        attachments.items.length > 0
+      )
+        return;
+      setGuidedAction(null);
       setDraft(studioCopy(locale, template.starterKey));
       setSkillKey(template.id);
       setPendingClientMessageId(null);
@@ -189,7 +212,7 @@ export function StudioHome({
       session.clearError();
       textareaRef.current?.focus();
     },
-    [locale, session],
+    [locale, session, draft, pendingAttempt, attachments.items.length],
   );
 
   const runSend = useCallback(
@@ -198,7 +221,8 @@ export function StudioHome({
         threadId: attempt.threadId,
         text: attempt.text,
         skillKey: attempt.skillKey,
-        locale,
+        locale: attempt.locale,
+        ...(attempt.guidedAction ? { guidedAction: attempt.guidedAction } : {}),
         clientMessageId: attempt.clientMessageId,
         attachmentAssetIds: attempt.attachmentAssetIds,
       });
@@ -232,6 +256,8 @@ export function StudioHome({
       pendingClientMessageId ?? createStudioClientMessageId();
     setPendingClientMessageId(clientMessageId);
     const attempt: PendingHomeAttempt = {
+      locale,
+      guidedAction,
       text,
       skillKey,
       clientMessageId,
@@ -243,6 +269,8 @@ export function StudioHome({
   }, [
     attachments,
     canCreateThread,
+    locale,
+    guidedAction,
     draft,
     pendingAttempt,
     pendingClientMessageId,
@@ -274,6 +302,25 @@ export function StudioHome({
         {studioCopy(locale, "studio.home.staticNotice")}
       </p>
 
+      {guideUnavailable ? (
+        <p role="status" className={styles["studio-notice"]}>
+          {guidedCopy(locale, "initialStale")}
+        </p>
+      ) : null}
+      {guidedAction?.kind === "audit" ? (
+        <section
+          data-guided-entry="true"
+          className={styles["studio-report"]}
+          aria-label={guidedCopy(locale, "title")}
+        >
+          <h2>{guidedCopy(locale, "title")}</h2>
+          <a href={`/listings/${guidedAction.listingId}`}>
+            {guidedCopy(locale, "selected")}
+          </a>
+          <p>{guidedCopy(locale, "scope")}</p>
+          <p>{guidedCopy(locale, "sendHint")}</p>
+        </section>
+      ) : null}
       <section
         className={styles["studio-section"]}
         aria-label={studioCopy(locale, "studio.home.composerTitle")}
@@ -292,12 +339,26 @@ export function StudioHome({
           error={
             pendingAttempt !== null ? (session.error?.copyKey ?? null) : null
           }
-          sendDisabled={!canCreateThread}
-          sendDisabledReason="studio.composer.viewerNote"
+          readOnly={Boolean(pendingAttempt?.guidedAction)}
+          sendDisabled={
+            !canCreateThread || Boolean(pendingAttempt?.guidedAction)
+          }
+          sendDisabledReason={
+            canCreateThread
+              ? "studio.composer.retry"
+              : "studio.composer.viewerNote"
+          }
           skillKey={skillKey}
-          onClearSkill={() => setSkillKey(null)}
+          {...(!pendingAttempt?.guidedAction
+            ? {
+                onClearSkill: () => {
+                  setSkillKey(null);
+                  setGuidedAction(null);
+                },
+              }
+            : {})}
           attachments={attachments.items}
-          onAttachFiles={attachments.addFiles}
+          {...(!guidedAction ? { onAttachFiles: attachments.addFiles } : {})}
           onRemoveAttachment={attachments.removeAttachment}
           onRetryAttachment={attachments.retryAttachment}
           attachmentNotice={attachments.notice}

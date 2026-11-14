@@ -285,6 +285,18 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:49300/signin > /dev/null
           pnpm exec playwright test tests/e2e/studio-browser-acceptance.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
+          # The second fixture process admits only the explicitly guarded,
+          # loopback-only zero-provider Studio model for this seeded workspace.
+          kill "$studio_server_pid"
+          wait "$studio_server_pid" || true
+          CONVERSATION_STUDIO_AI_ENABLED=true PLAYWRIGHT_E2E=1 STUDIO_GUIDED_ACCEPTANCE=1 WUKONG_STUDIO_ACCEPTANCE_FAKE_MODEL=1 node apps/web/node_modules/next/dist/bin/next start apps/web --hostname 127.0.0.1 --port 49300 > node_modules/.studio-evidence/guided-server.log 2>&1 &
+          studio_server_pid=$!
+          for studio_attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:49300/signin > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:49300/signin > /dev/null
+          STUDIO_GUIDED_ACCEPTANCE=1 pnpm exec playwright test tests/e2e/studio-guided-acceptance.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
       - name: Studio activation preflight (read-only)
         # The same command operators run before activation. It must report
         # `outcome:"ready"` against the seeded acceptance database: schema from
