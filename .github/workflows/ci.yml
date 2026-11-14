@@ -119,6 +119,7 @@ jobs:
         run: |
           pnpm typecheck
           node apps/web/node_modules/typescript/bin/tsc --noEmit --strict --noUncheckedIndexedAccess --skipLibCheck --moduleResolution bundler --module esnext --target ES2022 --types node --esModuleInterop tests/e2e/studio-guided-acceptance.spec.ts
+          node apps/web/node_modules/typescript/bin/tsc --noEmit --strict --noUncheckedIndexedAccess --skipLibCheck --moduleResolution bundler --module esnext --target ES2022 --types node --esModuleInterop --baseUrl packages/db/node_modules tests/e2e/website-import.spec.ts
       - name: Unit tests
         run: pnpm test
       - name: Opak audit-fixture adapter (zero provider)
@@ -403,6 +404,16 @@ jobs:
           pkill -f "tests/e2e/real-stack-server.mjs" || true
           pkill -f "next start --hostname 127.0.0.1 --port 4921" || true
           pnpm exec playwright test --project=chromium --workers=1 --reporter=line --retries=0
+      - name: Upload website recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-recovery-evidence
+          include-hidden-files: true
+          path: |
+            test-results/**/website-dispatch-recovered-390-zh.png
+            node_modules/.real-stack-evidence/*.log
+          if-no-files-found: ignore
       - name: Verify the completed Opak audit by draft
         run: |
           DRAFT_ID="$(cat test-results/real-stack-draft-id.txt)"

@@ -84,6 +84,143 @@ describe("durable website catalog", () => {
       await run((r) => r.claimStep({ scanId: a.id, revision: 0, now }), other),
     ).toBeNull();
   });
+  it("claims only one concurrent dispatch and preserves scan identity and deadline", async () => {
+    const scan = await create();
+    const input = {
+      scanId: scan.id,
+      revision: scan.revision,
+      expectedAttempts: 0,
+      actorId: ws + "op",
+      now,
+    };
+    const claims = await Promise.all([
+      run((r) => r.claimDispatch(input)),
+      run((r) => r.claimDispatch(input)),
+    ]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    const claimed = claims.find(Boolean)!;
+    expect(claimed).toMatchObject({
+      id: scan.id,
+      revision: scan.revision,
+      requestedUrl: scan.requestedUrl,
+      requestKey: scan.requestKey,
+      deadlineAt: scan.deadlineAt,
+      checkpoint: scan.checkpoint,
+      dispatchAttempts: 1,
+      dispatchStatus: "pending",
+    });
+    expect(await run((r) => r.claimDispatch(input))).toBeNull();
+    expect(
+      await run((r) =>
+        r.recordDispatch({
+          scanId: scan.id,
+          revision: scan.revision,
+          expectedAttempts: 1,
+          actorId: ws + "op",
+          status: "sent",
+          now: at(1),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      await run((r) =>
+        r.recordDispatch({
+          scanId: scan.id,
+          revision: scan.revision,
+          expectedAttempts: 1,
+          actorId: ws + "op",
+          status: "failed",
+          now: at(2),
+        }),
+      ),
+    ).toBe(false);
+    expect(await run((r) => r.getScan(scan.id))).toMatchObject({
+      dispatchStatus: "sent",
+      dispatchAttempts: 1,
+    });
+  });
+  it("fences a lost dispatch completion when a stale pending attempt is recovered", async () => {
+    const scan = await create();
+    const claim = {
+      scanId: scan.id,
+      revision: scan.revision,
+      actorId: ws + "op",
+    };
+    expect(
+      await run((r) => r.claimDispatch({ ...claim, expectedAttempts: 0, now })),
+    ).not.toBeNull();
+    expect(
+      await run((r) =>
+        r.claimDispatch({ ...claim, expectedAttempts: 1, now: at(59) }),
+      ),
+    ).toBeNull();
+    expect(
+      await run((r) =>
+        r.claimDispatch({ ...claim, expectedAttempts: 1, now: at(60) }),
+      ),
+    ).toMatchObject({
+      id: scan.id,
+      dispatchAttempts: 2,
+      deadlineAt: scan.deadlineAt,
+    });
+    expect(
+      await run((r) =>
+        r.recordDispatch({
+          scanId: scan.id,
+          revision: scan.revision,
+          expectedAttempts: 1,
+          status: "sent",
+          now: at(61),
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      await run((r) =>
+        r.recordDispatch({
+          scanId: scan.id,
+          revision: scan.revision,
+          expectedAttempts: 2,
+          status: "failed",
+          now: at(61),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      await run((r) =>
+        r.claimDispatch({ ...claim, expectedAttempts: 2, now: at(62) }),
+      ),
+    ).toMatchObject({ dispatchAttempts: 3 });
+  });
+  it("denies dispatch claims for stale revisions, active document leases, expiry and viewers", async () => {
+    const scan = await create();
+    const claim = {
+      scanId: scan.id,
+      revision: scan.revision,
+      expectedAttempts: 0,
+      actorId: ws + "op",
+      now,
+    };
+    expect(
+      await run((r) =>
+        r.claimDispatch({ ...claim, revision: scan.revision + 1 }),
+      ),
+    ).toBeNull();
+    await expect(
+      run((r) => r.claimDispatch({ ...claim, actorId: ws + "view" })),
+    ).rejects.toThrow("requires operator");
+    expect(
+      await run((r) => r.claimDispatch({ ...claim, now: at(900) })),
+    ).toBeNull();
+    expect(
+      await run((r) =>
+        r.claimStep({ scanId: scan.id, revision: scan.revision, now }),
+      ),
+    ).not.toBeNull();
+    expect(
+      await run((r) => r.claimDispatch({ ...claim, now: at(1) })),
+    ).toBeNull();
+    expect(await run((r) => r.getScan(scan.id), other)).toBeNull();
+  });
   it("grants only one concurrent lease and only one concurrent document fetch", async () => {
     const scan = await create();
     const claims = await Promise.all(

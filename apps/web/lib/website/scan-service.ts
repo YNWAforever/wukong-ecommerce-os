@@ -4,6 +4,7 @@ import {
   requireSessionContext,
 } from "../route-support";
 import { requireWorkspaceRole } from "../session-context";
+import { websiteDispatchRecoveryState } from "@wukong/core";
 import type { SessionContextPort } from "../session-context-port";
 import {
   websiteStepResultSchema,
@@ -411,9 +412,14 @@ export async function readWebsiteBody(
     throw new ApiError(400, "invalid_request", "Request body is invalid.");
   }
 }
-export function publicWebsiteScan(scan: WebsiteScan) {
+export function publicWebsiteScan(scan: WebsiteScan, now = new Date()) {
   return {
     id: scan.id,
+    dispatch: {
+      recoveryState: websiteDispatchRecoveryState(scan, now),
+      revision: scan.revision,
+      attempts: scan.dispatchAttempts,
+    },
     state: scan.state,
     sourceUrl: scan.requestedUrl,
     capturedAt: scan.updatedAt.toISOString(),

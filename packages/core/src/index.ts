@@ -96,6 +96,14 @@ export type {
   RobotsPolicy,
 } from "./website-catalog.js";
 
+export {
+  websiteDispatchRecoveryState,
+  WEBSITE_DISPATCH_RECOVERY_DELAY_MS,
+} from "./website-dispatch.js";
+export type {
+  WebsiteDispatchRecoveryState,
+  WebsiteDispatchSnapshot,
+} from "./website-dispatch.js";
 export { usesProductShotWorkflow } from "./product-shot.js";
 export * from "./working-listing.js";
 export * from "./maintenance-content-fields.js";

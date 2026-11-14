@@ -1,12 +1,14 @@
 # Next development roadmap — from deployed Studio to a commerce orchestration OS
 
-Status: updated 2026-11-14 (Asia/Singapore). The Opak Studio pilot is live. A1–A5, attachment upload,
+Status: updated 2026-11-15 (Asia/Singapore). The Opak Studio pilot is live. A1–A5, attachment upload,
 pinned listing handoff, hosted-MCP hardening, run/cost visibility, product-shot recovery and catalog
 evidence work have shipped; external MCP activation and SHOPLINE writes remain separately gated.
-The approved current milestone is **workspace audit → selected-listing gap review → copy proposal
-→ reviewer handoff**, using explicit Send and existing Studio records. Exact-version review integrity
-shipped in PR #223 and structured context/durable gap reports in PR #224. The guided UI and its
-authenticated fake-model acceptance are the final change in this milestone.
+The **workspace audit → selected-listing gap review → copy proposal → reviewer handoff** milestone
+shipped in PRs #223–#225, with explicit Send and existing Studio records. Exact-version integrity,
+structured context/durable gap reports, guided UI and authenticated fake-model acceptance are live.
+The operator selected **website-scan retry recovery** as the next development scope: same-scan
+explicit delivery recovery, retained evidence and bounded diagnostics, without provider calls or
+connector activation.
 
 The dated sections below preserve the original sequencing and release history. Their historical
 "not built"/"flags off" statements are superseded by the latest dated status entries. Runtime policy
@@ -471,7 +473,7 @@ required CI before merging and receive commit-specific production and post-merge
 
 ### Guided listing-improvement milestone (approved 2026-11-14)
 
-The [approved three-PR plan](2026-11-14-guided-listing-improvement.md) is the current delivery cycle.
+The [approved three-PR plan](2026-11-14-guided-listing-improvement.md) is the completed delivery cycle.
 PR #223 binds review status/readback to exact revision and digest and makes listing handoff links
 immutable. PR #224 binds guided transitions to one selected listing/version and exact parent output,
 persists deterministic gap reports and checks selected-quality freshness before copy generation and
@@ -487,5 +489,22 @@ The new authenticated browser scenario uses a guarded local fake adapter for the
 and verifies full flow, budget admission, mobile and bilingual rendering while keeping canonical
 listing data unchanged. Required CI and production/main verification remain the release gates.
 
+PR #225 completed this milestone at merge `2666e79e8f137f9410999140de64feaef2ddb1f2`.
+Exact-head CI `43589445749` (attempt 2) and post-merge main CI `43593449126` passed. Production
+`dpl_2g8Za4TkdcWn4Yfdkmk6z9X2Q1JT` is Ready at that merge on the production alias, with expected
+sign-in, Studio redirect and unauthenticated settings smoke results.
+
+### Website-scan dispatch recovery (approved 2026-11-15)
+
+The operator selected [website-scan retry recovery](2026-11-15-website-scan-dispatch-recovery.md)
+after the completed guided milestone. A queued replacement could report service unavailability
+while keeping the prior preview disabled and exposing no explicit delivery recovery. The candidate
+uses the existing dispatch counter/time/status for atomic, actor-audited claims and fenced completion,
+returns persisted state, and exposes same-scan delivery retry separately from a new scan. Reloads
+remain reads; active document leases and original deadlines remain authoritative. Browser coverage
+uses an isolated persisted failure and the actual authenticated recovery/Queue path. Bounded,
+sanitized fixture logs are retained for diagnosis. Local policy, API/UI, repository/RLS and existing
+consumer/sweeper checks pass; exact-head CI and production/main verification remain release gates.
+
 Scheduling, batches, assignments/notifications, new connectors and external MCP activation remain
-later decisions. No generic workflow engine or schema migration is introduced by this milestone.
+later decisions. This recovery adds no generic workflow engine or schema migration.

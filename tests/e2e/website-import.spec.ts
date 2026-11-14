@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createDatabase } from "../../packages/db/src/client.js";
 import postgres from "postgres";
 import {
   ADMIN_URL,
@@ -200,6 +201,12 @@ test("partial preview and retry retain evidence until the replacement completes"
     path: testInfo.outputPath("website-retained-retry.png"),
     fullPage: true,
   });
+  // Delivery retry preserves this replacement; the final preview/identity assertions still apply.
+  const retryDelivery = page.getByRole("button", {
+    name: "Retry delivery",
+    exact: true,
+  });
+  if (await retryDelivery.isVisible()) await retryDelivery.click();
   await expect(page.getByText(/Partial preview:/)).toBeVisible({
     timeout: 90_000,
   });
@@ -211,4 +218,121 @@ test("partial preview and retry retain evidence until the replacement completes"
     path: testInfo.outputPath("website-partial.png"),
     fullPage: true,
   });
+});
+
+test("a persisted failed website delivery resumes the same scan after reload and explicit keyboard retry", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const fixture = await prepareBulkImportFixture();
+  const database = createDatabase(RUNTIME_URL);
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    const failed = await database.forWorkspace(
+      fixture.workspaceId,
+      async (repositories) => {
+        const created = await repositories.websiteCatalog.createScan({
+          url: "https://website.synthetic.example/partial",
+          requestKey: randomUUID(),
+          requestedBy: fixture.userId,
+        });
+        // Deterministic injected enqueue failure; recovery still uses the real authenticated API and Queue.
+        await repositories.websiteCatalog.recordDispatch({
+          scanId: created.id,
+          revision: created.revision,
+          status: "failed",
+          now: new Date(),
+        });
+        return repositories.websiteCatalog.getScan(created.id);
+      },
+    );
+    expect(failed).not.toBeNull();
+    let createPosts = 0,
+      retryPosts = 0;
+    page.on("request", (request) => {
+      if (request.method() !== "POST") return;
+      const path = new URL(request.url()).pathname;
+      if (path === "/api/website-scans") createPosts++;
+      if (path === `/api/website-scans/${failed!.id}/retry`) retryPosts++;
+    });
+    await signInBulkImportOperator(page, fixture, false);
+    await page.goto(`/listings/import?scan=${failed!.id}`);
+    await page
+      .getByRole("button", { name: "Reference only", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Retry delivery", exact: true }),
+    ).toBeEnabled();
+    expect(createPosts).toBe(0);
+    expect(retryPosts).toBe(0);
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Reference only", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Retry delivery", exact: true }),
+    ).toBeEnabled();
+    expect(createPosts).toBe(0);
+    expect(retryPosts).toBe(0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "繁中", exact: true }).click();
+    const retry = page.getByRole("button", { name: "重試傳送", exact: true });
+    await expect(retry).toBeEnabled();
+    const retryResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname ===
+          `/api/website-scans/${failed!.id}/retry` &&
+        response.request().method() === "POST",
+    );
+    await retry.focus();
+    await retry.press("Enter");
+    expect((await retryResponse).status()).toBe(202);
+    await expect(page.getByText(/部分預覽：/)).toBeVisible({ timeout: 90_000 });
+    expect(new URL(page.url()).searchParams.get("scan")).toBe(failed!.id);
+    expect(createPosts).toBe(0);
+    expect(retryPosts).toBe(1);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("website-dispatch-recovered-390-zh.png"),
+      fullPage: true,
+    });
+    const replay = await page.request.post(
+      `/api/website-scans/${failed!.id}/retry`,
+      {
+        data: {
+          revision: failed!.revision,
+          attempts: failed!.dispatchAttempts,
+        },
+      },
+    );
+    expect(replay.status()).toBe(409);
+    const rows =
+      await admin`select id, requested_url, deadline_at from website_scans where workspace_id=${fixture.workspaceId}`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe(failed!.id);
+    expect(rows[0]!.requested_url).toBe(failed!.requestedUrl);
+    expect(rows[0]!.deadline_at).toEqual(failed!.deadlineAt);
+    const claims =
+      await admin`select actor_id from audit_events where workspace_id=${fixture.workspaceId} and entity_id=${failed!.id} and action='website.scan_dispatch_requested' and metadata->>'revision'='0'`;
+    expect(claims).toHaveLength(1);
+    expect(claims[0]!.actor_id).toBe(fixture.userId);
+    const audit = await verifyWebsiteAudit({
+      workspaceId: fixture.workspaceId,
+      scanId: failed!.id,
+      url: RUNTIME_URL,
+    });
+    expect(audit.missingActions).toEqual([]);
+    expect(audit.accessibleForeignRecordCount).toBe(0);
+    await testInfo.attach("website-dispatch-recovery-audit", {
+      body: JSON.stringify(audit),
+      contentType: "application/json",
+    });
+  } finally {
+    await database.close();
+    await admin.end();
+  }
 });

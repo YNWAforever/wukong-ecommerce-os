@@ -7,6 +7,7 @@ import { getDatabase } from "../../../lib/intake-runtime";
 import { authSessionContext } from "../../../lib/session-context";
 import type { SessionContextPort } from "../../../lib/session-context-port";
 import { ApiError } from "../../../lib/route-support";
+import { dispatchWebsiteScan } from "../../../lib/website/scan-dispatch";
 import {
   publicWebsiteScan,
   readWebsiteBody,
@@ -64,32 +65,11 @@ export function createWebsiteScansHandler(deps: {
           );
         throw error;
       }
-      if (
-        (scan.state === "queued" || scan.state === "running") &&
-        scan.dispatchStatus !== "sent"
-      ) {
-        let status: "sent" | "failed" = "sent";
-        try {
-          await deps.enqueue({
-            kind: "website_scan",
-            workspaceId: session.workspaceId,
-            scanId: scan.id,
-            revision: scan.revision,
-          });
-        } catch {
-          status = "failed";
-        }
-        scan = { ...scan, dispatchStatus: status };
-        await database.forWorkspace(session.workspaceId, (repositories) =>
-          repositories.websiteCatalog.recordDispatch({
-            scanId: scan.id,
-            revision: scan.revision,
-            status,
-            now: deps.now?.() ?? new Date(),
-          }),
-        );
-      }
-      return Response.json(publicWebsiteScan(scan), { status: 202 });
+      if (scan.state === "queued" || scan.state === "running")
+        scan = (await dispatchWebsiteScan(deps, scan, session)).scan;
+      return Response.json(publicWebsiteScan(scan, deps.now?.()), {
+        status: 202,
+      });
     });
 }
 export const POST = createWebsiteScansHandler({

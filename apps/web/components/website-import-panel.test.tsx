@@ -33,8 +33,16 @@ const scan = (state = "ready", id = "one") => ({
 });
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status });
-async function mount(fetcher: ReturnType<typeof vi.fn>, canScan = true) {
-  window.history.replaceState(null, "", "/listings/import");
+async function mount(
+  fetcher: ReturnType<typeof vi.fn>,
+  canScan = true,
+  restoreId?: string,
+) {
+  window.history.replaceState(
+    null,
+    "",
+    "/listings/import" + (restoreId ? `?scan=${restoreId}` : ""),
+  );
   vi.stubGlobal("fetch", fetcher);
   container = document.createElement("div");
   document.body.append(container);
@@ -66,6 +74,142 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   language.value = "en";
+});
+it("retries delivery of the same replacement scan and keeps the previous preview disabled", async () => {
+  vi.useFakeTimers();
+  const failed = {
+    ...scan("queued", "replacement"),
+    dispatch: { recoveryState: "retryable", revision: 0, attempts: 1 },
+    warnings: ["website_scan_unavailable"],
+  };
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(json(scan("partial", "prior")))
+    .mockResolvedValueOnce(json(failed))
+    .mockResolvedValueOnce(
+      json({
+        ...failed,
+        dispatch: { recoveryState: "waiting", revision: 0, attempts: 2 },
+      }),
+    )
+    .mockResolvedValueOnce(json(scan("partial", "replacement")));
+  await mount(fetcher);
+  await input("https://store.example/");
+  await click("Preview products");
+  await click("Retry scan");
+  expect(container.textContent).toContain("Previous preview");
+  expect(
+    container.querySelector<HTMLInputElement>("input[type=checkbox]")!.disabled,
+  ).toBe(true);
+  await click("Retry delivery");
+  expect(fetcher.mock.calls[2]![0]).toBe(
+    "/api/website-scans/replacement/retry",
+  );
+  expect(JSON.parse(fetcher.mock.calls[2]![1].body)).toEqual({
+    revision: 0,
+    attempts: 1,
+  });
+  expect(window.location.search).toContain("scan=replacement");
+  expect(container.textContent).toContain("Previous preview");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1500);
+  });
+  expect(container.textContent).not.toContain("Previous preview");
+  expect(
+    container.querySelector<HTMLInputElement>("input[type=checkbox]")!.checked,
+  ).toBe(false);
+  expect(
+    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(3);
+});
+it("refreshes recorded state after a lost retry response before another delivery is available", async () => {
+  vi.useFakeTimers();
+  let resolveRead!: (response: Response) => void;
+  const queued = {
+    ...scan("queued"),
+    dispatch: { recoveryState: "retryable", revision: 0, attempts: 1 },
+  };
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(json(queued))
+    .mockRejectedValueOnce(new Error("Synthetic lost response"))
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+  await mount(fetcher);
+  await input("https://store.example/");
+  await click("Preview products");
+  await click("Retry delivery");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(container.textContent).toContain("Checking the recorded scan state");
+  const delivery = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === "Retry delivery",
+  )!;
+  expect(delivery.disabled).toBe(true);
+  await act(async () => {
+    delivery.click();
+  });
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  expect(fetcher.mock.calls[2]![1].method).toBeUndefined();
+  await act(async () =>
+    resolveRead(
+      json({
+        ...queued,
+        dispatch: { recoveryState: "waiting", revision: 0, attempts: 2 },
+      }),
+    ),
+  );
+  expect(container.textContent).not.toContain(
+    "Checking the recorded scan state",
+  );
+  expect(
+    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(2);
+});
+it("restores a retryable scan using GET only, including bilingual recovery controls", async () => {
+  vi.useFakeTimers();
+  language.value = "zh-Hant";
+  const fetcher = vi.fn().mockResolvedValue(
+    json({
+      ...scan("queued"),
+      dispatch: { recoveryState: "retryable", revision: 0, attempts: 1 },
+    }),
+  );
+  await mount(fetcher, true, "one");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(container.textContent).toContain("重試傳送");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0]![1].method).toBeUndefined();
+});
+it("offers an explicit new scan after expiry and stops polling the expired identity", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.fn().mockResolvedValue(
+    json({
+      ...scan("queued"),
+      dispatch: { recoveryState: "expired", revision: 0, attempts: 1 },
+    }),
+  );
+  await mount(fetcher, true, "one");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(container.textContent).toContain("This scan expired");
+  expect(
+    Array.from(container.querySelectorAll("button")).some(
+      (button) => button.textContent === "Start new scan",
+    ),
+  ).toBe(true);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10_000);
+  });
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it("previews and saves without connection or credentials, escaping descriptions", async () => {
   const fetcher = vi

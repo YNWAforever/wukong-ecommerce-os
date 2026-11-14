@@ -19,23 +19,52 @@ export const fixtureScan = () => ({
   updatedAt: new Date(),
   nextEligibleAt: new Date(),
   dispatchStatus: "pending",
+  dispatchAttempts: 0,
+  dispatchAt: null as Date | null,
+  leaseExpiresAt: null as Date | null,
+  deadlineAt: new Date(Date.now() + 15 * 60_000),
   checkpoint: {
     preview: { products: [], warnings: [] },
     candidateUrls: [],
     visitedUrls: [],
   },
 });
+function dispatchRepository(
+  scan: ReturnType<typeof fixtureScan>,
+  createScan: () => Promise<ReturnType<typeof fixtureScan>>,
+  recordDispatch: (input: unknown) => Promise<unknown>,
+) {
+  return {
+    websiteCatalog: {
+      createScan,
+      getScan: async () => scan,
+      claimDispatch: async (input: { expectedAttempts: number; now: Date }) => {
+        if (scan.dispatchAttempts !== input.expectedAttempts) return null;
+        scan.dispatchAttempts++;
+        scan.dispatchAt = input.now;
+        scan.dispatchStatus = "pending";
+        return { ...scan };
+      },
+      recordDispatch: async (input: { status: string }) => {
+        await recordDispatch(input);
+        scan.dispatchStatus = input.status;
+        return true;
+      },
+    },
+  };
+}
 describe("start website scan", () => {
   it.each(["operator", "reviewer", "admin", "owner"])(
     "allows %s without a connection or encryption key",
     async (role) => {
-      const createScan = vi.fn(async () => fixtureScan());
+      const scan = fixtureScan();
+      const createScan = vi.fn(async () => scan);
       const recordDispatch = vi.fn();
       const enqueue = vi.fn(async () => ({ accepted: true }));
       const database = {
         forWorkspace: async (ws: string, work: any) => {
           expect(ws).toBe("session-workspace");
-          return work({ websiteCatalog: { createScan, recordDispatch } });
+          return work(dispatchRepository(scan, createScan, recordDispatch));
         },
       };
       const handler = createWebsiteScansHandler({
@@ -59,7 +88,15 @@ describe("start website scan", () => {
         }),
       );
       expect(enqueue).toHaveBeenCalledOnce();
-      expect(JSON.stringify(await result.json())).not.toContain("revision");
+      const projected = await result.json();
+      expect(projected.dispatch).toMatchObject({ revision: 0, attempts: 1 });
+      for (const privateField of [
+        "workspaceId",
+        "requestKey",
+        "leaseToken",
+        "checkpoint",
+      ])
+        expect(projected).not.toHaveProperty(privateField);
     },
   );
   it.each([null, "viewer"])(
@@ -106,7 +143,8 @@ describe("start website scan", () => {
   });
   it("retains durable scan identity when initial enqueue fails", async () => {
     const recordDispatch = vi.fn();
-    const createScan = vi.fn(async () => fixtureScan());
+    const scan = fixtureScan();
+    const createScan = vi.fn(async () => scan);
     const enqueue = vi.fn(async () => {
       throw new Error("secret diagnostic");
     });
@@ -121,7 +159,7 @@ describe("start website scan", () => {
       getDatabase: () =>
         ({
           forWorkspace: async (_ws: string, work: any) =>
-            work({ websiteCatalog: { createScan, recordDispatch } }),
+            work(dispatchRepository(scan, createScan, recordDispatch)),
         }) as any,
       enqueue,
     });
@@ -139,6 +177,7 @@ it("keeps framework-dispatched unsupported HTTP methods no-store", async () => {
     await import("./route"),
     await import("./[id]/route"),
     await import("./[id]/save/route"),
+    await import("./[id]/retry/route"),
   ];
   for (const [index, module] of modules.entries())
     for (const method of [
@@ -161,7 +200,8 @@ it("keeps framework-dispatched unsupported HTTP methods no-store", async () => {
 
 it("accepts a canonical URL longer than 2048 characters within the creation body bound", async () => {
   const url = "https://store.example/products/" + "a".repeat(3000);
-  const createScan = vi.fn(async () => fixtureScan());
+  const scan = fixtureScan();
+  const createScan = vi.fn(async () => scan);
   const handler = createWebsiteScansHandler({
     session: {
       resolve: async () => ({
@@ -173,7 +213,7 @@ it("accepts a canonical URL longer than 2048 characters within the creation body
     getDatabase: () =>
       ({
         forWorkspace: async (_ws: string, work: any) =>
-          work({ websiteCatalog: { createScan, recordDispatch: vi.fn() } }),
+          work(dispatchRepository(scan, createScan, vi.fn())),
       }) as any,
     enqueue: vi.fn(),
   });
