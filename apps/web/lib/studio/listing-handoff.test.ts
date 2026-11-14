@@ -154,6 +154,23 @@ describe("copyProposalHandoffFromBundle", () => {
   };
   const currentListingVersion = { versionId: "version-1", sequence: 7 };
 
+  it.each(["stale", "unavailable"] as const)(
+    "honors %s server freshness even when the listing version matches",
+    (freshness) => {
+      const handoff = copyProposalHandoffFromBundle({
+        listingId: LISTING_ID,
+        bundle: {
+          ...pinnedBundle,
+          output: { ...pinnedBundle.output, freshness },
+        },
+        pin: { revision: 3, digest: latestDigest },
+        currentListingVersion,
+      });
+      expect(handoff?.state).toBe(freshness);
+      if (freshness === "unavailable") expect(handoff?.fields).toEqual([]);
+    },
+  );
+
   it("resolves an exact current version and detects listing changes", () => {
     const input = {
       listingId: LISTING_ID,

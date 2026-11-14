@@ -41,6 +41,7 @@ export function copyProposalHandoffFromBundle(input: {
       title: string;
       currentVersion?: number;
       threadId?: string | null;
+      freshness?: "current" | "stale" | "unavailable" | "not_applicable";
     };
     versions: ReadonlyArray<{
       revision: number;
@@ -76,6 +77,13 @@ export function copyProposalHandoffFromBundle(input: {
         requested.payload,
         input.currentListingVersion ?? null,
       );
+    if (
+      state === "current" &&
+      bundle.output.freshness &&
+      bundle.output.freshness !== "current" &&
+      bundle.output.freshness !== "not_applicable"
+    )
+      state = bundle.output.freshness;
   }
   return {
     outputId: bundle.output.outputId,

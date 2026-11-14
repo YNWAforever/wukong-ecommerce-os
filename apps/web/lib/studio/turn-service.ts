@@ -59,6 +59,20 @@ import {
 import { parseCopyProposalPayload } from "./copy-proposal";
 import { outputDigestMatches, proposalFreshness } from "./output-review";
 import {
+  GUIDED_REVIEW_VERSION,
+  GUIDED_SKILLS,
+  guidedActionSchema,
+  type GuidedScope,
+} from "./guided-contracts";
+import {
+  prepareGuidedReview,
+  guidedScopeForRun,
+  qualityFromGapReport,
+  guidedFreshness,
+  guidedQualityFingerprint,
+  type PreparedGuidedReview,
+} from "./guided-service";
+import {
   STUDIO_METRICS_WINDOW_DAYS,
   STUDIO_PAGE_SIZE,
   studioOutputListQuerySchema,
@@ -78,6 +92,7 @@ import {
   turnMetricEvent,
 } from "./observability";
 import {
+  canonicalJson,
   createCopyProposalOutput,
   createFindingOutput,
   createReportOutput,
@@ -96,7 +111,10 @@ import {
   type SupplierIntelContext,
 } from "./supplier-intel";
 import { buildStudioReadDeps } from "./read-deps";
-import { merchantAuditPayloadSchema } from "./report-payload";
+import {
+  merchantAuditPayloadSchema,
+  gapReportPayloadSchema,
+} from "./report-payload";
 import type { ListingCopySnapshot } from "./tools";
 import {
   createStudioTurnLimits,
@@ -173,6 +191,7 @@ type PreparedTurn =
       skill: SkillDefinition;
       run: StudioRun;
       operatorMessage: StudioMessage;
+      guided: PreparedGuidedReview | null;
     };
 
 function asIso(value: Date | null): string | null {
@@ -773,6 +792,7 @@ export function createStudioService(deps: StudioServiceDeps) {
     body: SendMessageBody;
     now: Date;
     limits: StudioTurnLimits;
+    guidedScope?: GuidedScope;
   }): Promise<CopyProposalOutcome> {
     const none: CopyProposalOutcome = {
       output: null,
@@ -930,6 +950,7 @@ export function createStudioService(deps: StudioServiceDeps) {
           threadId: input.threadId,
           runId: input.run.id,
           title: `Copy proposal · ${context.currentCopy.title.en || context.currentCopy.title["zh-Hant"]}`,
+          ...(input.guidedScope ? { guidedScope: input.guidedScope } : {}),
           payload,
           asOf: input.now,
         },
@@ -1143,8 +1164,12 @@ export function createStudioService(deps: StudioServiceDeps) {
     now: Date;
     limits: StudioTurnLimits;
     startedAt: number;
+    guided: PreparedGuidedReview | null;
     recordUsage: (usage: AIUsage, settledUsd: string | null) => void;
   }): Promise<StudioSendResult> {
+    const guidedScope = input.guided
+      ? guidedScopeForRun(input.guided, input.run.id)
+      : null;
     const packResult = await database().forWorkspace(
       input.workspaceId,
       (repos) =>
@@ -1165,11 +1190,15 @@ export function createStudioService(deps: StudioServiceDeps) {
               return input.body.text;
             return null;
           })(),
-          listingId: input.skill.inputs.some(
-            (field) => field.name === "listingId",
-          )
-            ? parseListingId(input.body.text)
-            : null,
+          listingId:
+            input.guided?.kind === "copy_proposal"
+              ? input.guided.listing.listingId
+              : input.skill.inputs.some((field) => field.name === "listingId")
+                ? parseListingId(input.body.text)
+                : null,
+          ...(input.guided?.kind === "gap_review"
+            ? { listingIds: [input.guided.listing.listingId] }
+            : {}),
           ...(input.body.attachmentAssetIds &&
           input.body.attachmentAssetIds.length > 0
             ? { attachmentAssetIds: input.body.attachmentAssetIds }
@@ -1201,6 +1230,52 @@ export function createStudioService(deps: StudioServiceDeps) {
       });
       trace = [...packResult.pack.trace];
       if (input.skill.key === "listing.copy_proposal") {
+        if (guidedScope) {
+          const target = packResult.pack.context.copyProposal as
+            CopyProposalContext | undefined;
+          const quality = z
+            .strictObject({
+              assessmentVersion: z.string().min(1).max(120),
+              gaps: z
+                .array(
+                  z.strictObject({
+                    code: z.string().min(1).max(200),
+                    blocking: z.boolean(),
+                  }),
+                )
+                .max(100),
+            })
+            .safeParse(packResult.pack.context.copyQuality);
+          if (
+            !target ||
+            target.listingId !== guidedScope.listing.listingId ||
+            target.activeVersionId !== guidedScope.listing.activeVersionId ||
+            target.activeVersionSequence !==
+              guidedScope.listing.activeVersionSequence ||
+            !quality.success ||
+            !guidedScope.quality
+          )
+            throw new ApiError(
+              409,
+              "guided_source_stale",
+              "The selected listing's evidence changed. Refresh its gap review.",
+            );
+          const observed = guidedQualityFingerprint(
+            guidedScope.listing,
+            quality.data.assessmentVersion,
+            quality.data.gaps,
+          );
+          if (
+            observed.assessmentVersion !==
+              guidedScope.quality.assessmentVersion ||
+            observed.gapsDigest !== guidedScope.quality.gapsDigest
+          )
+            throw new ApiError(
+              409,
+              "guided_source_stale",
+              "The quality evidence changed. Refresh its gap review.",
+            );
+        }
         const proposal = await proposeCopyTurn({
           session: input.session,
           settings: input.settings,
@@ -1212,6 +1287,7 @@ export function createStudioService(deps: StudioServiceDeps) {
           limits: input.limits,
           body: input.body,
           now: input.now,
+          ...(guidedScope ? { guidedScope } : {}),
         });
         usage = proposal.usage;
         settledUsd = proposal.settledUsd;
@@ -1263,12 +1339,59 @@ export function createStudioService(deps: StudioServiceDeps) {
                 200,
               ),
               payload: auditPayload.data as unknown as Record<string, unknown>,
+              ...(guidedScope ? { scope: { guidedReview: guidedScope } } : {}),
               asOf: input.now,
             },
           );
           reply = turnReplySchema.parse({
             ...deterministic,
             status: "answered",
+            outputs: [
+              { outputId: created.outputId, revision: created.revision },
+            ],
+          });
+        }
+      } else if (input.skill.key === "catalog.gap_review") {
+        const raw = packResult.pack.context.gapReport;
+        const gap = gapReportPayloadSchema.safeParse({
+          ...(typeof raw === "object" && raw !== null ? raw : {}),
+          checks: packResult.pack.checks.slice(0, 50),
+          evidenceTruncated:
+            packResult.pack.checks.length > 50 ||
+            packResult.pack.limitations.length > 10,
+          coverage: Object.fromEntries(packResult.pack.coverage),
+          limitations: packResult.pack.limitations.slice(0, 10),
+        });
+        if (!gap.success) {
+          reply = turnReplySchema.parse({
+            ...deterministic,
+            status: "partial",
+          });
+        } else {
+          const scope = guidedScope
+            ? {
+                guidedReview: {
+                  ...guidedScope,
+                  quality: qualityFromGapReport(gap.data, guidedScope.listing),
+                },
+              }
+            : {};
+          const created = await createReportOutput(
+            { getDatabase: () => deps.getDatabase() },
+            {
+              workspaceId: input.workspaceId,
+              actorId: input.session.actorId,
+              threadId: input.threadId,
+              runId: input.run.id,
+              kind: "gap_report",
+              title: `Gap review · ${input.now.toISOString()}`,
+              payload: gap.data as unknown as Record<string, unknown>,
+              scope,
+              asOf: input.now,
+            },
+          );
+          reply = turnReplySchema.parse({
+            ...deterministic,
             outputs: [
               { outputId: created.outputId, revision: created.revision },
             ],
@@ -1573,6 +1696,24 @@ export function createStudioService(deps: StudioServiceDeps) {
         "operator",
       );
       if (!UUID.safeParse(threadId).success) throw studioNotFound();
+      if (body.guidedAction !== undefined) {
+        threadId = threadId.toLowerCase();
+        const guided = guidedActionSchema.safeParse(body.guidedAction);
+        if (!guided.success || (body.attachmentAssetIds?.length ?? 0) > 0)
+          throw new ApiError(
+            400,
+            "invalid_guided_action",
+            "The guided action is invalid.",
+          );
+        const skillKey = GUIDED_SKILLS[guided.data.kind];
+        if (body.skillKey && body.skillKey !== skillKey)
+          throw new ApiError(
+            400,
+            "guided_skill_mismatch",
+            "The guided action and skill must match.",
+          );
+        body = { ...body, skillKey, guidedAction: guided.data };
+      }
       const workspaceId = session.workspaceId;
       const now = clock();
       const startedAt = monotonicNow();
@@ -1619,11 +1760,42 @@ export function createStudioService(deps: StudioServiceDeps) {
           const content: Record<string, unknown> = {
             text: body.text,
             locale: body.locale,
+            ...(body.guidedAction ? { guidedAction: body.guidedAction } : {}),
             ...(body.skillKey ? { skillKey: body.skillKey } : {}),
             ...(body.attachmentAssetIds && body.attachmentAssetIds.length > 0
               ? { attachmentAssetIds: body.attachmentAssetIds }
               : {}),
           };
+          let guided: PreparedGuidedReview | null = null;
+          if (body.guidedAction) {
+            const existing = await repos.studio.messages.findByClientMessageId(
+              threadId,
+              body.clientMessageId,
+            );
+            if (existing) {
+              if (canonicalJson(existing.content) !== canonicalJson(content))
+                throw new ApiError(
+                  409,
+                  "idempotency_conflict",
+                  "This message id already belongs to another request.",
+                );
+              const run = await repos.studio.runs.findByIdempotencyKey(
+                `studio:${threadId}:${body.clientMessageId}`,
+              );
+              if (run)
+                return {
+                  replayed: true as const,
+                  thread: bundle.thread,
+                  skill,
+                  run,
+                };
+            }
+            guided = await prepareGuidedReview({
+              action: body.guidedAction,
+              threadId,
+              repos,
+            });
+          }
           const appended = await repos.studio.messages.append({
             threadId,
             role: "operator",
@@ -1631,6 +1803,16 @@ export function createStudioService(deps: StudioServiceDeps) {
             clientMessageId: body.clientMessageId,
             createdBy: session.actorId,
           });
+          if (
+            appended.replayed &&
+            (body.guidedAction || appended.message.content.guidedAction) &&
+            canonicalJson(appended.message.content) !== canonicalJson(content)
+          )
+            throw new ApiError(
+              409,
+              "idempotency_conflict",
+              "This message id already belongs to another request.",
+            );
           const created = await repos.studio.runs.create({
             threadId,
             triggerMessageId: appended.message.id,
@@ -1640,6 +1822,7 @@ export function createStudioService(deps: StudioServiceDeps) {
             promptVersions: {
               ...STUDIO_PROMPT_VERSIONS,
               skill: skill.version,
+              ...(guided ? { guidedReview: GUIDED_REVIEW_VERSION } : {}),
             },
           });
           if (created.replayed) {
@@ -1672,6 +1855,7 @@ export function createStudioService(deps: StudioServiceDeps) {
             skill,
             run: running,
             operatorMessage: appended.message,
+            guided,
           };
         },
       );
@@ -1692,6 +1876,7 @@ export function createStudioService(deps: StudioServiceDeps) {
           threadId,
           run: prepared.run,
           skill: prepared.skill,
+          guided: prepared.guided,
           body,
           now,
           limits,
@@ -2032,6 +2217,10 @@ export function createStudioService(deps: StudioServiceDeps) {
                 )
               : "unavailable";
           }
+          if (version && "guidedReview" in version.scope)
+            freshness = validDigest
+              ? await guidedFreshness(repos, version.scope.guidedReview)
+              : "unavailable";
           return { output, versions, confirmation, freshness };
         },
       );
@@ -2123,6 +2312,18 @@ export function createStudioService(deps: StudioServiceDeps) {
               "The listing changed or its version is unavailable. Refresh the proposal before sign-off.",
             );
         }
+        if (
+          action === "sign_off" &&
+          output.kind === "copy_proposal" &&
+          "guidedReview" in version.scope &&
+          (await guidedFreshness(repos, version.scope.guidedReview)) !==
+            "current"
+        )
+          throw new ApiError(
+            409,
+            "proposal_outdated",
+            "The quality evidence changed or is unavailable. Refresh gap review before sign-off.",
+          );
         const recorded =
           await repos.studio.outputs.statusConfirmation(outputId);
         if (

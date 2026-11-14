@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { Database } from "@wukong/db";
+import type { GuidedScope } from "./guided-contracts";
 
 /**
  * Versioned Studio output artifacts (plan Task 9).
@@ -66,11 +67,23 @@ export async function createCopyProposalOutput(
     runId: string;
     title: string;
     payload: CopyProposalPayload;
+    guidedScope?: GuidedScope;
     asOf: Date;
   },
 ): Promise<CreatedOutput> {
+  if (
+    input.guidedScope &&
+    (input.guidedScope.stage !== "copy_proposal" ||
+      input.guidedScope.listing.listingId !== input.payload.listingId ||
+      input.guidedScope.listing.activeVersionId !==
+        input.payload.activeVersionId ||
+      input.guidedScope.listing.activeVersionSequence !==
+        input.payload.activeVersionSequence)
+  )
+    throw new Error("guided_output_target_mismatch");
   const contentDigest = copyProposalDigest(input.payload);
   const scope = {
+    ...(input.guidedScope ? { guidedReview: input.guidedScope } : {}),
     listingId: input.payload.listingId,
     activeVersionId: input.payload.activeVersionId,
     activeVersionSequence: input.payload.activeVersionSequence,

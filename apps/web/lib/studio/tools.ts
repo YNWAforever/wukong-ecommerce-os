@@ -252,7 +252,7 @@ async function runReadTool(
       }> = [];
       for (const listingId of input.listingIds) {
         const result = await deps.getListingGaps(listingId);
-        if (!result) continue;
+        if (!result) return { state: "unavailable" };
         for (const gap of result.gaps)
           gaps.push({ listingId, code: gap.code, blocking: gap.blocking });
       }

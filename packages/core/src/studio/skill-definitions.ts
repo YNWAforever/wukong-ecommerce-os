@@ -72,7 +72,7 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
   },
   {
     key: "catalog.gap_review",
-    version: "1.0.0",
+    version: "1.1.0",
     status: "pilot",
     title: {
       "zh-Hant": "檢視阻擋核准與匯出的缺口",

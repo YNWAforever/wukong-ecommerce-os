@@ -76,3 +76,50 @@ export const merchantAuditPayloadSchema = z.strictObject({
   limitations: z.array(translatedLineSchema).max(10),
 });
 export type MerchantAuditPayload = z.infer<typeof merchantAuditPayloadSchema>;
+
+export const gapReportPayloadSchema = z.strictObject({
+  schemaVersion: z.literal("wukong-gap-report/v1"),
+  asOf: z.string().min(1).max(64),
+  scope: z.strictObject({
+    mode: z.enum(["workspace_sample", "selected"]),
+    listingIds: z.array(z.uuid()).max(20),
+    truncated: z.boolean().nullable(),
+  }),
+  listings: z
+    .array(
+      z.strictObject({
+        listingId: z.uuid(),
+        title: z.string().max(300).nullable(),
+        status: z.string().max(40).nullable(),
+        activeVersion: z
+          .strictObject({
+            versionId: z.uuid(),
+            sequence: z.number().int().min(1),
+          })
+          .nullable(),
+        gaps: z
+          .array(
+            z.strictObject({
+              code: z.string().min(1).max(200),
+              blocking: z.boolean(),
+            }),
+          )
+          .max(100)
+          .nullable(),
+      }),
+    )
+    .max(20)
+    .nullable(),
+  quality: z
+    .strictObject({
+      assessmentVersion: z.string().min(1).max(120),
+      projectionState: z.enum(["ready", "pending", "failed"]),
+      asOf: z.string().max(64).nullable(),
+    })
+    .nullable(),
+  checks: z.array(evidenceCheckSchema).max(50),
+  evidenceTruncated: z.boolean(),
+  coverage: z.record(z.string(), evidenceCoverageSchema),
+  limitations: z.array(translatedLineSchema).max(10),
+});
+export type GapReportPayload = z.infer<typeof gapReportPayloadSchema>;
