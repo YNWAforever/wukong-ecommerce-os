@@ -121,6 +121,54 @@ test("retained counts exceed a page, exact review/export destinations and Back r
   await expect(rows(page)).toHaveCount(3);
 });
 
+test("product titles follow the live locale through Workbench and Catalog", async ({
+  page,
+}) => {
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  const listingId = randomUUID(),
+    versionId = randomUUID();
+  try {
+    await admin`insert into listing_drafts(id,workspace_id,status,updated_at) values (${listingId},${fixture.workspaceId},'failed','2000-01-01')`;
+    await admin`insert into listing_versions(id,workspace_id,listing_id,sequence,content,created_by)
+      select ${versionId},${fixture.workspaceId},${listingId},1,
+        content || '{"title":{"en":"Bilingual fixture estate","zh-Hant":"雙語測試莊園"}}'::jsonb,${fixture.userId}
+      from listing_versions where workspace_id=${fixture.workspaceId} limit 1`;
+    await admin`update listing_drafts set active_version_id=${versionId} where workspace_id=${fixture.workspaceId} and id=${listingId}`;
+  } finally {
+    await admin.end();
+  }
+  await open(page);
+  await expect(
+    page.getByRole("heading", {
+      name: "Bilingual fixture estate",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByTestId("locale-toggle-zh").click();
+  await expect(
+    page.getByRole("heading", { name: "雙語測試莊園", exact: true }),
+  ).toBeVisible();
+
+  // Search still matches English while the product name is displayed in Chinese.
+  await page.goto("/catalog?q=Bilingual%20fixture%20estate");
+  const row = page.locator("tbody tr").filter({ hasText: "雙語測試莊園" });
+  await expect(row).toHaveCount(1);
+  const selected = row.getByRole("checkbox");
+  await selected.check();
+  const url = page.url();
+  await page.getByTestId("locale-toggle-en").click();
+  const english = page
+    .locator("tbody tr")
+    .filter({ hasText: "Bilingual fixture estate" });
+  await expect(english).toHaveCount(1);
+  await expect(english.getByRole("checkbox")).toBeChecked();
+  expect(page.url()).toBe(url);
+  await page.reload();
+  await expect(
+    page.locator("tbody tr").filter({ hasText: "Bilingual fixture estate" }),
+  ).toHaveCount(1);
+});
+
 test("successful synthetic workbook goes to its exact catalog source and partial scan stays a preview", async ({
   page,
 }) => {

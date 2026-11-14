@@ -10,11 +10,18 @@ import type {
 } from "../lib/catalog-contract";
 import { CatalogControlCenter } from "./catalog-control-center.js";
 import { NO_CONTENT_DIGEST } from "./bulk-export-panel.js";
+const localeState = vi.hoisted(() => ({
+  locale: "zh-Hant" as "en" | "zh-Hant",
+}));
+vi.mock("../lib/locale-context", () => ({
+  useLocale: () => localeState.locale,
+}));
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 beforeEach(() => {
+  localeState.locale = "zh-Hant";
   window.history.replaceState(null, "", "/catalog");
   sessionStorage.clear();
 });
@@ -218,6 +225,168 @@ function pageResponse(
     ...overrides,
   };
 }
+
+it("switches all bilingual Catalog row titles through pending and failed refreshes without clearing selection and page context", async () => {
+  localeState.locale = "en";
+  const listingId = "00000000-0000-4000-8000-000000000001";
+  const at = "2026-01-01T00:00:00.000Z";
+  const items: CatalogItem[] = [
+    makeItem({
+      id: "bound",
+      listingId,
+      title: "綁定酒款",
+      titles: { en: "Bound wine", "zh-Hant": "綁定酒款" },
+    }),
+    {
+      sourceType: "draft",
+      id: "draft",
+      listingId: "draft",
+      title: "草稿酒款",
+      titles: { en: "Draft wine", "zh-Hant": "草稿酒款" },
+      sku: "DRAFT",
+      listingStatus: "received",
+      openBlockingFlagCount: 0,
+      needsReview: false,
+      needsAttention: false,
+      canExport: false,
+      createdAt: at,
+      updatedAt: at,
+    },
+    {
+      sourceType: "workbook",
+      id: "workbook",
+      title: "參考酒款",
+      titles: { en: "Workbook wine", "zh-Hant": "參考酒款" },
+      sku: "WB",
+      sourceProductId: "WB-1",
+      canExport: false,
+      createdAt: at,
+      updatedAt: at,
+    },
+    {
+      sourceType: "website",
+      id: "website",
+      title: "Original website name",
+      sourceUrl: "https://synthetic.test/",
+      capturedAt: at,
+      canExport: false,
+      createdAt: at,
+      updatedAt: at,
+    },
+  ];
+  const fetcher = vi.fn(async () =>
+    Response.json(
+      pageResponse(items, {
+        page: 2,
+        selectionScope: "title-scope",
+        capabilities: {
+          canGenerateBulkUpdate: true,
+          canRecordImportResult: true,
+          canMaintainProducts: true,
+        },
+      }),
+    ),
+  );
+  const initialSearch = "page=2&q=wine";
+  const { container, root } = await mount(fetcher, initialSearch);
+  try {
+    const names = () =>
+      [...container.querySelectorAll("tbody tr")].map(
+        (row) => row.querySelector("strong")?.textContent,
+      );
+    expect(names()).toEqual([
+      "Bound wine",
+      "Draft wine",
+      "Workbook wine",
+      "Original website name",
+    ]);
+    const checkbox = container.querySelector(
+      'tbody input[type="checkbox"]',
+    ) as HTMLInputElement;
+    await act(async () => checkbox.click());
+    expect(checkbox.checked).toBe(true);
+    const reads = fetcher.mock.calls.length;
+    const query = window.location.search;
+    localeState.locale = "zh-Hant";
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch={initialSearch} />),
+    );
+    expect(names()).toEqual([
+      "綁定酒款",
+      "草稿酒款",
+      "參考酒款",
+      "Original website name",
+    ]);
+    expect(
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(window.location.search).toBe(query);
+    expect(
+      (container.querySelector('input[type="search"]') as HTMLInputElement)
+        .value,
+    ).toBe("wine");
+    expect(fetcher.mock.calls).toHaveLength(reads);
+
+    let rejectRefresh!: (cause: Error) => void;
+    fetcher.mockImplementationOnce(
+      () =>
+        new Promise<Response>((_, reject) => {
+          rejectRefresh = reject;
+        }),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    localeState.locale = "en";
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch={initialSearch} />),
+    );
+    expect(names()).toEqual([
+      "Bound wine",
+      "Draft wine",
+      "Workbook wine",
+      "Original website name",
+    ]);
+    expect(container.querySelector("section")?.getAttribute("aria-busy")).toBe(
+      "true",
+    );
+    expect(
+      container.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')
+        ?.checked,
+    ).toBe(true);
+    expect(fetcher.mock.calls).toHaveLength(reads + 1);
+
+    await act(async () => rejectRefresh(new Error("offline")));
+    localeState.locale = "zh-Hant";
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch={initialSearch} />),
+    );
+    expect(names()).toEqual([
+      "綁定酒款",
+      "草稿酒款",
+      "參考酒款",
+      "Original website name",
+    ]);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "重試",
+    );
+    expect(
+      container.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')
+        ?.checked,
+    ).toBe(true);
+    expect(window.location.search).toBe(query);
+    expect(container.textContent).toContain("第 2 頁");
+    expect(
+      (container.querySelector('input[type="search"]') as HTMLInputElement)
+        .value,
+    ).toBe("wine");
+    expect(fetcher.mock.calls).toHaveLength(reads + 1);
+  } finally {
+    await unmount(root);
+  }
+});
 
 it("allows operator 2 plus 3 cross-page selections and retains all five through a filter", async () => {
   const items = [1, 2, 3, 4, 5].map((n) =>

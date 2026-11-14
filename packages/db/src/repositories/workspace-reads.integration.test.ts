@@ -888,6 +888,7 @@ describe("full workspace read boundaries", () => {
       expect.objectContaining({
         listingId: id!,
         title: "新的中文標題",
+        titles: { "zh-Hant": "新的中文標題", en: "Original English source" },
         sku: null,
       }),
     ]);
@@ -926,6 +927,7 @@ describe("full workspace read boundaries", () => {
       expect.objectContaining({
         listingId: id!,
         title: "人工保留名稱",
+        titles: { "zh-Hant": "人工保留名稱", en: "Human English Reserve 2020" },
         sku: null,
       }),
     ]);
@@ -939,6 +941,12 @@ describe("full workspace read boundaries", () => {
     ]);
     expect((await read("Generated English")).totalMatching).toBe(0);
     expect((await read("Original English source")).totalMatching).toBe(0);
+    expect(
+      (await read("")).items.find((item) => item.id === id!),
+    ).toMatchObject({
+      title: "人工保留名稱",
+      titles: { "zh-Hant": "人工保留名稱", en: "Human English Reserve 2020" },
+    });
   });
   it("searches current human names on bound products while retaining source SKU identity", async () => {
     const listingId = await db.forWorkspace(currentWorkspace, async (repos) => {
@@ -1072,6 +1080,10 @@ describe("full workspace read boundaries", () => {
           sourceType: "platform",
           listingId,
           title: "目前鎖定商品名稱",
+          titles: {
+            "zh-Hant": "目前鎖定商品名稱",
+            en: "Current English Estate 2020",
+          },
           sku: "002100",
           remoteProductId: "bound-search-synthetic",
         });
@@ -1105,7 +1117,14 @@ describe("full workspace read boundaries", () => {
             item.id === listingId ||
             ("listingId" in item && item.listingId === listingId),
         ),
-      ).toMatchObject({ title: "目前鎖定商品名稱", sku: "002100" });
+      ).toMatchObject({
+        title: "目前鎖定商品名稱",
+        titles: {
+          "zh-Hant": "目前鎖定商品名稱",
+          en: "Current English Estate 2020",
+        },
+        sku: "002100",
+      });
       expect(unfiltered.items.every((item) => !("searchTitleEn" in item))).toBe(
         true,
       );
@@ -1163,6 +1182,10 @@ describe("full workspace read boundaries", () => {
         expect(found.items[0]).toMatchObject({
           sourceType: "workbook",
           title: "參考莊園二零二零",
+          titles: {
+            "zh-Hant": "參考莊園二零二零",
+            en: "Workbook English Estate 2020",
+          },
           sku: "002101",
           sourceProductId: "0002100",
           canExport: false,
@@ -1181,6 +1204,21 @@ describe("full workspace read boundaries", () => {
           })
         ).totalMatching,
       ).toBe(0);
+      const unfiltered = await repos.reads.catalogPage({
+        page: 1,
+        pageSize: 25,
+        filter: "workbook",
+        importId: ownImport.importId,
+      });
+      expect(unfiltered.items).toEqual([
+        expect.objectContaining({
+          title: "參考莊園二零二零",
+          titles: {
+            "zh-Hant": "參考莊園二零二零",
+            en: "Workbook English Estate 2020",
+          },
+        }),
+      ]);
       expect(
         (
           await repos.reads.catalogPage({
