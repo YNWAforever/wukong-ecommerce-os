@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { StudioOutput, StudioOutputVersion } from "@wukong/db";
 
 import type { SessionContextPort } from "../session-context-port";
+import { outputPayloadDigest } from "./output-service";
 import {
   copyProposalHandoffFromBundle,
   loadListingStudioHandoff,
@@ -11,6 +12,8 @@ import {
   createFakeStudio,
   fakeGetDatabase,
   fakeSessionContext,
+  reviewSnapshot,
+  reviewableContent,
 } from "./test-fakes";
 
 /**
@@ -64,7 +67,7 @@ function outputRow(overrides: Partial<StudioOutput> = {}): StudioOutput {
     kind: "copy_proposal",
     title: "Synthetic copy proposal",
     status: "saved",
-    currentVersion: 1,
+    currentVersion: 3,
     createdBy: "actor_ops",
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
@@ -79,7 +82,7 @@ function versionRow(payload: unknown): StudioOutputVersion {
     outputId: OUTPUT_ID,
     revision: 3,
     payload: payload as Record<string, unknown>,
-    contentDigest: "a".repeat(64),
+    contentDigest: outputPayloadDigest(payload),
     asOf: CREATED_AT,
     scope: { workspaceScoped: true },
     createdBy: "actor_ops",
@@ -98,6 +101,14 @@ function fixture(
     settings: { workspaceId: WORKSPACE, enabled: true },
     outputs: [outputRow(input.output)],
     outputVersions: [versionRow(input.payload ?? proposalPayload())],
+    snapshots: {
+      [LISTING_ID]: reviewSnapshot({
+        listingId: LISTING_ID,
+        versionId: "version-1",
+        sequence: 7,
+        content: reviewableContent(),
+      }),
+    },
   });
   return {
     env: input.env ?? ON_ENV,
@@ -131,7 +142,93 @@ describe("copyProposalHandoffFromBundle", () => {
     ],
   };
 
-  it("projects the latest version into the minimal read-only banner payload", () => {
+  const latestDigest = outputPayloadDigest(proposalPayload());
+  const firstDigest = outputPayloadDigest(baseBundle.versions[0]!.payload);
+  const pinnedBundle = {
+    ...baseBundle,
+    output: { ...baseBundle.output, currentVersion: 3 },
+    versions: baseBundle.versions.map((version) => ({
+      ...version,
+      contentDigest: outputPayloadDigest(version.payload),
+    })),
+  };
+  const currentListingVersion = { versionId: "version-1", sequence: 7 };
+
+  it("resolves an exact current version and detects listing changes", () => {
+    const input = {
+      listingId: LISTING_ID,
+      bundle: pinnedBundle,
+      pin: { revision: 3, digest: latestDigest },
+      currentListingVersion,
+    };
+    expect(copyProposalHandoffFromBundle(input)).toMatchObject({
+      revision: 3,
+      state: "current",
+    });
+    expect(
+      copyProposalHandoffFromBundle({
+        ...input,
+        currentListingVersion: { versionId: "version-2", sequence: 8 },
+      }),
+    ).toMatchObject({ revision: 3, state: "stale" });
+    expect(
+      copyProposalHandoffFromBundle({ ...input, currentListingVersion: null }),
+    ).toMatchObject({ state: "unavailable", fields: [] });
+  });
+
+  it("rejects content altered behind an unchanged digest column", () => {
+    const corrupt = {
+      ...pinnedBundle,
+      versions: pinnedBundle.versions.map((version) =>
+        version.revision === 3
+          ? {
+              ...version,
+              payload: { ...version.payload, limitations: ["altered"] },
+            }
+          : version,
+      ),
+    };
+    expect(
+      copyProposalHandoffFromBundle({
+        listingId: LISTING_ID,
+        bundle: corrupt,
+        pin: { revision: 3, digest: latestDigest },
+        currentListingVersion,
+      }),
+    ).toMatchObject({ state: "unavailable", fields: [] });
+  });
+
+  it("keeps a historical pinned version instead of retargeting latest", () => {
+    const handoff = copyProposalHandoffFromBundle({
+      listingId: LISTING_ID,
+      bundle: pinnedBundle,
+      pin: { revision: 1, digest: firstDigest },
+      currentListingVersion,
+    });
+    expect(handoff).toMatchObject({
+      revision: 1,
+      asOf: "2026-11-08T09:00:00.000Z",
+      state: "stale",
+    });
+  });
+
+  it("shows no proposal fields for missing revisions or mismatched digests", () => {
+    for (const pin of [
+      { revision: 4, digest: "a".repeat(64) },
+      { revision: 3, digest: "b".repeat(64) },
+    ]) {
+      expect(
+        copyProposalHandoffFromBundle({
+          listingId: LISTING_ID,
+          bundle: pinnedBundle,
+          pin,
+          currentListingVersion,
+        }),
+      ).toMatchObject({ state: "unavailable", fields: [] });
+    }
+  });
+
+  it("projects legacy links with an explicit unpinned state", () => {
     const handoff = copyProposalHandoffFromBundle({
       listingId: LISTING_ID,
       bundle: baseBundle,
@@ -141,6 +238,7 @@ describe("copyProposalHandoffFromBundle", () => {
       title: "Synthetic copy proposal",
       revision: 3,
       asOf: CREATED_AT.toISOString(),
+      state: "unpinned",
     });
     // Raw field ids and current -> proposed only; evidence refs are not needed
     // to copy a value and are not part of the handoff contract.
@@ -193,6 +291,43 @@ describe("copyProposalHandoffFromBundle", () => {
 });
 
 describe("loadListingStudioHandoff", () => {
+  it("resolves a pinned proposal against the current listing version", async () => {
+    const handoff = await loadListingStudioHandoff({
+      listingId: LISTING_ID,
+      studioOutput: OUTPUT_ID,
+      studioRevision: "3",
+      studioDigest: outputPayloadDigest(proposalPayload()),
+      deps: fixture(),
+    });
+    expect(handoff).toMatchObject({ revision: 3, state: "current" });
+  });
+
+  it("rejects malformed or incomplete pins before any database work", async () => {
+    const deps = fixture();
+    let reads = 0;
+    const getDatabase = () => {
+      reads += 1;
+      return deps.getDatabase();
+    };
+    for (const pin of [
+      { studioRevision: "3" },
+      { studioDigest: "a".repeat(64) },
+      { studioRevision: "01", studioDigest: "a".repeat(64) },
+      { studioRevision: "9007199254740992", studioDigest: "a".repeat(64) },
+      { studioRevision: "3", studioDigest: "A".repeat(64) },
+    ]) {
+      expect(
+        await loadListingStudioHandoff({
+          listingId: LISTING_ID,
+          studioOutput: OUTPUT_ID,
+          ...pin,
+          deps: { ...deps, getDatabase },
+        }),
+      ).toBeUndefined();
+    }
+    expect(reads).toBe(0);
+  });
+
   it("resolves a same-workspace proposal for the same listing", async () => {
     const handoff = await loadListingStudioHandoff({
       listingId: LISTING_ID,

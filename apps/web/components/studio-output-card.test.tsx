@@ -33,6 +33,11 @@ function detailBody(status: "draft" | "saved" | "signed_off" = "draft") {
       title: "Synthetic copy proposal",
       status,
       currentVersion: 1,
+      freshness: "current" as const,
+      confirmation:
+        status === "draft"
+          ? null
+          : { status, revision: 1, contentDigest: "a".repeat(64) },
       threadId: "thread-1",
       createdAt: "2026-11-08T00:00:00.000Z",
       updatedAt: "2026-11-08T00:00:00.000Z",
@@ -120,7 +125,7 @@ describe("StudioOutputCard", () => {
     expect(container.textContent).toContain("Requires human review");
     expect(
       container.querySelector(
-        'a[href="/listings/listing-1?studioOutput=output-1"]',
+        `a[href="/listings/listing-1?studioOutput=output-1&studioRevision=1&studioDigest=${"a".repeat(64)}"]`,
       ),
     ).not.toBeNull();
     expect(
@@ -162,7 +167,9 @@ describe("StudioOutputCard", () => {
           return Response.json({
             outputId: "output-1",
             status: "saved",
-            version: 2,
+            version: 1,
+            contentDigest: "a".repeat(64),
+            replayed: false,
           });
         }
         return Response.json(detailBody("draft"));
@@ -187,14 +194,147 @@ describe("StudioOutputCard", () => {
       ([, init]) => init?.method === "POST",
     );
     expect(postCall).toBeDefined();
-    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({ action: "save" });
+    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({
+      action: "save",
+      expectedRevision: 1,
+      expectedDigest: "a".repeat(64),
+    });
     // The server response is the readback; the card repeats it.
     expect(container.textContent).toContain("Saved");
-    expect(container.textContent).toContain("Current version 2");
+    expect(container.textContent).toContain("Current version 1");
     expect(container.textContent).toContain(
       "Saved; confirmed by the server readback.",
     );
     expect(buttonByText(container, "Save artifact")?.disabled).toBe(true);
+  });
+
+  it.each([
+    { outputId: "other-output" },
+    { version: 2 },
+    { contentDigest: "b".repeat(64) },
+  ])(
+    "rejects an action readback that does not match its preview: %j",
+    async (mismatch) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockImplementation(async (_input, init) =>
+          Response.json(
+            init?.method === "POST"
+              ? {
+                  outputId: "output-1",
+                  status: "saved",
+                  version: 1,
+                  contentDigest: "a".repeat(64),
+                  replayed: false,
+                  ...mismatch,
+                }
+              : detailBody("draft"),
+          ),
+        );
+      vi.stubGlobal("fetch", fetcher);
+      const container = await mount();
+      await act(async () => {
+        buttonByText(container, "Save artifact")?.click();
+      });
+      await flush();
+      expect(container.textContent).toContain(
+        "The artifact could not be saved.",
+      );
+      expect(container.textContent).not.toContain(
+        "Saved; confirmed by the server readback.",
+      );
+      expect(container.querySelector('[data-status="draft"]')).not.toBeNull();
+    },
+  );
+
+  it("ignores an old action response after the card changes artifact", async () => {
+    let finishSave!: (response: Response) => void;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input, init) => {
+        if (init?.method === "POST")
+          return new Promise<Response>((resolve) => {
+            finishSave = resolve;
+          });
+        const body = detailBody("draft");
+        if (String(input).endsWith("output-2"))
+          return Response.json({
+            ...body,
+            output: {
+              ...body.output,
+              outputId: "output-2",
+              title: "Second artifact",
+            },
+          });
+        return Response.json(body);
+      });
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount();
+    await act(async () => {
+      buttonByText(container, "Save artifact")?.click();
+    });
+    await act(async () => {
+      roots
+        .at(-1)!
+        .render(
+          <StudioOutputCard locale="en" outputId="output-2" canSignOff />,
+        );
+    });
+    await flush();
+    await act(async () => {
+      finishSave(
+        Response.json({
+          outputId: "output-1",
+          status: "saved",
+          version: 1,
+          contentDigest: "a".repeat(64),
+          replayed: false,
+        }),
+      );
+    });
+    await flush();
+    expect(container.textContent).toContain("Second artifact");
+    expect(container.textContent).not.toContain(
+      "Saved; confirmed by the server readback.",
+    );
+    expect(container.querySelector('[data-status="draft"]')).not.toBeNull();
+  });
+
+  it("does not display an artifact returned under another identity", async () => {
+    const body = detailBody("draft");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          ...body,
+          output: { ...body.output, outputId: "other-output" },
+        }),
+      ),
+    );
+    const container = await mount();
+    expect(container.textContent).toContain("The artifact could not be loaded");
+    expect(container.textContent).not.toContain("Synthetic proposed title");
+  });
+
+  it("blocks stale proposal sign-off and labels legacy approval as unconfirmed", async () => {
+    const body = detailBody("signed_off");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async () =>
+        Response.json({
+          ...body,
+          output: { ...body.output, confirmation: null, freshness: "stale" },
+        }),
+      ),
+    );
+    const container = await mount();
+    expect(container.textContent).toContain(
+      "Review confirmation required for this version",
+    );
+    expect(container.textContent).toContain(
+      "Refresh the proposal before sign-off",
+    );
+    expect(buttonByText(container, "Sign off")?.disabled).toBe(true);
   });
 
   it("shows an honest load failure with a retry and no invented content", async () => {
@@ -320,7 +460,9 @@ describe("StudioOutputCard", () => {
           return Response.json({
             outputId: "output-1",
             status: "signed_off",
-            version: 2,
+            version: 1,
+            contentDigest: "a".repeat(64),
+            replayed: false,
           });
         }
         return Response.json(detailBody("saved"));
@@ -344,12 +486,14 @@ describe("StudioOutputCard", () => {
     expect(postCall).toBeDefined();
     expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({
       action: "sign_off",
+      expectedRevision: 1,
+      expectedDigest: "a".repeat(64),
     });
     expect(container.textContent).toContain("Signed off");
     expect(container.textContent).toContain(
       "Signed off; confirmed by the server readback.",
     );
-    expect(container.textContent).toContain("Current version 2");
+    expect(container.textContent).toContain("Current version 1");
   });
 
   it("reports a 403 sign-off honestly with the required role copy", async () => {

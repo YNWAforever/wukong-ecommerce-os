@@ -45,7 +45,10 @@ export function createStudioOutputHandler(deps: StudioRouteDeps) {
         const parsed = outputActionBodySchema.safeParse(json);
         if (!parsed.success)
           throw new ApiError(400, "invalid_body", "Request body is invalid.");
-        const result = await service().setOutputStatus(id, parsed.data.action);
+        const result = await service().setOutputStatus(id, parsed.data.action, {
+          expectedRevision: parsed.data.expectedRevision,
+          expectedDigest: parsed.data.expectedDigest,
+        });
         return jsonResponse(200, { ...result });
       }),
   };

@@ -888,12 +888,52 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           };
           state.outputVersions.push(version);
           output.currentVersion = revision;
+          output.status = "draft";
           output.updatedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
           return { output, version };
         },
-        get: async (id: string) => {
+        get: async (id: string, _input?: { forUpdate?: boolean }) => {
           state.writes.push("outputs.get");
           return state.outputs.find((entry) => entry.id === id) ?? null;
+        },
+        getVersion: async (id: string, revision: number) =>
+          state.outputVersions.find(
+            (version) =>
+              version.outputId === id && version.revision === revision,
+          ) ?? null,
+        statusConfirmation: async (id: string) => {
+          const output = state.outputs.find((entry) => entry.id === id);
+          const version = state.outputVersions.find(
+            (entry) =>
+              entry.outputId === id &&
+              entry.revision === output?.currentVersion,
+          );
+          const event = state.audits.find(
+            (entry) =>
+              entry.entityId === id &&
+              entry.action === `studio.output.${output?.status}` &&
+              entry.metadata.revision === version?.revision &&
+              entry.metadata.contentDigest === version?.contentDigest,
+          );
+          const revision = event?.metadata.revision;
+          const contentDigest = event?.metadata.contentDigest;
+          if (
+            !event ||
+            typeof revision !== "number" ||
+            !Number.isSafeInteger(revision) ||
+            revision < 1 ||
+            typeof contentDigest !== "string" ||
+            !/^[a-f0-9]{64}$/.test(contentDigest)
+          )
+            return null;
+          return {
+            status: event.action.slice("studio.output.".length) as Exclude<
+              StudioOutput["status"],
+              "draft"
+            >,
+            revision,
+            contentDigest,
+          };
         },
         list: async (
           input: {

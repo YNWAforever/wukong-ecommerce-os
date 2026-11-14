@@ -116,6 +116,33 @@ describe("ListingReviewPage studio handoff", () => {
     expect(html).toContain('data-processing=""');
   });
 
+  it("passes an exact revision and digest to the resolver", async () => {
+    mocks.loadHandoff.mockResolvedValue(undefined);
+    await renderPage({
+      studioOutput: OUTPUT_ID,
+      studioRevision: "3",
+      studioDigest: "a".repeat(64),
+    });
+    expect(mocks.loadHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        studioOutput: OUTPUT_ID,
+        studioRevision: "3",
+        studioDigest: "a".repeat(64),
+      }),
+    );
+  });
+
+  it.each(["studioRevision", "studioDigest"])(
+    "rejects ambiguous %s pins",
+    async (key) => {
+      mocks.loadHandoff.mockResolvedValue(undefined);
+      await renderPage({ studioOutput: OUTPUT_ID, [key]: ["a", "b"] });
+      expect(mocks.loadHandoff).toHaveBeenCalledWith(
+        expect.objectContaining({ studioOutput: undefined }),
+      );
+    },
+  );
+
   it("ignores a repeated/ambiguous studioOutput parameter", async () => {
     mocks.loadHandoff.mockResolvedValue(undefined);
     await renderPage({ studioOutput: [OUTPUT_ID, OUTPUT_ID] });

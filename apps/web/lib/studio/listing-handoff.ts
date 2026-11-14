@@ -1,105 +1,125 @@
-﻿import type { SessionContextPort } from "../session-context-port";
+import type { SessionContextPort } from "../session-context-port";
 import { parseCopyProposalPayload } from "./copy-proposal";
+import { outputDigestMatches, proposalFreshness } from "./output-review";
+import { buildStudioReadDeps } from "./read-deps";
 import { studioServiceDeps } from "./route-deps";
 import type { StudioDatabase } from "./session";
 import { createStudioService } from "./turn-service";
 
-/**
- * Read-only Studio copy-proposal handoff for the existing listing review page
- * (B2).
- *
- * The review page accepts an optional `studioOutput` query id. This resolver
- * turns that id into a minimal banner payload only when every condition holds:
- *
- *  - the id is a UUID (anything else is ignored before touching the database);
- *  - the caller has a session and the Studio is enabled for this workspace;
- *  - the artifact exists in that same workspace (the scoped service 404s a
- *    foreign id, exactly like the API);
- *  - the artifact kind is `copy_proposal` and its payload parses;
- *  - the payload names this same listing.
- *
- * Every lookup error, foreign/disabled/invalid case returns `undefined`, so
- * the page renders exactly as it did before. The handoff is display-only: it
- * never writes canonical data and is not used to seed the review form.
- */
-
+/** Display-only proposal snapshot; it never seeds or writes the review form. */
 export type ListingStudioHandoffField = {
   field: string;
   current: string | null;
   proposed: string;
 };
-
 export type ListingStudioHandoff = {
   outputId: string;
   title: string;
   revision: number;
   asOf: string;
+  state: "current" | "stale" | "unpinned" | "unavailable";
+  sourceHref: string;
   fields: ListingStudioHandoffField[];
 };
-
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 export type ListingStudioHandoffDeps = {
   sessionContext: SessionContextPort;
   getDatabase: () => StudioDatabase;
-  /** Injectable env so tests never mutate `process.env`. */
   env?: NodeJS.ProcessEnv;
 };
 
-/**
- * Pure projection from a loaded output bundle to the banner payload.
- *
- * Kept separate from the service call so the validation rules can be tested
- * without a database or session.
- */
+/** Exact links never retarget to the newest version; old ID-only links are labelled unpinned. */
 export function copyProposalHandoffFromBundle(input: {
   listingId: string;
+  pin?: { revision: number; digest: string };
+  currentListingVersion?: { versionId: string; sequence: number } | null;
   bundle: {
-    output: { outputId: string; kind: string; title: string };
+    output: {
+      outputId: string;
+      kind: string;
+      title: string;
+      currentVersion?: number;
+      threadId?: string | null;
+    };
     versions: ReadonlyArray<{
       revision: number;
       payload: Record<string, unknown>;
       asOf: string;
+      contentDigest?: string;
     }>;
   };
 }): ListingStudioHandoff | undefined {
-  const { listingId, bundle } = input;
-  if (bundle.output.kind !== "copy_proposal") return undefined;
-  if (bundle.versions.length === 0) return undefined;
+  const { listingId, bundle, pin } = input;
+  if (bundle.output.kind !== "copy_proposal" || bundle.versions.length === 0)
+    return undefined;
   const latest = bundle.versions.reduce((current, version) =>
     version.revision > current.revision ? version : current,
   );
-  const proposal = parseCopyProposalPayload(latest.payload);
-  if (!proposal) return undefined;
-  if (proposal.listingId !== listingId) return undefined;
+  const requested = pin
+    ? bundle.versions.find((version) => version.revision === pin.revision)
+    : latest;
+  const proposal = parseCopyProposalPayload((requested ?? latest).payload);
+  if (!proposal || proposal.listingId !== listingId) return undefined;
+  let state: ListingStudioHandoff["state"] = "unpinned";
+  if (pin) {
+    if (
+      !requested ||
+      requested.contentDigest !== pin.digest ||
+      !outputDigestMatches(requested)
+    )
+      state = "unavailable";
+    else if (bundle.output.currentVersion !== requested.revision)
+      state = "stale";
+    else
+      state = proposalFreshness(
+        requested.payload,
+        input.currentListingVersion ?? null,
+      );
+  }
   return {
     outputId: bundle.output.outputId,
     title: bundle.output.title,
-    revision: latest.revision,
-    asOf: latest.asOf,
-    fields: proposal.fields.map((field) => ({
-      field: field.field,
-      current: field.current,
-      proposed: field.proposed,
-    })),
+    revision: pin?.revision ?? latest.revision,
+    asOf: requested?.asOf ?? "",
+    state,
+    sourceHref: bundle.output.threadId
+      ? `/studio/t/${encodeURIComponent(bundle.output.threadId)}`
+      : "/studio/outputs",
+    fields:
+      state === "unavailable"
+        ? []
+        : proposal.fields.map((field) => ({
+            field: field.field,
+            current: field.current,
+            proposed: field.proposed,
+          })),
   };
 }
 
-/**
- * Resolve the optional `studioOutput` query value into a banner payload.
- *
- * Fails closed to `undefined` in every case: not a UUID, no session, disabled
- * Studio, foreign/unknown artifact, wrong kind, invalid payload, wrong listing,
- * or any thrown service/database error.
- */
+/** Invalid/foreign references fail closed; known outdated versions show an explicit read-only state. */
 export async function loadListingStudioHandoff(input: {
   listingId: string;
   studioOutput: string | undefined;
+  studioRevision?: string | undefined;
+  studioDigest?: string | undefined;
   deps: ListingStudioHandoffDeps;
 }): Promise<ListingStudioHandoff | undefined> {
   const studioOutput = input.studioOutput?.trim();
   if (!studioOutput || !UUID.test(studioOutput)) return undefined;
+  let pin: { revision: number; digest: string } | undefined;
+  if (input.studioRevision !== undefined || input.studioDigest !== undefined) {
+    const revision = Number(input.studioRevision);
+    if (
+      !input.studioRevision ||
+      !/^[1-9]\d*$/.test(input.studioRevision) ||
+      !Number.isSafeInteger(revision) ||
+      !input.studioDigest ||
+      !/^[a-f0-9]{64}$/.test(input.studioDigest)
+    )
+      return undefined;
+    pin = { revision, digest: input.studioDigest };
+  }
   try {
     const session = await input.deps.sessionContext.resolve();
     if (!session) return undefined;
@@ -111,13 +131,28 @@ export async function loadListingStudioHandoff(input: {
       }),
     );
     const bundle = await service.getOutput(studioOutput);
+    const listing = pin
+      ? await input.deps
+          .getDatabase()
+          .forWorkspace(session.workspaceId, (repos) =>
+            buildStudioReadDeps(repos).getListing(input.listingId),
+          )
+      : null;
     return copyProposalHandoffFromBundle({
       listingId: input.listingId,
       bundle,
+      ...(pin
+        ? { pin, currentListingVersion: listing?.activeVersion ?? null }
+        : {}),
     });
   } catch {
-    // The review page must never fail because an optional Studio handoff could
-    // not be resolved (foreign id, Studio disabled, read error, invalid id).
+    // This optional integration must not prevent the existing listing review page from loading.
+    console.info(
+      JSON.stringify({
+        event: "studio.handoff.unavailable",
+        category: "lookup_failed",
+      }),
+    );
     return undefined;
   }
 }

@@ -50,6 +50,8 @@ export type StudioReviewExport = {
   readonly status: "draft" | "saved" | "signed_off" | "discarded";
   /** The version's `contentDigest`, i.e. the latest published digest. */
   readonly digest: string;
+  /** New links pin the exact preview; omitted only by historical callers. */
+  readonly revision?: number;
 };
 
 export type StudioReviewCardProps = {
@@ -114,7 +116,9 @@ export function StudioReviewCard({
     ? `/api/studio/outputs/${encodeURIComponent(exportInfo.outputId)}/export?digest=${encodeURIComponent(exportInfo.digest)}`
     : null;
   const listingHref = `/listings/${encodeURIComponent(proposal.listingId)}${
-    exportInfo ? `?studioOutput=${encodeURIComponent(exportInfo.outputId)}` : ""
+    exportInfo
+      ? `?studioOutput=${encodeURIComponent(exportInfo.outputId)}${exportInfo.revision ? `&studioRevision=${exportInfo.revision}&studioDigest=${encodeURIComponent(exportInfo.digest)}` : ""}`
+      : ""
   }`;
 
   return (
