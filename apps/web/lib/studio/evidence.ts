@@ -39,6 +39,7 @@ import {
   type ProductShotPrepareContext,
 } from "./product-shot";
 import type { SupplierIntelContext } from "./supplier-intel";
+import { CATALOG_QUERY_REF, type CatalogFacts } from "./catalog-facts";
 
 /**
  * Deterministic evidence assembly (plan Task 5, spec section 3.3).
@@ -171,6 +172,45 @@ async function buildCatalogFind(
     truncated: boolean;
   };
   markCoverage(pack, "catalog", "present");
+  pushSource(
+    pack,
+    {
+      ref: CATALOG_QUERY_REF,
+      kind: "catalog",
+      label: query,
+      refId: query,
+      version: null,
+      coverage: "present",
+      deepLink: "/catalog",
+    },
+    input.now,
+  );
+  pushCheck(pack, {
+    key: "studio.check.catalog_query",
+    values: { query },
+    state: "ok",
+  });
+  const facts: CatalogFacts = {
+    query: { text: query, evidenceRef: CATALOG_QUERY_REF },
+    catalogRecords: hits.items.slice(0, 5).map((hit) => ({
+      evidenceRef: `catalog:${hit.listingId}`,
+      listingId: hit.listingId,
+      title: hit.title.slice(0, 200),
+      status: hit.status.slice(0, 40),
+    })),
+    jobs: [],
+  };
+  pack.context.catalogFacts = facts;
+  for (const record of facts.catalogRecords)
+    pushCheck(pack, {
+      key: "studio.check.catalog_record",
+      values: {
+        listingId: record.listingId,
+        title: record.title,
+        status: record.status,
+      },
+      state: "ok",
+    });
   pushCheck(pack, {
     key: "studio.check.catalog_matches",
     values: { count: hits.items.length, truncated: hits.truncated },
@@ -295,13 +335,45 @@ async function buildCatalogFind(
     limits: input.limits,
   });
   if (jobs.state === "done") {
-    const listed = jobs.output as { items: Array<{ jobId: string }> };
+    const listed = jobs.output as {
+      items: Array<{ jobId: string; state: string; createdAt: string }>;
+    };
     markCoverage(pack, "job", "present");
     pushCheck(pack, {
       key: "studio.check.recent_jobs",
       values: { count: listed.items.length },
       state: "ok",
     });
+    facts.jobs = listed.items.slice(0, 5).map((job) => ({
+      evidenceRef: `job:${job.jobId}`,
+      jobId: job.jobId,
+      state: job.state.slice(0, 40),
+      createdAt: job.createdAt.slice(0, 64),
+    }));
+    for (const job of facts.jobs)
+      pushCheck(pack, {
+        key: "studio.check.recent_job",
+        values: {
+          jobId: job.jobId,
+          state: job.state,
+          createdAt: job.createdAt,
+        },
+        state: "ok",
+      });
+    for (const job of facts.jobs)
+      pushSource(
+        pack,
+        {
+          ref: job.evidenceRef,
+          kind: "job",
+          label: job.state,
+          refId: job.jobId,
+          version: null,
+          coverage: "present",
+          deepLink: "/jobs",
+        },
+        input.now,
+      );
   } else pushLimitation(pack, "studio.limit.jobs_unavailable");
 
   if (hits.truncated) pushLimitation(pack, "studio.limit.results_truncated");

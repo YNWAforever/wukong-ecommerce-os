@@ -670,6 +670,23 @@ export const STUDIO_COPY = {
     "已解析 {present} 個來源；缺少 {missing} 個。",
     "Sources present: {present}; missing: {missing}.",
   ],
+  "studio.answer.catalog_query": [
+    "實際搜尋字詞：「{query}」。",
+    "Search used: “{query}”.",
+  ],
+  "studio.answer.catalog_zero": [
+    "沒有符合搜尋字詞的已連結商品記錄。可改用較短的商品名稱或 SKU，再送出搜尋。",
+    "No linked listing records matched this search. Try a shorter product name or SKU, then send the search again.",
+  ],
+  "studio.answer.catalog_empty_page": [
+    "此頁沒有符合條件的已連結商品記錄，仍有其他目錄結果。請縮小搜尋範圍。",
+    "This page has no linked listing matches; more catalog results remain. Narrow the search.",
+  ],
+  "studio.catalog.refine": ["修改搜尋", "Refine search"],
+  "studio.catalog.refineDraftNote": [
+    "請先送出或清除目前草稿，再修改這次搜尋。",
+    "Send or clear your current draft before refining this search.",
+  ],
   "studio.answer.catalog_found": [
     "找到 {count} 筆符合的商品記錄。結果已截斷：{truncated}。",
     "Found {count} matching listing records. Results truncated: {truncated}.",
@@ -728,6 +745,18 @@ export const STUDIO_COPY = {
   ],
 
   // -- evidence checks ------------------------------------------------------
+  "studio.check.catalog_query": [
+    "已執行的搜尋：「{query}」。",
+    "Executed search: “{query}”.",
+  ],
+  "studio.check.catalog_record": [
+    "目錄結果 {listingId}：{title}；狀態：{status}。",
+    "Catalog result {listingId}: {title}; status: {status}.",
+  ],
+  "studio.check.recent_job": [
+    "工作區作業 {jobId}：{state}；建立時間：{createdAt}。",
+    "Workspace job {jobId}: {state}; created: {createdAt}.",
+  ],
   "studio.check.catalog_matches": [
     "符合條件的商品：{count} 筆。結果已截斷：{truncated}。",
     "Matching listings: {count}. Truncated: {truncated}.",
@@ -1016,8 +1045,8 @@ export const STUDIO_COPY = {
     "Live analysis did not complete; the records answer still applies.",
   ],
   "studio.model.limitation": [
-    "AI 建議未經驗證，也沒有寫入權限。",
-    "AI suggestions are unverified and have no write authority.",
+    "AI 建議未經驗證，也沒有寫入權限。來源連結可用，只代表來源存在，並不代表主張正確。",
+    "AI suggestions are unverified and have no write authority. An available source reference does not establish the claim's accuracy.",
   ],
   "studio.model.claims": ["主張", "Claims"],
   "studio.model.claimRefs": ["依據：{refs}", "Evidence: {refs}"],

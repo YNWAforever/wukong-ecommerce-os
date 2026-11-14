@@ -39,6 +39,50 @@ async function signIn(page: Page, baseURL: string, email = EMAIL) {
   });
 }
 
+test("zero-result catalog search shows the executed query and refines without sending", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  await signIn(page, baseURL ?? "http://127.0.0.1:49300");
+  await page.goto("/studio");
+  const query = "studio-no-matching-sku-7f6e2a";
+  const composer = page.getByRole("textbox", { name: "Message" });
+  await composer.fill(query);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.waitForURL(/\/studio\/t\/[0-9a-f-]{36}$/, { timeout: 90_000 });
+  await expect(
+    page.getByText(`Search used: “${query}”.`, { exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByText(
+      "No linked listing records matched this search. Try a shorter product name or SKU, then send the search again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  let posts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().includes("/api/studio/"))
+      posts++;
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const refine = page.getByRole("button", {
+    name: "Refine search",
+    exact: true,
+  });
+  await refine.click();
+  await expect(composer).toHaveValue(query);
+  await expect(composer).toBeFocused();
+  expect(posts).toBe(0);
+  await composer.fill("Keep this unsent draft");
+  await expect(refine).toBeDisabled();
+  await expect(composer).toHaveValue("Keep this unsent draft");
+  await page.screenshot({
+    path: "test-results/studio-zero-refinement-390.png",
+    fullPage: true,
+  });
+});
+
 test("flags-on studio: sign in, deterministic answer, trace, reload persistence, 390px", async ({
   page,
   baseURL,

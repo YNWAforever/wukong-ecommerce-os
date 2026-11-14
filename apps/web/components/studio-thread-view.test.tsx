@@ -175,6 +175,73 @@ afterEach(async () => {
 });
 
 describe("StudioThreadView", () => {
+  function searchMessage(): StudioMessageResponse {
+    return {
+      ...assistantMessage,
+      content: {
+        ...reply,
+        records: {
+          ...reply.records,
+          sections: [
+            { key: "studio.answer.catalog_query", values: { query: "SKU-42" } },
+            { key: "studio.answer.catalog_zero", values: {} },
+          ],
+          checks: [
+            {
+              key: "studio.check.catalog_query",
+              values: { query: "SKU-42" },
+              state: "ok",
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  it("refines the executed query into a focused draft without sending a request", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount({
+      messages: [operatorMessage, searchMessage()],
+    });
+    const refine = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Refine search",
+    )!;
+    await act(async () => {
+      refine.click();
+    });
+    const input = container.querySelector("textarea")!;
+    expect(input.value).toBe("SKU-42");
+    expect(document.activeElement).toBe(input);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("catalog.find");
+  });
+
+  it("protects an unsent draft from a refinement action", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount({ messages: [searchMessage()] });
+    await type(container, "Keep my draft");
+    const refine = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Refine search",
+    )!;
+    expect(refine.disabled).toBe(true);
+    await act(async () => {
+      refine.click();
+    });
+    expect(container.querySelector("textarea")!.value).toBe("Keep my draft");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("does not offer refinement to a viewer or infer a historical query", async () => {
+    const viewer = await mount({ messages: [searchMessage()], canSend: false });
+    expect(viewer.textContent).not.toContain("Refine search");
+    const historical = await mount({
+      messages: [operatorMessage, assistantMessage],
+    });
+    expect(historical.textContent).not.toContain("Refine search");
+  });
+
   it("renders server messages, the thread header and the latest evidence", async () => {
     vi.stubGlobal(
       "fetch",

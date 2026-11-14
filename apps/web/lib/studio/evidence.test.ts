@@ -8,6 +8,11 @@ import {
 } from "./compose-deterministic.js";
 import { buildEvidencePack } from "./evidence.js";
 import {
+  catalogFactsForComposer,
+  composerEvidenceForPack,
+  CATALOG_QUERY_REF,
+} from "./catalog-facts.js";
+import {
   createStudioTurnLimits,
   StudioTurnDeadlineError,
   StudioTurnStepBudgetError,
@@ -232,6 +237,155 @@ describe("deterministic studio evidence and composition", () => {
     expect(JSON.stringify(again)).toBe(JSON.stringify(reply));
   });
 
+  it("records the literal executed query and bounded samples independently of counted totals", async () => {
+    const baseline = baseDeps();
+    let executed = "";
+    const records = Array.from({ length: 10 }, (_, i) => ({
+      listingId: `sample-${i}`,
+      title: `Sample ${i}`,
+      status: "in_review",
+    }));
+    const pack = await packFor(
+      "  Margaux SKU-1  ",
+      baseDeps({
+        async searchCatalog(input) {
+          executed = input.query;
+          return { items: records, truncated: true, unlinkedSkipped: 0 };
+        },
+        async listJobs() {
+          return Array.from({ length: 5 }, (_, i) => ({
+            jobId: `job-${i}`,
+            state: "succeeded",
+            createdAt: now.toISOString(),
+          }));
+        },
+        getQuality: baseline.getQuality,
+      }),
+    );
+    const facts = catalogFactsForComposer(pack)!;
+    expect(executed).toBe("Margaux SKU-1");
+    expect(facts.query).toEqual({
+      text: executed,
+      evidenceRef: CATALOG_QUERY_REF,
+    });
+    expect(facts.catalogRecords).toHaveLength(5);
+    expect(facts.jobs).toHaveLength(5);
+    expect(
+      pack.checks.find((check) => check.key === "studio.check.catalog_matches")
+        ?.values.count,
+    ).toBe(10);
+    expect(facts.catalogRecords[0]).toEqual({
+      listingId: "sample-0",
+      title: "Sample 0",
+      status: "in_review",
+      evidenceRef: "catalog:sample-0",
+    });
+    expect(
+      facts.jobs.every((job) =>
+        pack.sources.some(
+          (source) => source.ref === job.evidenceRef && source.kind === "job",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("excludes facts whose source was removed or restricted", async () => {
+    const pack = await packFor("margaux", baseDeps());
+    pack.sources = pack.sources.filter(
+      (source) => source.ref !== `catalog:${LISTING_A}`,
+    );
+    const job = pack.sources.find((source) => source.kind === "job")!;
+    job.restricted = true;
+    const facts = catalogFactsForComposer(pack)!;
+    expect(facts.catalogRecords.map((record) => record.listingId)).toEqual([
+      LISTING_B,
+    ]);
+    expect(facts.jobs).toEqual([]);
+    pack.sources = pack.sources.filter(
+      (source) => source.ref !== CATALOG_QUERY_REF,
+    );
+    expect(catalogFactsForComposer(pack)).toBeUndefined();
+  });
+
+  it("does not reintroduce restricted facts through source labels or duplicated checks", async () => {
+    const pack = await packFor(LISTING_A, baseDeps());
+    for (const source of pack.sources) {
+      if (
+        (source.refId === LISTING_A && source.ref !== CATALOG_QUERY_REF) ||
+        source.kind === "job"
+      )
+        source.restricted = true;
+    }
+    const projected = composerEvidenceForPack(pack);
+    expect(projected.recordFacts?.query.text).toBe(LISTING_A);
+    expect(
+      projected.recordFacts?.catalogRecords.map((record) => record.listingId),
+    ).toEqual([LISTING_B]);
+    expect(projected.recordFacts?.jobs).toEqual([]);
+    expect(
+      projected.checks.some(
+        (check) =>
+          check.values.listingId === LISTING_A ||
+          check.key === "studio.check.recent_job",
+      ),
+    ).toBe(false);
+    expect(JSON.stringify(projected)).not.toContain("Margaux 2019");
+    expect(
+      projected.sources.some(
+        (source) =>
+          source.ref === `catalog:${LISTING_A}` || source.kind === "job",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects extra fields from composer facts rather than forwarding private data", async () => {
+    const pack = await packFor("margaux", baseDeps());
+    const facts = catalogFactsForComposer(pack)!;
+    pack.context.catalogFacts = {
+      ...facts,
+      privateUrl: "https://private.example/signed-fixture",
+    };
+    expect(catalogFactsForComposer(pack)).toBeUndefined();
+  });
+
+  it("keeps unavailable jobs missing rather than treating an empty sample as a counted zero", async () => {
+    const pack = await packFor(
+      "margaux",
+      baseDeps({
+        async listJobs() {
+          throw new Error("unavailable");
+        },
+      }),
+    );
+    expect(catalogFactsForComposer(pack)?.jobs).toEqual([]);
+    expect(pack.coverage.get("job")).toBe("missing");
+    expect(
+      pack.checks.some((check) => check.key === "studio.check.recent_jobs"),
+    ).toBe(false);
+  });
+
+  it("distinguishes an empty returned page from an exhausted zero-result search", async () => {
+    const pack = await packFor(
+      "unlinked",
+      baseDeps({
+        async searchCatalog() {
+          return { items: [], truncated: true, unlinkedSkipped: 10 };
+        },
+      }),
+    );
+    const reply = composeDeterministicReply({ skill: catalogFind, pack });
+    expect(
+      reply.records.sections.some(
+        (line) => line.key === "studio.answer.catalog_empty_page",
+      ),
+    ).toBe(true);
+    expect(
+      reply.records.sections.some(
+        (line) => line.key === "studio.answer.catalog_zero",
+      ),
+    ).toBe(false);
+  });
+
   it("treats an empty search as a counted zero and never invents listings", async () => {
     const deps = baseDeps({
       async searchCatalog() {
@@ -250,6 +404,12 @@ describe("deterministic studio evidence and composition", () => {
       (section) => section.key === "studio.answer.catalog_found",
     );
     expect(found?.values.count).toBe(0);
+    expect(
+      reply.records.sections.some(
+        (line) => line.key === "studio.answer.catalog_zero",
+      ),
+    ).toBe(true);
+    expect(catalogFactsForComposer(pack)?.query.text).toBe("nothing");
   });
 
   it("keeps a missing quality source missing and marks the reply partial", async () => {
@@ -287,6 +447,19 @@ describe("deterministic studio evidence and composition", () => {
     const pack = await packFor("margaux", deps);
     expect(pack.coverage.get("catalog")).toBe("missing");
     expect(pack.trace[0]?.state).toBe("unavailable");
+    expect(catalogFactsForComposer(pack)).toBeUndefined();
+    const unavailableReply = composeDeterministicReply({
+      skill: catalogFind,
+      pack,
+    });
+    expect(
+      unavailableReply.records.sections.some(
+        (line) =>
+          line.key === "studio.answer.catalog_found" ||
+          line.key === "studio.answer.catalog_zero" ||
+          line.key === "studio.answer.catalog_query",
+      ),
+    ).toBe(false);
     expect(
       pack.limitations.some(
         (line) => line.key === "studio.limit.catalog_unavailable",

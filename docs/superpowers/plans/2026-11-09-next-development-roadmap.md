@@ -426,8 +426,8 @@ The operator approved the following three-PR development cycle:
    fields. Delivered in [PR #220](https://github.com/YNWAforever/wukong-ecommerce-os/pull/220):
    PR CI `43550287787` passed on attempt 1, including the 390px run-details browser check, and merge
    `5ca18b69` is deployed Ready as `dpl_Cf8PyBzsHYQKtUtSk85PxCBEsVY6` with the production alias and
-   expected route smoke results. Post-merge main CI is tracked in
-   [run 43552427861](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/43552427861).
+   expected route smoke results. Post-merge main CI
+   [43552427861](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/43552427861) passed.
 2. **Product-shot dispatch recovery.** Recover a rejected enqueue using the same source and attempt,
    expose an explicit dispatch retry with version fences and audit, distinguish ingress rejection
    from transport failure, and retain CI diagnostics. Verify one provider execution despite duplicate
@@ -440,12 +440,24 @@ The operator approved the following three-PR development cycle:
    external queue I/O; processing and uncertain outcomes are not re-dispatched. HTTP rejection logs
    contain only the ingress path, numeric status and bounded category. Product-shot CI retains bounded,
    sanitized per-process logs, including URL/header redaction. Local request/UI, Worker lease/idempotency
-   and diagnostic checks pass; full Linux CI and release verification remain pending. The existing
-   Windows startup-port test is locally blocked by the host's reserved port range covering 49218.
+   and diagnostic checks pass. [PR #221](https://github.com/YNWAforever/wukong-ecommerce-os/pull/221)
+   tracks required Linux CI and commit-specific shipping evidence. Its new root diagnostics suite is
+   registered in the root test command and its pinned command expectation; the exact configuration gate
+   and diagnostics suite pass locally (51 tests). The existing Windows startup-port test is locally
+   blocked by the host's reserved port range covering 49218.
 3. **Catalog evidence and answer usefulness.** Supply the executed query and bounded, allowlisted
    catalog/job facts with evidence references, improve deterministic zero-result presentation and
    composer refinement, version the Studio prompt, and add adversarial/zero-result/missing-source
-   fixtures. Keep generated suggestions labelled unverified.
+   fixtures. Keep generated suggestions labelled unverified. The implementation adds an evidence source
+   for each successful literal search, so an exhausted zero result remains distinct from unavailable
+   data or an empty page with more results. It preserves up to five catalog rows and five recent jobs
+   as allowlisted checks and source-backed composer facts, without additional reads. Counts remain
+   server-authored; job/quality summaries remain workspace-wide. Composer prompt and input are version
+   `1.1.0` in Studio's web-only version scheme. Refine search fills and focuses the recorded query;
+   it never sends, overwrites an unsent draft or appears for a viewer or an unrecorded historical query.
+   The model card explicitly distinguishes source availability from factual accuracy. Offline coverage
+   includes bounds, missing/restricted sources, adversarial JSON framing, honest zero counts and draft
+   protection; browser acceptance covers the zero-result/refinement path at 390px.
 
 Use existing tables and endpoints where possible. The reviewed model, USD 10 cumulative workspace
 cap, USD 2 run ceiling and 4,096 output-token limit remain the operating policy. Each PR must pass

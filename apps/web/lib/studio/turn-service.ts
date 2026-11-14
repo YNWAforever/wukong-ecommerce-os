@@ -64,6 +64,7 @@ import {
   composeNeedsInputReply,
 } from "./compose-deterministic";
 import { buildEvidencePack } from "./evidence";
+import { composerEvidenceForPack } from "./catalog-facts";
 import { buildStudioInbox } from "./inbox";
 import {
   budgetAlertEvent,
@@ -392,22 +393,16 @@ function modelComposeInput(input: {
 }): StudioComposeInput {
   const coverage: Record<string, string> = {};
   for (const [kind, value] of input.pack.coverage) coverage[kind] = value;
+  const { recordFacts, sources, checks } = composerEvidenceForPack(input.pack);
   return {
+    ...(recordFacts ? { recordFacts } : {}),
     locale: input.body.locale,
     question: input.body.text.slice(0, 2000),
     skill: skillPromptSummary(input.skill),
     evidenceSummary: {
       coverage,
-      sources: input.pack.sources.slice(0, 20).map((source) => ({
-        ref: source.ref.slice(0, 200),
-        kind: source.kind,
-        label: source.label.slice(0, 120),
-      })),
-      checks: input.pack.checks.slice(0, 30).map((check) => ({
-        key: check.key,
-        state: check.state,
-        values: check.values,
-      })),
+      sources,
+      checks,
     },
     toolResults: input.pack.trace.slice(0, 6).map((step) => ({
       toolId: step.toolId,
