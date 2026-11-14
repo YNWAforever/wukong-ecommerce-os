@@ -70,12 +70,32 @@ export function composeDeterministicReply(input: {
     const matches = checkValues(pack, "studio.check.catalog_matches");
     const quality = checkValues(pack, "studio.check.quality_summary");
     const jobs = checkValues(pack, "studio.check.recent_jobs");
-    sections.push(
-      translatedLine("studio.answer.catalog_found", {
-        count: numberValue(matches, "count"),
-        truncated: Boolean(matches?.truncated),
-      }),
-    );
+    const query = checkValues(pack, "studio.check.catalog_query");
+    if (
+      matches &&
+      typeof matches.count === "number" &&
+      Number.isSafeInteger(matches.count) &&
+      matches.count >= 0
+    ) {
+      if (typeof query?.query === "string")
+        sections.push(
+          translatedLine("studio.answer.catalog_query", { query: query.query }),
+        );
+      sections.push(
+        translatedLine("studio.answer.catalog_found", {
+          count: matches.count,
+          truncated: Boolean(matches.truncated),
+        }),
+      );
+      if (matches.count === 0)
+        sections.push(
+          translatedLine(
+            matches.truncated
+              ? "studio.answer.catalog_empty_page"
+              : "studio.answer.catalog_zero",
+          ),
+        );
+    }
     if (quality)
       sections.push(
         translatedLine("studio.answer.quality_summary", {

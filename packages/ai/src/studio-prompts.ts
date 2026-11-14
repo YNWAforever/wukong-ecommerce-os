@@ -55,7 +55,25 @@ export type StudioComposerPromptInput = {
     checks: unknown;
   };
   toolResults: unknown[];
+  /** Bounded samples from successful reviewed reads, never workspace totals. */
+  recordFacts?: {
+    query: { text: string; evidenceRef: string };
+    catalogRecords: Array<{
+      evidenceRef: string;
+      listingId: string;
+      title: string;
+      status: string;
+    }>;
+    jobs: Array<{
+      evidenceRef: string;
+      jobId: string;
+      state: string;
+      createdAt: string;
+    }>;
+  };
 };
+
+export const STUDIO_COMPOSER_INPUT_VERSION = "1.1.0";
 
 function systemPrompt(role: "planner" | "composer"): string {
   return [
@@ -65,7 +83,15 @@ function systemPrompt(role: "planner" | "composer"): string {
     STUDIO_HONESTY_RULE,
     role === "planner"
       ? "Choose at most one skill from the provided catalogue, at most three read-tool requests from that skill's allowlist, and list any missing required inputs. Never invent a tool id."
-      : "Write short conclusion-first sections, and attach at least one evidenceRef (a source ref from the pack) to every claim. Do not restate the deterministic records answer as new evidence.",
+      : [
+          "Write short conclusion-first sections, and attach at least one evidenceRef (a source ref from the pack) to every claim. Do not restate the deterministic records answer as new evidence.",
+          "recordFacts contains bounded samples from reviewed reads. Use the successful checks for counts; sample length is never a workspace total and an empty sample never proves a counted zero.",
+          "When recordFacts is supplied, its query is the literal search that ran. Catalog records match that search; quality summaries and recent jobs describe the workspace and are not query-filtered. Never invent their relationship to a matched record.",
+          "A truncated search describes only the returned page. Zero linked results on that page does not establish an exhaustive zero for the catalog.",
+          "If record facts and detail checks disagree, describe the discrepancy rather than choosing or repairing a value.",
+          "Use only supplied record fields. Missing prices, commercial facts, versions or job associations remain unknown. For a counted zero, explain the executed query and suggest a shorter product name or SKU as an unverified refinement.",
+          "Resolving an evidenceRef proves only that a source is available, not that an inference is factually correct. All interpretation and suggested next steps remain unverified.",
+        ].join("\n"),
     "Answer in the operator locale given in the input; keep headings short.",
   ].join("\n");
 }
@@ -98,6 +124,8 @@ export function studioComposerMessages(
       role: "user",
       content: JSON.stringify({
         task: "compose",
+        inputVersion: STUDIO_COMPOSER_INPUT_VERSION,
+        recordFacts: input.recordFacts,
         locale: input.locale,
         question: input.question,
         skill: input.skill,

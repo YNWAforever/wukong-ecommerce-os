@@ -891,6 +891,7 @@ describe("studio optional model analysis", () => {
       },
       usage: fakeStudioUsage(),
     }));
+    const compose = vi.spyOn(model, "compose");
     const { service, fake } = harness({
       options: populatedOptions(),
       settings: AI_SETTINGS,
@@ -904,6 +905,32 @@ describe("studio optional model analysis", () => {
     expect(result.reply.analysis).not.toBeNull();
     expect(result.reply.analysis?.configured).toBe(true);
     expect(result.reply.analysis?.droppedClaims).toBe(1);
+    expect(compose).toHaveBeenCalledOnce();
+    const composedInput = compose.mock.calls[0]![0];
+    expect(composedInput.recordFacts).toEqual({
+      query: { text: "margaux", evidenceRef: "catalog-query:executed" },
+      catalogRecords: [
+        {
+          listingId: LISTING_ID,
+          title: "Margaux 2019",
+          status: "in_review",
+          evidenceRef: `catalog:${LISTING_ID}`,
+        },
+      ],
+      jobs: [
+        {
+          jobId: "job-1",
+          state: "succeeded",
+          createdAt: NOW.toISOString(),
+          evidenceRef: "job:job-1",
+        },
+      ],
+    });
+    const suppliedRefs = new Set(
+      composedInput.evidenceSummary.sources.map((source) => source.ref),
+    );
+    expect(suppliedRefs.has("catalog-query:executed")).toBe(true);
+    expect(suppliedRefs.has("job:job-1")).toBe(true);
     expect(result.reply.analysis?.claims).toEqual([
       {
         text: "Margaux 2019 is in review.",

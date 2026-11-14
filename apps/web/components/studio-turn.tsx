@@ -100,6 +100,9 @@ export type StudioTurnProps = {
   readonly traceLoading?: boolean;
   readonly traceError?: boolean;
   readonly onLoadTrace?: () => void;
+  /** Fills the draft only; this action never sends a turn. */
+  readonly onRefineSearch?: (query: string) => void;
+  readonly refineDisabled?: boolean;
 };
 
 function OperatorTurn({
@@ -258,6 +261,8 @@ function AssistantTurn({
   threadId,
   canSignOff = false,
   canDispatch = false,
+  onRefineSearch,
+  refineDisabled = false,
 }: {
   locale: Locale;
   message: StudioTurnMessage;
@@ -271,8 +276,23 @@ function AssistantTurn({
   | "traceLoading"
   | "traceError"
   | "onLoadTrace"
+  | "onRefineSearch"
+  | "refineDisabled"
 >) {
   const reply = parseStudioAssistantContent(message.content);
+  const queryCheck =
+    reply?.skillKey === "catalog.find"
+      ? reply.records.checks.find(
+          (check) =>
+            check.key === "studio.check.catalog_query" && check.state === "ok",
+        )
+      : null;
+  const executedQuery =
+    typeof queryCheck?.values.query === "string" &&
+    queryCheck.values.query.length > 0 &&
+    queryCheck.values.query.length <= 200
+      ? queryCheck.values.query
+      : null;
   if (reply === null) {
     return (
       <article
@@ -323,6 +343,22 @@ function AssistantTurn({
               </li>
             ))}
           </ul>
+        ) : null}
+
+        {onRefineSearch && executedQuery ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={refineDisabled}
+            title={
+              refineDisabled
+                ? studioCopy(locale, "studio.catalog.refineDraftNote")
+                : undefined
+            }
+            onClick={() => onRefineSearch(executedQuery)}
+          >
+            {studioCopy(locale, "studio.catalog.refine")}
+          </button>
         ) : null}
 
         <StudioEvidence

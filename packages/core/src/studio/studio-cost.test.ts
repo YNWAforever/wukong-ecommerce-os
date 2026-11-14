@@ -53,7 +53,7 @@ describe("studioTurnReservation", () => {
   it("pins planner, composer, proposer and category-proposer prompt versions", () => {
     expect(STUDIO_PROMPT_VERSIONS).toEqual({
       planner: "1.0.0",
-      composer: "1.0.0",
+      composer: "1.1.0",
       proposer: "1.0.0",
       categoryProposer: "1.0.0",
     });

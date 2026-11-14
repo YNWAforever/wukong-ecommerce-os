@@ -7,7 +7,7 @@
  */
 export const STUDIO_PROMPT_VERSIONS = {
   planner: "1.0.0",
-  composer: "1.0.0",
+  composer: "1.1.0",
   proposer: "1.0.0",
   categoryProposer: "1.0.0",
 } as const;

@@ -117,6 +117,18 @@ export function StudioThreadView({
   );
   const paneRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const refineDisabled =
+    session.inFlight || pendingAttempt !== null || draft.length > 0;
+  const refineSearch = useCallback(
+    (query: string) => {
+      if (!canSend || refineDisabled) return;
+      setDraft(query);
+      setSkillKey("catalog.find");
+      composerRef.current?.focus();
+    },
+    [canSend, refineDisabled],
+  );
 
   const visibleMessages = useMemo(
     () => [...serverMessages, ...localMessages],
@@ -402,6 +414,9 @@ export function StudioThreadView({
                         aiEnabled={aiEnabled}
                         canSignOff={canSignOff}
                         canDispatch={canSend}
+                        {...(canSend
+                          ? { onRefineSearch: refineSearch, refineDisabled }
+                          : {})}
                         trace={traceState?.steps ?? null}
                         traceLoading={traceState?.loading ?? false}
                         traceError={traceState?.error ?? false}
@@ -427,6 +442,7 @@ export function StudioThreadView({
             <StudioComposer
               locale={locale}
               id="studio-thread-composer"
+              textareaRef={composerRef}
               value={draft}
               onChange={setDraft}
               onSend={handleSend}
