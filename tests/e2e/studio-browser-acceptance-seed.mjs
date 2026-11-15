@@ -82,6 +82,25 @@ const SUPPLIER_CONNECTION_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a03";
 const SUPPLIER_IMPORT_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a04";
 const SUPPLIER_PRODUCT_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a05";
 /**
+ * Second fixed listing for the bounded multi-listing review acceptance. It has
+ * an active version and ordinary deterministic content but no supplier row,
+ * which is the shape of a listing created in Wukong. The spec duplicates these
+ * ids for the same reason as the supplier fixture above.
+ */
+export const STUDIO_BROWSER_ACCEPTANCE_REVIEW_LISTING_ID =
+  "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a10";
+const REVIEW_LISTING_ID = STUDIO_BROWSER_ACCEPTANCE_REVIEW_LISTING_ID;
+const REVIEW_VERSION_ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a11";
+/**
+ * Listing that exists only in the foreign fixture workspace. The multi-listing
+ * review must answer "unavailable" for it and never expose its title, just like
+ * a missing id. The spec duplicates the id.
+ */
+export const STUDIO_BROWSER_ACCEPTANCE_FOREIGN_LISTING_ID =
+  "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a0d";
+const FOREIGN_LISTING_ID = STUDIO_BROWSER_ACCEPTANCE_FOREIGN_LISTING_ID;
+const FOREIGN_VERSION_ID = "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a0e";
+/**
  * Fixed read-only copy-proposal artifact for the B2 handoff acceptance. The
  * payload names the supplier fixture listing, so `/listings/<id>?studioOutput=`
  * resolves the banner exactly as a real `copy_proposal` output would.
@@ -189,6 +208,24 @@ const SUPPLIER_LISTING_CONTENT = {
   tags: [],
   imageAssetIds: [],
 };
+const REVIEW_LISTING_CONTENT = {
+  ...SUPPLIER_LISTING_CONTENT,
+  sku: "E2E-REV-002",
+  title: { en: "Second review listing", "zh-Hant": "第二個審核商品" },
+  description: {
+    en: "Second synthetic listing for bounded multi-listing review",
+    "zh-Hant": "供多商品審核使用的第二個合成商品",
+  },
+  seo: {
+    title: { en: "Second review listing", "zh-Hant": "第二個審核商品" },
+    description: {
+      en: "Second synthetic listing for bounded multi-listing review",
+      "zh-Hant": "供多商品審核使用的第二個合成商品",
+    },
+  },
+  priceHkd: 268,
+  stockQuantity: 4,
+};
 
 const WORKSPACE_ID = STUDIO_BROWSER_ACCEPTANCE_WORKSPACE_ID;
 const USER_ID = STUDIO_BROWSER_ACCEPTANCE_USER_ID;
@@ -219,6 +256,7 @@ const sql = postgres(DATABASE_URL, { max: 1 });
 try {
   const passwordHash = await hash(PASSWORD, ARGON2_OPTIONS);
   const supplierListingContentJson = sql.json(SUPPLIER_LISTING_CONTENT);
+  const reviewListingContentJson = sql.json(REVIEW_LISTING_CONTENT);
   const supplierRawRowJson = sql.json(SUPPLIER_RAW_ROW);
   const supplierFactsPrefillJson = sql.json(SUPPLIER_FACTS_PREFILL);
   const sha256 = (character) => character.repeat(64);
@@ -311,6 +349,22 @@ try {
       UPDATE listing_drafts SET active_version_id = ${SUPPLIER_VERSION_ID}
       WHERE id = ${SUPPLIER_LISTING_ID} AND workspace_id = ${WORKSPACE_ID}
     `;
+    // Second listing for the bounded multi-listing review acceptance.
+    await tx`
+      INSERT INTO listing_drafts (id, workspace_id, target, status, note)
+      VALUES (${REVIEW_LISTING_ID}, ${WORKSPACE_ID}, 'shopline', 'in_review', 'Studio multi-listing review fixture')
+      ON CONFLICT (id) DO UPDATE SET
+        status = excluded.status, note = excluded.note
+    `;
+    await tx`
+      INSERT INTO listing_versions (id, workspace_id, listing_id, sequence, content, created_by)
+      VALUES (${REVIEW_VERSION_ID}, ${WORKSPACE_ID}, ${REVIEW_LISTING_ID}, 1, ${reviewListingContentJson}, ${USER_ID})
+      ON CONFLICT (listing_id, sequence) DO UPDATE SET content = excluded.content
+    `;
+    await tx`
+      UPDATE listing_drafts SET active_version_id = ${REVIEW_VERSION_ID}
+      WHERE id = ${REVIEW_LISTING_ID} AND workspace_id = ${WORKSPACE_ID}
+    `;
     await tx`
       INSERT INTO platform_products (id, workspace_id, connection_id, remote_product_id, sku, listing_id, spec_version, raw_row, facts_prefill, content_digest, origin, source_import_id)
       VALUES (
@@ -380,6 +434,14 @@ try {
     const foreignWorkspace = "ws_studio_browser_foreign";
     const foreignOutput = "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a0b";
     await tx`INSERT INTO workspaces(id,name,profile) VALUES(${foreignWorkspace},'Foreign Studio fixture',${sql.json(WORKSPACE_PROFILE)}) ON CONFLICT(id) DO NOTHING`;
+    const foreignListingContent = sql.json({
+      ...REVIEW_LISTING_CONTENT,
+      sku: "FOREIGN-001",
+      title: { en: "Foreign private listing", "zh-Hant": "外部私人商品" },
+    });
+    await tx`INSERT INTO listing_drafts(id,workspace_id,target,status,note) VALUES(${FOREIGN_LISTING_ID},${foreignWorkspace},'shopline','in_review','Foreign private fixture') ON CONFLICT(id) DO UPDATE SET status=excluded.status,note=excluded.note`;
+    await tx`INSERT INTO listing_versions(id,workspace_id,listing_id,sequence,content,created_by) VALUES(${FOREIGN_VERSION_ID},${foreignWorkspace},${FOREIGN_LISTING_ID},1,${foreignListingContent},${USER_ID}) ON CONFLICT(listing_id,sequence) DO UPDATE SET content=excluded.content`;
+    await tx`UPDATE listing_drafts SET active_version_id=${FOREIGN_VERSION_ID} WHERE id=${FOREIGN_LISTING_ID} AND workspace_id=${foreignWorkspace}`;
     await tx`INSERT INTO studio_outputs(id,workspace_id,kind,title,status,current_version,created_by)
       VALUES(${foreignOutput},${foreignWorkspace},'copy_proposal','Foreign private fixture','draft',1,${USER_ID}) ON CONFLICT(workspace_id,id) DO NOTHING`;
     await tx`INSERT INTO studio_output_versions(id,workspace_id,output_id,revision,payload,content_digest,as_of,scope,created_by)
@@ -395,6 +457,8 @@ try {
       viewerEmail: VIEWER_EMAIL,
       studioEnabled: true,
       supplierListingId: SUPPLIER_LISTING_ID,
+      reviewListingId: REVIEW_LISTING_ID,
+      foreignListingId: FOREIGN_LISTING_ID,
       handoffOutputId: HANDOFF_OUTPUT_ID,
     }),
   );

@@ -1,16 +1,18 @@
 # Next development roadmap — from deployed Studio to a commerce orchestration OS
 
-Status: updated 2026-11-15 (Asia/Singapore). The Opak Studio pilot is live. A1–A5, attachment upload,
+Status: updated 2026-11-16 (Asia/Singapore). The Opak Studio pilot is live. A1–A5, attachment upload,
 pinned listing handoff, hosted-MCP hardening, run/cost visibility, product-shot recovery and catalog
 evidence work have shipped; external MCP activation and SHOPLINE writes remain separately gated.
 The **workspace audit → selected-listing gap review → copy proposal → reviewer handoff** milestone
 shipped in PRs #223–#225, with explicit Send and existing Studio records. Exact-version integrity,
 structured context/durable gap reports, guided UI and authenticated fake-model acceptance are live.
 **Website-scan retry recovery** shipped in PR #226 with same-scan explicit recovery, retained evidence
-and bounded diagnostics. The next approved three-PR cycle, **actionable reviewer inbox**, adds exact
-artifact-version detail (PR #227), bounded pending-artifact links and confirmation metadata (PR #228),
-and operator-to-reviewer acceptance with mobile/CJK evidence. It retains explicit actions and existing
-tables; read navigation never submits a model request or changes canonical listing data.
+and bounded diagnostics. The **actionable reviewer inbox** cycle shipped in PRs #227/#228, and the
+**bounded multi-listing review** cycle shipped in PRs #230-#232: one explicit operator action runs the
+existing deterministic audit and gap review for up to five selected listings, each in its own guided
+thread with exact recorded pins, honest per-item states and reloadable results. Both cycles retain
+explicit actions and existing tables; read navigation never submits a model request or changes
+canonical listing data.
 
 The dated sections below preserve the original sequencing and release history. Their historical
 "not built"/"flags off" statements are superseded by the latest dated status entries. Runtime policy
@@ -532,3 +534,31 @@ Scheduling, batches, assignments/notifications, new connectors and external MCP 
 later decisions. No workflow engine, schema migration, provider/budget change or paid development call
 is introduced. After this cycle, choose bounded manually initiated multi-listing review versus the
 first read-only business connector as a separate product decision.
+
+### Bounded multi-listing review (approved 2026-11-16)
+
+The operator selected [bounded multi-listing review](2026-11-16-bounded-multi-listing-review.md) after
+the completed reviewer inbox: select up to five listings and run the shipped deterministic audit and
+gap review once per listing, each in its own guided thread, without a workflow engine, scheduler,
+queue, schema migration or model call. Results show exact recorded pins and honest per-item states,
+and reload/shared links rebuild from the database. Copy proposals remain a separate manual paid step
+inside each thread.
+
+- PR #230 shipped the workspace-scoped batch and single-query read model behind
+  `POST`/`GET /api/studio/reviews`. Merge `38e403b7`, exact-head CI 43751958877, post-merge main CI
+  43753867060 and the production deployment at that merge were verified, including the unauthenticated
+  alias probes for the new route.
+- PR #231 shipped the `/studio/reviews` operator surface: bounded selection, one explicit start,
+  per-listing outcomes with exact audit/gap links and threads, failed-item retry, viewer read-only and
+  reload reconstruction. Merge `e46e8ba0`, exact-head CI 43753901445, post-merge main CI 43755853846
+  and the production deployment at that merge were verified; the full local web suite passed 3,239
+  checks across 315 files.
+- Release PR #232 seeds a second ordinary listing and a foreign-workspace listing, and runs
+  authenticated browser acceptance for two-listing completion with exact pins, zero model/paid
+  activity, unchanged canonical listings, foreign/missing ids answered unavailable, the five-listing
+  cap, viewer 403 and a readable 390px Traditional Chinese result page. CI run 43755909375 passed and
+  uploaded the new screenshots. The release PR body carries its own exact-head, merge, post-merge main
+  CI and production evidence; retained screenshots use synthetic fixture data only.
+
+The next product decision remains the first read-only business connector versus further Studio
+deepening. External MCP activation, SHOPLINE writes, scheduling and assignments stay separately gated.
