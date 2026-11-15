@@ -17,6 +17,8 @@ import type {
   WorkspaceRepositories,
 } from "@wukong/db";
 
+import { guidedScopeSchema } from "./guided-contracts";
+
 /**
  * In-memory fakes for the Studio service and route tests (plan Task 6).
  *
@@ -856,6 +858,70 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
         },
       },
       outputs: {
+        latestGuidedReviews: async (listingIds: string[]) => {
+          state.writes.push("outputs.latestGuidedReviews");
+          if (shouldFailSource("outputs"))
+            throw new Error("fake outputs source unavailable");
+          const wanted = new Set(listingIds);
+          const latest = new Map<
+            string,
+            {
+              listingId: string;
+              stage: "audit" | "gap_review";
+              outputId: string;
+              threadId: string | null;
+              status: StudioOutput["status"];
+              revision: number;
+              contentDigest: string;
+              createdAt: Date;
+            }
+          >();
+          for (const output of state.outputs) {
+            if (output.workspaceId !== settings.workspaceId) continue;
+            const version = state.outputVersions.find(
+              (entry) =>
+                entry.workspaceId === settings.workspaceId &&
+                entry.outputId === output.id &&
+                entry.revision === output.currentVersion,
+            );
+            const scopeRecord =
+              version &&
+              typeof version.scope === "object" &&
+              version.scope !== null
+                ? (version.scope as Record<string, unknown>).guidedReview
+                : null;
+            const parsedScope = guidedScopeSchema.safeParse(scopeRecord);
+            if (!version || !parsedScope.success) continue;
+            if (parsedScope.data.stage === "copy_proposal") continue;
+            const scope = {
+              listing: parsedScope.data.listing.listingId,
+              stage: parsedScope.data.stage,
+            };
+            if (!wanted.has(scope.listing)) continue;
+            const key = `${scope.listing}:${scope.stage}`;
+            const previous = latest.get(key);
+            if (
+              previous &&
+              previous.createdAt.getTime() >= output.createdAt.getTime()
+            )
+              continue;
+            latest.set(key, {
+              listingId: scope.listing,
+              stage: scope.stage,
+              outputId: output.id,
+              threadId: output.threadId,
+              status: output.status,
+              revision: version.revision,
+              contentDigest: version.contentDigest,
+              createdAt: output.createdAt,
+            });
+          }
+          return [...latest.values()].sort(
+            (left, right) =>
+              left.listingId.localeCompare(right.listingId) ||
+              left.stage.localeCompare(right.stage),
+          );
+        },
         create: async (input: {
           threadId?: string | null;
           runId?: string | null;

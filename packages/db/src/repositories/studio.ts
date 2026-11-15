@@ -495,6 +495,25 @@ export type StudioRepository = {
       }>
     >;
     versions(outputId: string): Promise<StudioOutputVersion[]>;
+    /**
+     * Newest recorded guided stage per listing for the requested ids.
+     *
+     * Reads only current-version rows whose guided scope names one of the ids,
+     * and returns metadata plus the exact pin — never a version payload. Ids are
+     * compared as text, so a malformed caller value cannot raise a cast error.
+     */
+    latestGuidedReviews(listingIds: string[]): Promise<
+      Array<{
+        listingId: string;
+        stage: "audit" | "gap_review";
+        outputId: string;
+        threadId: string | null;
+        status: StudioOutputStatus;
+        revision: number;
+        contentDigest: string;
+        createdAt: Date;
+      }>
+    >;
     setStatus(
       id: string,
       status: Exclude<StudioOutputStatus, "draft">,
@@ -1381,6 +1400,41 @@ export function createStudioRepository(
           updatedAt: iso(row.updated_at),
           versionDigest: nullableText(row.content_digest),
           confirmed: row.confirmed === true,
+        }));
+      },
+      async latestGuidedReviews(listingIds) {
+        scope.assertOpen();
+        if (listingIds.length === 0) return [];
+        if (listingIds.length > 50 || listingIds.some((id) => !id))
+          throw new Error("invalid guided review listing ids");
+        const rows = await transaction.execute(sql`
+          select distinct on (
+            v.scope->'guidedReview'->'listing'->>'listingId',
+            v.scope->'guidedReview'->>'stage'
+          )
+            v.scope->'guidedReview'->'listing'->>'listingId' as listing_id,
+            v.scope->'guidedReview'->>'stage' as stage,
+            o.id, o.thread_id, o.status, v.revision, v.content_digest, o.created_at
+          from studio_outputs o
+          join studio_output_versions v
+            on v.workspace_id=o.workspace_id and v.output_id=o.id and v.revision=o.current_version
+          where o.workspace_id=${workspaceId}
+            and v.scope->'guidedReview'->'listing'->>'listingId' = any(${textArray(listingIds)})
+            and v.scope->'guidedReview'->>'stage' in ('audit','gap_review')
+          order by
+            v.scope->'guidedReview'->'listing'->>'listingId',
+            v.scope->'guidedReview'->>'stage',
+            o.created_at desc, o.id desc
+        `);
+        return rows.map((row) => ({
+          listingId: text(row.listing_id),
+          stage: text(row.stage) as "audit" | "gap_review",
+          outputId: text(row.id),
+          threadId: nullableText(row.thread_id),
+          status: text(row.status) as StudioOutputStatus,
+          revision: Number(row.revision),
+          contentDigest: text(row.content_digest),
+          createdAt: iso(row.created_at),
         }));
       },
       async versions(outputId) {
