@@ -993,6 +993,109 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(foreign.some((row) => result.includes(row.id))).toBe(false);
   });
 
+  it("reads the newest guided stage per listing with exact pins and no payloads", async () => {
+    const workspace = "studio-guided-reviews";
+    await admin!`insert into workspaces(id,name,profile) values(${workspace},'Guided reviews','{}')`;
+    const LISTING_A = "11111111-1111-4111-8111-111111111111";
+    const LISTING_B = "22222222-2222-4222-8222-222222222222";
+    type Repos = Parameters<Parameters<Database["forWorkspace"]>[1]>[0];
+    const guided =
+      (
+        kind: "merchant_audit" | "gap_report",
+        stage: "audit" | "gap_review",
+        listingId: string,
+        digests: string[],
+      ) =>
+      async (repos: Repos) => {
+        const output = await repos.studio.outputs.create({
+          kind,
+          title: `${stage} ${listingId}`,
+          createdBy: "actor-a",
+        });
+        let version = null;
+        for (const [index, digest] of digests.entries())
+          version = await repos.studio.outputs.addVersion({
+            outputId: output.id,
+            payload: { privateEvidence: "Never returned by the read model" },
+            contentDigest: digest,
+            asOf: new Date(),
+            scope: {
+              guidedReview: {
+                schemaVersion: "wukong-listing-improvement/v1",
+                rootRunId: output.id,
+                stage,
+                listing: { listingId },
+              },
+            },
+            createdBy: "actor-a",
+          });
+        return {
+          outputId: output.id,
+          revision: version!.version.revision,
+          contentDigest: version!.version.contentDigest,
+        };
+      };
+
+    const olderAudit = await studioRepositories(
+      workspace,
+      guided("merchant_audit", "audit", LISTING_A, ["a".repeat(64)]),
+    );
+    const gap = await studioRepositories(
+      workspace,
+      guided("gap_report", "gap_review", LISTING_A, ["b".repeat(64)]),
+    );
+    const newerAudit = await studioRepositories(
+      workspace,
+      guided("merchant_audit", "audit", LISTING_A, [
+        "c".repeat(64),
+        "d".repeat(64),
+      ]),
+    );
+    const otherListing = await studioRepositories(
+      workspace,
+      guided("merchant_audit", "audit", LISTING_B, ["e".repeat(64)]),
+    );
+    await studioRepositories(
+      WORKSPACE_B,
+      guided("merchant_audit", "audit", LISTING_A, ["f".repeat(64)]),
+    );
+
+    const rows = await studioRepositories(workspace, (repos) =>
+      repos.studio.outputs.latestGuidedReviews([LISTING_A, LISTING_B]),
+    );
+    expect(rows).toHaveLength(3);
+    const auditRow = rows.find(
+      (row) => row.listingId === LISTING_A && row.stage === "audit",
+    )!;
+    expect(auditRow.outputId).toBe(newerAudit.outputId);
+    expect(auditRow.outputId).not.toBe(olderAudit.outputId);
+    // The pin is the output's current version, not the first recorded one.
+    expect(auditRow.revision).toBe(2);
+    expect(auditRow.contentDigest).toBe(newerAudit.contentDigest);
+    expect(
+      rows.find(
+        (row) => row.listingId === LISTING_A && row.stage === "gap_review",
+      ),
+    ).toMatchObject({
+      outputId: gap.outputId,
+      revision: 1,
+      contentDigest: gap.contentDigest,
+    });
+    expect(rows.find((row) => row.listingId === LISTING_B)?.outputId).toBe(
+      otherListing.outputId,
+    );
+    expect(rows.some((row) => row.contentDigest === "f".repeat(64))).toBe(
+      false,
+    );
+    expect(auditRow).not.toHaveProperty("payload");
+    expect(auditRow).not.toHaveProperty("scope");
+    expect(
+      await studioRepositories(workspace, (repos) =>
+        repos.studio.outputs.latestGuidedReviews([]),
+      ),
+    ).toEqual([]);
+  });
+
   it("filters pending statuses before limiting to eleven each despite newer completed history", async () => {
     const workspace = "studio-inbox-bounds";
     await admin!`insert into workspaces(id,name,profile) values(${workspace},'Inbox bounds','{}')`;

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type {
@@ -59,6 +60,18 @@ import {
 } from "./contracts";
 import { parseCopyProposalPayload } from "./copy-proposal";
 import { outputDigestMatches, proposalFreshness } from "./output-review";
+import { guidedCopy } from "./guided-copy";
+import {
+  STUDIO_REVIEW_BATCH_LIMIT,
+  reviewArtifact,
+  studioReviewBatchBodySchema,
+  studioReviewBatchQuerySchema,
+  type StudioListingReviewState,
+  type StudioReviewArtifact,
+  type StudioReviewBatchItem,
+  type StudioReviewBatchResult,
+  type StudioReviewFailureCode,
+} from "./review-batch";
 import {
   GUIDED_REVIEW_VERSION,
   GUIDED_SKILLS,
@@ -472,6 +485,25 @@ function createDefaultModel(
   } catch {
     return null;
   }
+}
+
+/** Guided entry and multi-listing review share the same skill-allowance gate. */
+function guidedSkillsAllowed(settings: StudioSettings): boolean {
+  return Object.values(GUIDED_SKILLS).every(
+    (key) =>
+      settings.allowedSkills.length === 0 ||
+      settings.allowedSkills.includes(key),
+  );
+}
+
+/** Map an internal failure to a bounded, client-safe review outcome reason. */
+function reviewFailureCode(error: unknown): StudioReviewFailureCode {
+  if (error instanceof ApiError) {
+    if (error.status === 404) return "listing_unavailable";
+    if (error.status === 409) return "listing_changed";
+    if (error.status === 403) return "review_unavailable";
+  }
+  return "review_failed";
 }
 
 export function createStudioService(deps: StudioServiceDeps) {
@@ -1610,7 +1642,7 @@ export function createStudioService(deps: StudioServiceDeps) {
     };
   }
 
-  return {
+  const service = {
     async guidedAvailability(): Promise<boolean> {
       try {
         const { settings } = await requireStudioSession(deps, "operator");
@@ -1647,6 +1679,277 @@ export function createStudioService(deps: StudioServiceDeps) {
         prepareGuidedReview({ action: selected, threadId: "", repos }),
       );
       return selected;
+    },
+
+    /**
+     * Bounded multi-listing review (2026-11-16 plan).
+     *
+     * Runs the two deterministic guided stages for at most five selected
+     * listings, each in its own thread so the shipped single-listing journey
+     * stays intact. Nothing runs in the background: one operator request drives
+     * every step, and copy proposals remain a separate manual send. A listing
+     * that fails is recorded as failed and never stops the others.
+     */
+    async startReviewBatch(input: unknown): Promise<StudioReviewBatchResult> {
+      const { session, settings } = await requireStudioSession(
+        deps,
+        "operator",
+      );
+      if (!guidedSkillsAllowed(settings)) throw studioNotFound();
+      const parsed = studioReviewBatchBodySchema.safeParse(input);
+      if (!parsed.success)
+        throw new ApiError(400, "invalid_body", "Request body is invalid.");
+      const { listingIds, locale } = parsed.data;
+
+      /** Read back the exact recorded version; never trust the reply alone. */
+      const recordedArtifact = async (
+        threadId: string,
+        ref: { outputId: string; revision: number } | undefined,
+      ): Promise<StudioReviewArtifact | null> => {
+        if (!ref) return null;
+        return database().forWorkspace(session.workspaceId, async (repos) => {
+          const output = await repos.studio.outputs.get(ref.outputId);
+          if (!output || output.threadId !== threadId) return null;
+          const version = await repos.studio.outputs.getVersion(
+            ref.outputId,
+            ref.revision,
+          );
+          return version
+            ? reviewArtifact({
+                outputId: output.id,
+                revision: version.revision,
+                contentDigest: version.contentDigest,
+              })
+            : null;
+        });
+      };
+
+      const items: StudioReviewBatchItem[] = [];
+      for (const listingId of listingIds) {
+        let threadId: string | null = null;
+        let title = "";
+        try {
+          const evidence = await database().forWorkspace(
+            session.workspaceId,
+            (repos) => buildStudioReadDeps(repos).getListing(listingId),
+          );
+          if (!evidence) {
+            items.push({
+              listingId,
+              title,
+              outcome: "failed",
+              failureCode: "listing_unavailable",
+              threadId: null,
+              audit: null,
+              gap: null,
+            });
+            continue;
+          }
+          title = evidence.title;
+          const created = await service.createThread({
+            title:
+              evidence.title.trim().slice(0, 160) ||
+              STUDIO_DEFAULT_THREAD_TITLE,
+          });
+          threadId = created.threadId;
+          const audit = await service.sendMessage(created.threadId, {
+            clientMessageId: randomUUID(),
+            text: guidedCopy(locale, "auditRequest"),
+            locale,
+            guidedAction: {
+              kind: "audit",
+              listingId,
+              expectedActiveVersionId:
+                evidence.activeVersion?.versionId ?? null,
+            },
+          });
+          const auditPin = await recordedArtifact(
+            created.threadId,
+            audit.reply.outputs[0],
+          );
+          if (!auditPin)
+            throw new ApiError(
+              409,
+              "review_unavailable",
+              "The audit was not recorded.",
+            );
+          const gapPin = await (async () => {
+            try {
+              const gap = await service.sendMessage(created.threadId, {
+                clientMessageId: randomUUID(),
+                text: guidedCopy(locale, "gapRequest"),
+                locale,
+                guidedAction: {
+                  kind: "gap_review",
+                  sourceOutputId: auditPin.outputId,
+                  sourceRevision: auditPin.revision,
+                  sourceDigest: auditPin.contentDigest,
+                },
+              });
+              return await recordedArtifact(
+                created.threadId,
+                gap.reply.outputs[0],
+              );
+            } catch (error) {
+              // The recorded audit stays usable; the item is honestly partial.
+              if (
+                !(error instanceof ApiError) ||
+                ![404, 409].includes(error.status)
+              ) {
+                console.info(
+                  JSON.stringify({
+                    event: "studio_review_batch_gap_failed",
+                    outcome: "failure",
+                    errorName:
+                      error instanceof Error ? error.name : "UnknownError",
+                  }),
+                );
+              }
+              return null;
+            }
+          })();
+          items.push({
+            listingId,
+            title,
+            outcome: gapPin ? "complete" : "partial",
+            failureCode: gapPin ? null : "review_unavailable",
+            threadId: created.threadId,
+            audit: auditPin,
+            gap: gapPin,
+          });
+        } catch (error) {
+          items.push({
+            listingId,
+            title,
+            outcome: "failed",
+            failureCode: reviewFailureCode(error),
+            threadId,
+            audit: null,
+            gap: null,
+          });
+        }
+      }
+
+      const completed = items.filter(
+        (item) => item.outcome === "complete",
+      ).length;
+      const partial = items.filter((item) => item.outcome === "partial").length;
+      const failed = items.filter((item) => item.outcome === "failed").length;
+      const auditThread = items.find((item) => item.threadId)?.threadId;
+      const batchId = randomUUID();
+      if (auditThread) {
+        // Supplementary trace only: each thread, message and run above already
+        // wrote its own audit event. A failure here must not discard recorded
+        // work, so it is logged with bounded fields instead of thrown.
+        try {
+          await database().forWorkspace(session.workspaceId, (repos) =>
+            repos.audit.write({
+              workspaceId: session.workspaceId,
+              actorId: session.actorId,
+              entityId: auditThread,
+              action: "studio.review_batch.processed",
+              metadata: {
+                batchId,
+                requested: items.length,
+                completed,
+                partial,
+                failed,
+                listingIds: items.map((item) => item.listingId),
+                outcomes: items.map((item) => item.outcome),
+                failureCodes: items.map((item) => item.failureCode),
+              },
+            }),
+          );
+        } catch (error) {
+          console.info(
+            JSON.stringify({
+              event: "studio_review_batch_audit_failed",
+              outcome: "failure",
+              errorName: error instanceof Error ? error.name : "UnknownError",
+            }),
+          );
+        }
+      }
+      return {
+        batchId,
+        items,
+        requested: items.length,
+        completed,
+        partial,
+        failed,
+      };
+    },
+
+    /**
+     * Rebuild per-listing review state from recorded artifacts (viewer+).
+     * Read-only: no model call, no request, no mutation, and a missing or
+     * foreign listing is reported as unavailable without naming it.
+     */
+    async listingReviews(
+      input: unknown,
+    ): Promise<{ items: StudioListingReviewState[] }> {
+      const { session } = await requireStudioSession(deps, "viewer");
+      const parsed = studioReviewBatchQuerySchema.safeParse(input);
+      if (!parsed.success)
+        throw new ApiError(
+          400,
+          "invalid_query",
+          "Query parameters are invalid.",
+        );
+      const listingIds = parsed.data;
+      const data = await database().forWorkspace(
+        session.workspaceId,
+        async (repos) => {
+          const states =
+            await repos.studio.outputs.latestGuidedReviews(listingIds);
+          const readDeps = buildStudioReadDeps(repos);
+          const evidence = await Promise.all(
+            listingIds.map(async (listingId) => ({
+              listingId,
+              listing: await readDeps.getListing(listingId),
+            })),
+          );
+          return { states, evidence };
+        },
+      );
+      const artifact = (
+        stage: "audit" | "gap_review",
+        listingId: string,
+      ): StudioReviewArtifact | null => {
+        const state = data.states.find(
+          (entry) => entry.listingId === listingId && entry.stage === stage,
+        );
+        return state
+          ? reviewArtifact({
+              outputId: state.outputId,
+              revision: state.revision,
+              contentDigest: state.contentDigest,
+            })
+          : null;
+      };
+      return {
+        items: data.evidence.map(
+          ({ listingId, listing }): StudioListingReviewState => {
+            const audit = artifact("audit", listingId);
+            const gap = artifact("gap_review", listingId);
+            const threadId =
+              data.states.find(
+                (entry) =>
+                  entry.listingId === listingId && entry.threadId !== null,
+              )?.threadId ?? null;
+            return {
+              listingId,
+              available: listing !== null,
+              title: listing?.title ?? "",
+              status: listing?.status ?? null,
+              activeVersion: listing?.activeVersion ?? null,
+              threadId,
+              audit,
+              gap,
+            };
+          },
+        ),
+      };
     },
     async createThread(body: CreateThreadBody): Promise<CreateThreadResult> {
       const { session } = await requireStudioSession(deps, "operator");
@@ -2532,6 +2835,7 @@ export function createStudioService(deps: StudioServiceDeps) {
       });
     },
   };
+  return service;
 }
 
 export type StudioService = ReturnType<typeof createStudioService>;
