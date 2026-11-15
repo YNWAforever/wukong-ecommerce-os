@@ -37,6 +37,44 @@ The shipped guided journey is one listing per thread with exact source pins. Reu
 - Role/privacy: viewer cannot start; foreign ids never expose titles or artifacts; existing inbox/outputs behaviour unchanged.
 - Release record with exact-head CI, matching production deployment/smoke and post-merge main CI, plus the updated roadmap.
 
+## Delivery record (2026-11-16)
+
+PR #230 shipped the server batch and read model: `STUDIO_REVIEW_BATCH_LIMIT = 5`, strict
+`{ listingIds }` body, operator floor plus the existing guided-skill gate, sequential per-listing
+thread + deterministic audit turn + gap turn pinned to the recorded audit, per-item
+`complete | partial | failed` with bounded failure codes, one summary audit event, and
+`GET /api/studio/reviews?listingIds=` reconstruction from the newest recorded guided versions in one
+workspace-scoped query. Head `8f44a65f2b0958fdba4399bf2cc07b089c43ab03`, merge
+`38e403b7ca2a78957f49f951cee8c7d9d99f4f30`; PR CI 43751958877 and post-merge main CI 43753867060
+passed, including real PostgreSQL/RLS, audit, browser and build gates. The production deployment for
+that merge reported success at `https://wukong-ecommerce-fm2pl0d5p-ynwaforevers-projects.vercel.app`;
+the production alias served the root-to-sign-in redirect, `/signin` 200, `/api/studio/settings` 401 and
+`/api/studio/reviews` 401. No schema migration, queue, scheduler, model call, budget reservation or
+canonical listing write is introduced.
+
+PR #231 shipped the operator surface at `/studio/reviews`: searchable/paginated listing selection,
+checkboxes capped at five with the cap stated, one explicit **Start review**, per-listing result rows
+with bounded failure copy, exact audit/gap links, thread links, failed-item retry and viewer read-only
+gating. Reloads and shared `?listingIds=` links rebuild state from the database. Head
+`eb9cad9657c2e08a835024b2095ca39dccf9d388`, merge `e46e8ba0199a020f1776b7488f2124797c5b0331`; PR CI
+43753901445 and post-merge main CI 43755853846 passed. The production deployment for that merge
+(`https://wukong-ecommerce-3jdk96ysg-ynwaforevers-projects.vercel.app`) reported success and the same
+alias probes passed. The full local `@wukong/web` unit suite passed (3,239 checks across 315 files),
+alongside the Studio-focused batch, page, component, shell and copy checks.
+
+The release PR #232 adds the authenticated browser acceptance and release evidence: the fixture now
+seeds a second ordinary listing and a foreign-workspace listing, and the new spec selects both
+in-workspace listings, runs one batch, verifies two distinct threads with exact audit/gap
+revisions + digests, `model: null` / `reservedUsd: null` for every recorded run, zero message posts
+from the page, reload reconstruction, byte-identical canonical listings, foreign/missing ids answered
+as unavailable without titles or artifacts, cap/duplicate/extra-key rejections, viewer 403 with a
+disabled control, and a readable 390px Traditional Chinese result page. CI run 43755909375 on head
+`ba59533639582dc9bc5cf7efc3083a9a6dc4f48d` passed the Studio browser acceptance and uploaded the new
+screenshots. The exact-head, merge, post-merge main CI and production evidence for the release merge
+itself is recorded in the PR body. A listing that changes after selection but before start is simply
+reviewed at the version read when the batch starts (results pin that version); a change during the
+batch returns `listing_changed` and keeps the listing's thread, which the PR 1 service tests cover.
+
 ## Boundaries
 
 Frozen provider OpenCode Go / `deepseek-v4.1-flash`, USD10 cumulative workspace cap, USD2 run ceiling, 4096 output tokens. No new paid development calls, no production workspace activation, no external MCP or SHOPLINE write activation, no migrations, no scheduling, assignments, notifications, connectors or multi-listing copy generation. Merge only exact green heads after verifying deployed commits.
