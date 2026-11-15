@@ -119,6 +119,7 @@ jobs:
         run: |
           pnpm typecheck
           node apps/web/node_modules/typescript/bin/tsc --noEmit --strict --noUncheckedIndexedAccess --skipLibCheck --moduleResolution bundler --module esnext --target ES2022 --types node --esModuleInterop tests/e2e/studio-guided-acceptance.spec.ts
+          node apps/web/node_modules/typescript/bin/tsc --noEmit --strict --noUncheckedIndexedAccess --skipLibCheck --moduleResolution bundler --module esnext --target ES2022 --types node --esModuleInterop tests/e2e/studio-browser-acceptance.spec.ts
           node apps/web/node_modules/typescript/bin/tsc --noEmit --strict --noUncheckedIndexedAccess --skipLibCheck --moduleResolution bundler --module esnext --target ES2022 --types node --esModuleInterop --baseUrl packages/db/node_modules tests/e2e/website-import.spec.ts
       - name: Unit tests
         run: pnpm test
@@ -300,6 +301,14 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:49300/signin > /dev/null
           STUDIO_GUIDED_ACCEPTANCE=1 pnpm exec playwright test tests/e2e/studio-guided-acceptance.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
+      - name: Upload Studio reviewer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-reviewer-evidence
+          include-hidden-files: true
+          path: node_modules/.studio-evidence/studio-reviewer-*.png
+          if-no-files-found: ignore
       - name: Studio activation preflight (read-only)
         # The same command operators run before activation. It must report
         # `outcome:"ready"` against the seeded acceptance database: schema from

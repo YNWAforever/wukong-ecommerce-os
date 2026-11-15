@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type SyntheticEvent,
@@ -11,6 +12,7 @@ import {
 import { z } from "zod";
 
 import type { Locale } from "../lib/locale";
+import type { OutputVersionPin } from "../lib/studio/contracts";
 import { renderStudioLine } from "../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import {
@@ -31,7 +33,10 @@ import styles from "./studio.module.css";
  * outputs page), the card reads the artifact from `GET /api/studio/outputs/[id]`
  * and renders its newest version: kind, title, status chip, current version,
  * as-of time and a short content digest, with the copy-proposal review card
- * inline for `copy_proposal` payloads.
+ * inline for `copy_proposal` payloads. An explicit `versionPin` selects only
+ * that immutable revision/digest; older selections are read-only and never
+ * inherit current-version review or export status. A validated server detail
+ * can seed the card without a duplicate initial client read.
  *
  * The two mutating actions follow the reviewed contract and the honesty rule:
  *
@@ -215,6 +220,22 @@ export function outputActionErrorKey(input: {
     : "studio.outputs.signOffFailed";
 }
 
+function matchesSelection(
+  detail: StudioOutputDetail,
+  outputId: string,
+  pin: OutputVersionPin | null,
+): boolean {
+  return (
+    detail.output.outputId === outputId &&
+    detail.versions.some((version) =>
+      pin
+        ? version.revision === pin.expectedRevision &&
+          version.contentDigest === pin.expectedDigest
+        : version.revision === detail.output.currentVersion,
+    )
+  );
+}
+
 export type StudioOutputCardProps = {
   readonly locale: Locale;
   readonly outputId: string;
@@ -222,6 +243,10 @@ export type StudioOutputCardProps = {
   readonly revision?: number | null;
   /** Reviewer-or-higher; supplied by the server page, never inferred here. */
   readonly canSignOff: boolean;
+  readonly canSave?: boolean;
+  /** Explicit immutable selection; unlike revision, this never follows latest. */
+  readonly versionPin?: OutputVersionPin | null;
+  readonly initialDetail?: unknown;
   /**
    * Render as a collapsed `<details>` row that loads only when opened. The
    * outputs page uses this; a thread renders the card immediately.
@@ -240,16 +265,30 @@ export function StudioOutputCard({
   outputId,
   revision = null,
   canSignOff,
+  canSave = true,
+  versionPin = null,
+  initialDetail = null,
   expandable = false,
   initialSummary = null,
 }: StudioOutputCardProps) {
-  const [storedDetail, setDetail] = useState<StudioOutputDetail | null>(null);
+  const pinKey = versionPin
+    ? `${versionPin.expectedRevision}:${versionPin.expectedDigest}`
+    : "latest";
+  const seed = useMemo(() => {
+    const parsed = studioOutputDetailSchema.safeParse(initialDetail);
+    return parsed.success && matchesSelection(parsed.data, outputId, versionPin)
+      ? parsed.data
+      : null;
+  }, [initialDetail, outputId, pinKey]);
+  const [storedDetail, setDetail] = useState<StudioOutputDetail | null>(seed);
   const detail =
-    storedDetail?.output.outputId === outputId ? storedDetail : null;
+    storedDetail && matchesSelection(storedDetail, outputId, versionPin)
+      ? storedDetail
+      : null;
   // A non-expandable card starts fetching immediately, so its first paint is
   // the honest loading state (also what server-side rendering shows); an
   // expandable row shows no body until the operator opens it.
-  const [loading, setLoading] = useState(!expandable);
+  const [loading, setLoading] = useState(!expandable && seed === null);
   const [loadError, setLoadError] = useState<StudioCopyKey | null>(null);
   const [actionState, setActionState] = useState<ActionState>("idle");
   const [actionError, setActionError] = useState<StudioCopyKey | null>(null);
@@ -258,21 +297,23 @@ export function StudioOutputCard({
     phase: "idle",
   });
   const inFlight = useRef(false);
-  const identity = useRef({ outputId, expandable });
+  const identity = useRef({ outputId, expandable, pinKey, seed });
   if (
     identity.current.outputId !== outputId ||
-    identity.current.expandable !== expandable
+    identity.current.expandable !== expandable ||
+    identity.current.pinKey !== pinKey ||
+    identity.current.seed !== seed
   )
-    identity.current = { outputId, expandable };
+    identity.current = { outputId, expandable, pinKey, seed };
   useEffect(() => {
     inFlight.current = false;
-    setDetail(null);
-    setLoading(!expandable);
+    setDetail(seed);
+    setLoading(!expandable && seed === null);
     setLoadError(null);
     setActionState("idle");
     setActionError(null);
     setNotice(null);
-  }, [outputId, expandable]);
+  }, [outputId, expandable, pinKey, seed]);
 
   const load = useCallback(async () => {
     const context = identity.current;
@@ -282,7 +323,10 @@ export function StudioOutputCard({
     setLoadError(null);
     try {
       const result = await getJson(
-        `/api/studio/outputs/${encodeURIComponent(outputId)}`,
+        `/api/studio/outputs/${encodeURIComponent(outputId)}` +
+          (versionPin
+            ? `?revision=${versionPin.expectedRevision}&digest=${versionPin.expectedDigest}`
+            : ""),
       );
       if (identity.current !== context) return;
       if (result.status !== 200) {
@@ -292,10 +336,7 @@ export function StudioOutputCard({
       const parsed = studioOutputDetailSchema.safeParse(result.body);
       if (
         !parsed.success ||
-        parsed.data.output.outputId !== outputId ||
-        !parsed.data.versions.some(
-          (version) => version.revision === parsed.data.output.currentVersion,
-        )
+        !matchesSelection(parsed.data, outputId, versionPin)
       ) {
         setLoadError("studio.outputs.loadError");
         return;
@@ -309,11 +350,11 @@ export function StudioOutputCard({
         setLoading(false);
       }
     }
-  }, [outputId]);
+  }, [outputId, pinKey]);
 
   useEffect(() => {
-    if (!expandable) void load();
-  }, [expandable, load]);
+    if (!expandable && seed === null) void load();
+  }, [expandable, load, seed]);
 
   const handleToggle = useCallback(
     (event: SyntheticEvent<HTMLDetailsElement>) => {
@@ -330,7 +371,14 @@ export function StudioOutputCard({
         inFlight.current ||
         context.outputId !== outputId ||
         !detail ||
-        detail.output.outputId !== outputId
+        detail.output.outputId !== outputId ||
+        (action === "save" && !canSave) ||
+        (action === "sign_off" && !canSignOff) ||
+        (versionPin &&
+          (detail.output.currentVersion !== versionPin.expectedRevision ||
+            !["current", "not_applicable"].includes(
+              detail.output.freshness ?? "unavailable",
+            )))
       )
         return;
       const preview = detail.versions.find(
@@ -410,7 +458,7 @@ export function StudioOutputCard({
         }
       }
     },
-    [outputId, detail],
+    [outputId, detail, pinKey, canSave, canSignOff],
   );
 
   const status = detail?.output.status ?? initialSummary?.status ?? null;
@@ -419,21 +467,36 @@ export function StudioOutputCard({
   const currentVersion = detail?.output.currentVersion ?? revision ?? null;
   const version =
     detail?.versions.find(
-      (entry) => entry.revision === detail.output.currentVersion,
+      (entry) =>
+        entry.revision ===
+        (versionPin?.expectedRevision ?? detail.output.currentVersion),
     ) ?? null;
-  const confirmation = detail?.output.confirmation;
+  const historical =
+    versionPin !== null &&
+    detail !== null &&
+    versionPin.expectedRevision !== detail.output.currentVersion;
+  const pinnedUnavailable =
+    versionPin !== null &&
+    detail !== null &&
+    !["current", "not_applicable"].includes(
+      detail.output.freshness ?? "unavailable",
+    );
+  const reviewBlocked = historical || pinnedUnavailable;
+  const confirmation = historical ? null : detail?.output.confirmation;
   const confirmed =
     version !== null &&
     confirmation?.revision === version.revision &&
     confirmation.contentDigest === version.contentDigest &&
     confirmation.status === status;
-  const needsConfirmation = status === "signed_off" && !confirmed;
+  const needsConfirmation =
+    !historical && status === "signed_off" && !confirmed;
   const staleProposal =
     kind === "copy_proposal" && detail?.output.freshness !== "current";
   const threadId = detail?.output.threadId ?? null;
   const busy = actionState !== "idle";
   const exportable =
     detail !== null &&
+    !historical &&
     (detail.output.status === "saved" || detail.output.status === "signed_off");
   const receiptDigest =
     exportable && version !== null ? version.contentDigest : null;
@@ -502,6 +565,9 @@ export function StudioOutputCard({
       <div className={styles["studio-output-meta"]}>
         {status ? (
           <span className={styles["studio-output-status"]} data-status={status}>
+            {historical
+              ? studioCopy(locale, "studio.outputs.currentStatus") + " "
+              : ""}
             {studioCopy(
               locale,
               needsConfirmation
@@ -541,6 +607,16 @@ export function StudioOutputCard({
         </div>
       ) : detail !== null && version !== null ? (
         <>
+          {historical || pinnedUnavailable ? (
+            <p className={styles["studio-evidence-note"]} role="status">
+              {studioCopy(
+                locale,
+                historical
+                  ? "studio.outputs.historical"
+                  : "studio.outputs.pinnedUnavailable",
+              )}
+            </p>
+          ) : null}
           <p className={styles["studio-output-version-meta"]}>
             {renderStudioLine(locale, {
               key: "studio.outputs.revision",
@@ -559,12 +635,16 @@ export function StudioOutputCard({
             <StudioReviewCard
               locale={locale}
               payload={version.payload}
-              exportInfo={{
-                outputId: detail.output.outputId,
-                status: detail.output.status,
-                digest: version.contentDigest,
-                revision: version.revision,
-              }}
+              exportInfo={
+                historical
+                  ? null
+                  : {
+                      outputId: detail.output.outputId,
+                      status: detail.output.status,
+                      digest: version.contentDigest,
+                      revision: version.revision,
+                    }
+              }
             />
           ) : detail.output.kind === "finding" ? (
             <StudioFindingCard locale={locale} payload={version.payload} />
@@ -575,8 +655,7 @@ export function StudioOutputCard({
               locale={locale}
               payload={version.payload}
               exportHref={
-                detail.output.status === "saved" ||
-                detail.output.status === "signed_off"
+                exportable
                   ? `/api/studio/outputs/${encodeURIComponent(outputId)}/export?digest=${version.contentDigest}`
                   : null
               }
@@ -685,6 +764,8 @@ export function StudioOutputCard({
               onClick={() => void runAction("save")}
               disabled={
                 busy ||
+                !canSave ||
+                reviewBlocked ||
                 !(
                   detail.output.status === "draft" ||
                   (detail.output.status === "saved" && !confirmed)
@@ -702,6 +783,7 @@ export function StudioOutputCard({
               disabled={
                 busy ||
                 !canSignOff ||
+                reviewBlocked ||
                 staleProposal ||
                 !(detail.output.status === "saved" || needsConfirmation)
               }

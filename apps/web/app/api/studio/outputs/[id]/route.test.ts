@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { StudioOutput, StudioOutputVersion } from "@wukong/db";
 
@@ -116,6 +116,101 @@ function request(body: unknown): Request {
 }
 
 describe("GET /api/studio/outputs/[id]", () => {
+  const pinnedRequest = (query = `revision=1&digest=${PIN.expectedDigest}`) =>
+    new Request(`http://localhost/api/studio/outputs/${OUTPUT_ID}?${query}`);
+  it("reads only the exact historical version and never substitutes current content", async () => {
+    const payload = { ...PROPOSAL_PAYLOAD, limitations: ["New content"] };
+    const { handlers, fake } = fixture({
+      options: {
+        outputs: [outputRow({ currentVersion: 2, status: "saved" })],
+        outputVersions: [
+          versionRow(),
+          versionRow({
+            id: "99999999-9999-4999-8999-999999999999",
+            revision: 2,
+            payload,
+            contentDigest: outputPayloadDigest(payload),
+          }),
+        ],
+      },
+    });
+    const allVersions = vi.spyOn(fake.repos.studio.outputs, "versions");
+    const response = await handlers.GET(pinnedRequest(), context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.output).toMatchObject({
+      currentVersion: 2,
+      confirmation: null,
+    });
+    expect(body.versions).toHaveLength(1);
+    expect(body.versions[0]).toMatchObject({
+      revision: 1,
+      payload: PROPOSAL_PAYLOAD,
+      contentDigest: PIN.expectedDigest,
+    });
+    expect(allVersions).not.toHaveBeenCalled();
+    expect(fake.state.audits).toHaveLength(0);
+    expect(fake.state.outputs[0]?.status).toBe("saved");
+  });
+  it.each([
+    "revision=1",
+    `digest=${PIN.expectedDigest}`,
+    `revision=1&revision=2&digest=${PIN.expectedDigest}`,
+    `revision=1&digest=${PIN.expectedDigest}&workspaceId=foreign`,
+    `revision=1e0&digest=${PIN.expectedDigest}`,
+    `revision=9007199254740992&digest=${PIN.expectedDigest}`,
+    `revision=0&digest=${PIN.expectedDigest}`,
+    "revision=1&digest=bad",
+  ])("rejects malformed or partial pins %s", async (query) => {
+    const { handlers, fake } = fixture({});
+    expect((await handlers.GET(pinnedRequest(query), context)).status).toBe(
+      400,
+    );
+    expect(fake.state.audits).toHaveLength(0);
+  });
+  it("hides missing versions and rejects mismatched or corrupted content", async () => {
+    const { handlers } = fixture({});
+    expect(
+      (
+        await handlers.GET(
+          pinnedRequest(`revision=2&digest=${PIN.expectedDigest}`),
+          context,
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await handlers.GET(
+          pinnedRequest(`revision=1&digest=${"a".repeat(64)}`),
+          context,
+        )
+      ).status,
+    ).toBe(409);
+    const corrupt = fixture({
+      options: {
+        outputVersions: [
+          versionRow({
+            payload: { ...PROPOSAL_PAYLOAD, limitations: ["Tampered"] },
+          }),
+        ],
+      },
+    });
+    expect((await corrupt.handlers.GET(pinnedRequest(), context)).status).toBe(
+      409,
+    );
+  });
+  it("permits viewer pinned reads and hides foreign artifacts", async () => {
+    const viewer = fixture({ role: "viewer" });
+    expect((await viewer.handlers.GET(pinnedRequest(), context)).status).toBe(
+      200,
+    );
+    const foreign = fixture({
+      options: { outputs: [outputRow({ workspaceId: "foreign" })] },
+    });
+    expect((await foreign.handlers.GET(pinnedRequest(), context)).status).toBe(
+      404,
+    );
+  });
   it("returns the artifact and its immutable versions", async () => {
     const { handlers } = fixture({});
     const response = await handlers.GET(new Request("http://x"), context);

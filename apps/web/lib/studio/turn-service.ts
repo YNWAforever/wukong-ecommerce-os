@@ -38,6 +38,7 @@ import type {
   ListOutputsResult,
   ListThreadsResult,
   OutputActionResult,
+  OutputVersionPin,
   SendMessageBody,
   StudioInboxResult,
   StudioMessageResponse,
@@ -2291,23 +2292,63 @@ export function createStudioService(deps: StudioServiceDeps) {
       return { items, truncated: listed.truncated, offset };
     },
 
-    async getOutput(outputId: string): Promise<GetOutputResult> {
+    async getOutput(
+      outputId: string,
+      expected?: OutputVersionPin,
+    ): Promise<GetOutputResult> {
       const { session } = await requireStudioSession(deps, "viewer");
       if (!UUID.safeParse(outputId).success) throw studioNotFound();
+      const parsedPin =
+        expected === undefined
+          ? null
+          : outputVersionPinSchema.safeParse(expected);
+      if (parsedPin && !parsedPin.success)
+        throw new ApiError(400, "invalid_query", "Invalid version pin.");
+      const pin = parsedPin?.success ? parsedPin.data : null;
       const bundle = await database().forWorkspace(
         session.workspaceId,
         async (repos) => {
           const output = await repos.studio.outputs.get(outputId);
-          if (!output) return null;
-          const versions = await repos.studio.outputs.versions(outputId);
+          if (!output || output.workspaceId !== session.workspaceId)
+            return null;
+          const requested = pin
+            ? await repos.studio.outputs.getVersion(
+                outputId,
+                pin.expectedRevision,
+              )
+            : null;
+          if (
+            pin &&
+            (!requested ||
+              requested.workspaceId !== session.workspaceId ||
+              requested.outputId !== outputId)
+          )
+            throw studioNotFound();
+          if (
+            pin &&
+            requested &&
+            (requested.contentDigest !== pin.expectedDigest ||
+              !outputDigestMatches(requested))
+          )
+            throw new ApiError(
+              409,
+              "output_version_changed",
+              "The requested artifact cannot be verified. Reload its recorded state.",
+            );
+          const versions = pin
+            ? [requested!]
+            : await repos.studio.outputs.versions(outputId);
           const version = versions.find(
-            (entry) => entry.revision === output.currentVersion,
+            (entry) =>
+              entry.revision ===
+              (pin?.expectedRevision ?? output.currentVersion),
           );
           const recorded =
             await repos.studio.outputs.statusConfirmation(outputId);
           const validDigest = !!version && outputDigestMatches(version);
           const confirmation =
             validDigest &&
+            version?.revision === output.currentVersion &&
             recorded &&
             recorded.status === output.status &&
             recorded.revision === version?.revision &&

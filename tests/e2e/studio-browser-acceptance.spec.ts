@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import type { GetOutputResult } from "../../apps/web/lib/studio/contracts";
 
 /**
  * Flags-on Conversation Studio browser acceptance (plan Task 14).
@@ -38,6 +39,117 @@ async function signIn(page: Page, baseURL: string, email = EMAIL) {
     timeout: 30_000,
   });
 }
+
+test("exact artifact links retain historical content, reject stale review and reload without sending", async ({
+  page,
+  baseURL,
+}) => {
+  await signIn(page, baseURL ?? "http://127.0.0.1:49300");
+  const id = "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a08";
+  const beforeResponse = await page.request.get(`/api/studio/outputs/${id}`);
+  expect(beforeResponse.status()).toBe(200);
+  const before = (await beforeResponse.json()) as GetOutputResult;
+  const old = before.versions.find((version) => version.revision === 1)!;
+  const current = before.versions.find((version) => version.revision === 2)!;
+  expect(old).toBeTruthy();
+  expect(current).toBeTruthy();
+  const canonicalBefore = await (
+    await page.request.get(`/api/listings/${SUPPLIER_LISTING_ID}`)
+  ).json();
+  let posts = 0;
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      new URL(request.url()).pathname.startsWith("/api/studio/")
+    )
+      posts++;
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/studio/outputs/${id}`);
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/studio/outputs/${id}\\?revision=2&digest=${current.contentDigest}$`,
+    ),
+  );
+  await expect(
+    page.getByText("Current reviewer proposal", { exact: true }),
+  ).toBeVisible();
+  const historicalUrl = `/studio/outputs/${id}?revision=1&digest=${old.contentDigest}`;
+  await page.goto(historicalUrl);
+  await expect(
+    page.getByText("Historical reviewer proposal", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Current reviewer proposal", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(/This link shows a historical version/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save artifact", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Sign off", exact: true }),
+  ).toBeDisabled();
+  await page.reload();
+  await expect(
+    page.getByText("Historical reviewer proposal", { exact: true }),
+  ).toBeVisible();
+  expect(posts).toBe(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  const stale = await page.request.post(`/api/studio/outputs/${id}`, {
+    data: {
+      action: "save",
+      expectedRevision: 1,
+      expectedDigest: old.contentDigest,
+    },
+  });
+  expect(stale.status()).toBe(409);
+  const selected = await page.request.get(
+    `/api/studio/outputs/${id}?revision=1&digest=${old.contentDigest}`,
+  );
+  expect(selected.status()).toBe(200);
+  const selectedBody = (await selected.json()) as GetOutputResult;
+  expect(selectedBody.versions.map((version) => version.revision)).toEqual([1]);
+  expect(selectedBody.output.currentVersion).toBe(2);
+  const tampered = await page.request.get(
+    `/api/studio/outputs/${id}?revision=1&digest=${"0".repeat(64)}`,
+  );
+  expect(tampered.status()).toBe(409);
+  const after = (await (
+    await page.request.get(`/api/studio/outputs/${id}`)
+  ).json()) as GetOutputResult;
+  expect(after.output).toEqual(before.output);
+  expect(after.versions).toEqual(before.versions);
+  expect(
+    await (
+      await page.request.get(`/api/listings/${SUPPLIER_LISTING_ID}`)
+    ).json(),
+  ).toEqual(canonicalBefore);
+  await page.screenshot({
+    path: "node_modules/.studio-evidence/studio-reviewer-pinned-history-390.png",
+    fullPage: true,
+  });
+  await page.context().clearCookies();
+  await signIn(page, baseURL ?? "http://127.0.0.1:49300", VIEWER_EMAIL);
+  await page.goto(
+    `/studio/outputs/${id}?revision=2&digest=${current.contentDigest}`,
+  );
+  await expect(
+    page.getByText("Current reviewer proposal", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save artifact", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Sign off", exact: true }),
+  ).toBeDisabled();
+  expect(posts).toBe(0);
+});
 
 test("zero-result catalog search shows the executed query and refines without sending", async ({
   page,

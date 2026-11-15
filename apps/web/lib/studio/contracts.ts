@@ -312,6 +312,28 @@ export const outputVersionPinSchema = z.strictObject({
 });
 export type OutputVersionPin = z.infer<typeof outputVersionPinSchema>;
 
+/** URL query for a single immutable artifact; pins must be supplied together. */
+export const studioOutputReadQuerySchema = z
+  .strictObject({
+    revision: z
+      .string()
+      .regex(/^[1-9]\d*$/)
+      .transform(Number)
+      .pipe(z.number().int().safe().positive())
+      .optional(),
+    digest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    if ((value.revision === undefined) !== (value.digest === undefined))
+      context.addIssue({
+        code: "custom",
+        message: "Revision and digest are required together",
+      });
+  });
+
 export const outputActionBodySchema = z.strictObject({
   action: z.enum(["save", "sign_off"]),
   // Missing pins are a reloadable 409 after authorization, including old clients.

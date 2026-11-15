@@ -5,7 +5,10 @@ import {
   withRouteErrors,
 } from "../../../../../lib/route-support";
 import { authSessionContext } from "../../../../../lib/session-context";
-import { outputActionBodySchema } from "../../../../../lib/studio/contracts";
+import {
+  outputActionBodySchema,
+  studioOutputReadQuerySchema,
+} from "../../../../../lib/studio/contracts";
 import {
   studioServiceDeps,
   type StudioRouteDeps,
@@ -22,12 +25,32 @@ export function createStudioOutputHandler(deps: StudioRouteDeps) {
   const service = () => createStudioService(studioServiceDeps(deps));
   return {
     GET: async (
-      _request: Request,
+      request: Request,
       context: { params: Promise<{ id: string }> },
     ) =>
       withRouteErrors(async () => {
         const { id } = await context.params;
-        const output = await service().getOutput(id);
+        const query = new URL(request.url).searchParams;
+        if (new Set(query.keys()).size !== query.size)
+          throw new ApiError(
+            400,
+            "invalid_query",
+            "Duplicate query parameters.",
+          );
+        const parsed = studioOutputReadQuerySchema.safeParse(
+          Object.fromEntries(query),
+        );
+        if (!parsed.success)
+          throw new ApiError(400, "invalid_query", "Invalid version pin.");
+        const output = await service().getOutput(
+          id,
+          parsed.data.revision === undefined
+            ? undefined
+            : {
+                expectedRevision: parsed.data.revision,
+                expectedDigest: parsed.data.digest!,
+              },
+        );
         return jsonResponse(200, { ...output });
       }),
     POST: async (
