@@ -62,14 +62,17 @@ import { parseCopyProposalPayload } from "./copy-proposal";
 import { outputDigestMatches, proposalFreshness } from "./output-review";
 import { guidedCopy } from "./guided-copy";
 import {
-  STUDIO_REVIEW_BATCH_LIMIT,
+  STUDIO_REVIEW_CANDIDATE_PAGE_SIZE,
   reviewArtifact,
   studioReviewBatchBodySchema,
   studioReviewBatchQuerySchema,
+  studioReviewCandidatesQuerySchema,
   type StudioListingReviewState,
   type StudioReviewArtifact,
   type StudioReviewBatchItem,
   type StudioReviewBatchResult,
+  type StudioReviewCandidate,
+  type StudioReviewCandidatesResult,
   type StudioReviewFailureCode,
 } from "./review-batch";
 import {
@@ -1950,6 +1953,75 @@ export function createStudioService(deps: StudioServiceDeps) {
           },
         ),
       };
+    },
+
+    /**
+     * One bounded page of selectable listings for the review surface (viewer+).
+     * Read-only: recent listings plus the newest recorded review links, so the
+     * operator can see what already exists before starting anything.
+     */
+    async reviewCandidates(
+      input: unknown,
+    ): Promise<StudioReviewCandidatesResult> {
+      const { session } = await requireStudioSession(deps, "viewer");
+      const parsed = studioReviewCandidatesQuerySchema.safeParse(input);
+      if (!parsed.success)
+        throw new ApiError(
+          400,
+          "invalid_query",
+          "Query parameters are invalid.",
+        );
+      const { q, page } = parsed.data;
+      return database().forWorkspace(session.workspaceId, async (repos) => {
+        const listingPage = await repos.reads.listingPage({
+          page,
+          pageSize: STUDIO_REVIEW_CANDIDATE_PAGE_SIZE,
+          ...(q.length > 0 ? { q } : {}),
+        });
+        const latest = await repos.studio.outputs.latestGuidedReviews(
+          listingPage.ids,
+        );
+        const readDeps = buildStudioReadDeps(repos);
+        const items: StudioReviewCandidate[] = [];
+        for (const listingId of listingPage.ids) {
+          const listing = await readDeps.getListing(listingId);
+          if (!listing) continue;
+          const recordedArtifact = (
+            stage: "audit" | "gap_review",
+          ): StudioReviewArtifact | null => {
+            const state = latest.find(
+              (entry) => entry.listingId === listingId && entry.stage === stage,
+            );
+            return state
+              ? reviewArtifact({
+                  outputId: state.outputId,
+                  revision: state.revision,
+                  contentDigest: state.contentDigest,
+                })
+              : null;
+          };
+          items.push({
+            ...listing,
+            threadId:
+              latest.find(
+                (entry) =>
+                  entry.listingId === listingId && entry.threadId !== null,
+              )?.threadId ?? null,
+            audit: recordedArtifact("audit"),
+            gap: recordedArtifact("gap_review"),
+          });
+        }
+        return {
+          items,
+          q,
+          page,
+          pageSize: STUDIO_REVIEW_CANDIDATE_PAGE_SIZE,
+          totalMatching: listingPage.totalMatching,
+          hasNext:
+            page * STUDIO_REVIEW_CANDIDATE_PAGE_SIZE <
+            listingPage.totalMatching,
+        };
+      });
     },
     async createThread(body: CreateThreadBody): Promise<CreateThreadResult> {
       const { session } = await requireStudioSession(deps, "operator");

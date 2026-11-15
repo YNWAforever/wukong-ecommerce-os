@@ -102,6 +102,39 @@ export type StudioListingReviewsResult = {
   items: StudioListingReviewState[];
 };
 
+/** Selection page size: one bounded page of recent listings per read. */
+export const STUDIO_REVIEW_CANDIDATE_PAGE_SIZE = 20;
+
+/** Strict candidate query: free text and a bounded page number. */
+export const studioReviewCandidatesQuerySchema = z.strictObject({
+  q: z.string().trim().max(120).optional().default(""),
+  page: z.coerce.number().int().min(1).max(1_000).optional().default(1),
+});
+export type StudioReviewCandidatesQuery = z.infer<
+  typeof studioReviewCandidatesQuerySchema
+>;
+
+/** One selectable listing plus the newest recorded review links. */
+export type StudioReviewCandidate = {
+  listingId: string;
+  title: string;
+  status: string;
+  activeVersion: { versionId: string; sequence: number } | null;
+  blockingFlagCount: number;
+  threadId: string | null;
+  audit: StudioReviewArtifact | null;
+  gap: StudioReviewArtifact | null;
+};
+
+export type StudioReviewCandidatesResult = {
+  items: StudioReviewCandidate[];
+  q: string;
+  page: number;
+  pageSize: number;
+  totalMatching: number;
+  hasNext: boolean;
+};
+
 /** A digest is only usable as an exact pin when it is the persisted sha256. */
 export function reviewArtifact(
   value: {
