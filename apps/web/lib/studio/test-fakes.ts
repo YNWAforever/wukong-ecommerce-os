@@ -1526,6 +1526,40 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
           },
         };
       },
+      listingPage: async (input: {
+        page: number;
+        pageSize: number;
+        q?: string;
+        status?: string;
+      }) => {
+        state.writes.push("reads.listingPage");
+        const q = (input.q ?? "").trim().toLocaleLowerCase();
+        const listings = Object.values(options.snapshots ?? {})
+          .filter(
+            (snapshot) =>
+              input.status === undefined ||
+              snapshot.listing.status === input.status,
+          )
+          .filter((snapshot) => {
+            if (q.length === 0) return true;
+            const content = snapshot.activeVersion?.content;
+            if (!content) return false;
+            return (
+              content.title["zh-Hant"].toLocaleLowerCase().includes(q) ||
+              content.title.en.toLocaleLowerCase().includes(q) ||
+              content.sku?.toLocaleLowerCase().includes(q) === true
+            );
+          });
+        const start = (input.page - 1) * input.pageSize;
+        return {
+          ids: listings
+            .slice(start, start + input.pageSize)
+            .map((snapshot) => snapshot.listing.id),
+          nextCursor: null,
+          previousCursor: null,
+          totalMatching: listings.length,
+        };
+      },
     },
     listings: {
       getReviewSnapshot: async (id: string) => {

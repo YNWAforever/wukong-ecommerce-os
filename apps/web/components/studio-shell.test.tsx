@@ -85,6 +85,7 @@ describe("StudioShell", () => {
     for (const href of [
       "/studio",
       "/studio/inbox",
+      "/studio/reviews",
       "/studio/threads",
       "/studio/outputs",
       "/studio/connections",

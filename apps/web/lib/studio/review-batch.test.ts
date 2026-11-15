@@ -353,3 +353,59 @@ describe("listingReviews", () => {
     }
   });
 });
+
+describe("reviewCandidates", () => {
+  it("lists a bounded page with the newest recorded pins, readable by a viewer", async () => {
+    const f = fixture();
+    const started = await f.service.startReviewBatch({ listingIds: [A] });
+    const viewer = f.asViewer();
+    const page = await viewer.reviewCandidates({});
+
+    expect(page.totalMatching).toBe(2);
+    expect(page.page).toBe(1);
+    expect(page.hasNext).toBe(false);
+    expect(page.items.map((item) => item.listingId)).toEqual([A, B]);
+    const first = page.items[0]!;
+    expect(first).toMatchObject({
+      listingId: A,
+      audit: started.items[0]!.audit,
+      gap: started.items[0]!.gap,
+      threadId: started.items[0]!.threadId,
+    });
+    expect(first.title.length).toBeGreaterThan(0);
+    expect(first.activeVersion?.versionId).toBe(VERSION_A);
+    expect(page.items[1]).toMatchObject({
+      listingId: B,
+      audit: null,
+      gap: null,
+      threadId: null,
+    });
+  });
+
+  it("filters by the bounded search text without inventing matches", async () => {
+    const f = fixture();
+    const viewer = f.asViewer();
+    expect((await viewer.reviewCandidates({ q: "SKU-1" })).totalMatching).toBe(
+      2,
+    );
+    expect(
+      (await viewer.reviewCandidates({ q: "no such listing" })).items,
+    ).toEqual([]);
+    expect((await viewer.reviewCandidates({ q: "  " })).totalMatching).toBe(2);
+  });
+
+  it("rejects a malformed or caller-controlled candidate query", async () => {
+    const f = fixture();
+    const viewer = f.asViewer();
+    for (const query of [
+      { page: 0 },
+      { page: 1001 },
+      { q: "x".repeat(121) },
+      { workspaceId: "ws_foreign" },
+    ]) {
+      await expect(viewer.reviewCandidates(query)).rejects.toMatchObject({
+        status: 400,
+      });
+    }
+  });
+});

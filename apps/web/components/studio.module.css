@@ -2937,3 +2937,267 @@ article.studio-output .studio-output-body {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+/* -- bounded multi-listing review (2026-11-16 plan) ----------------------- */
+
+.studio-review-batch {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.studio-notice[data-tone="error"] {
+  color: var(--danger);
+  border-color: var(--danger);
+  border-style: solid;
+}
+
+.studio-review-counter {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.studio-review-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.studio-review-search label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.studio-review-search-input {
+  min-height: 44px;
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 8px 12px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius);
+}
+
+.studio-review-search-input:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.studio-review-search-go {
+  min-height: 44px;
+  padding: 8px 16px;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+  border-radius: 8px;
+}
+
+.studio-review-search-go:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.studio-review-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.studio-review-fieldset legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.studio-review-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-review-candidate {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.studio-review-candidate[data-selected="true"] {
+  border-color: var(--amber-dark);
+  box-shadow: inset 0 0 0 1px var(--amber-dark);
+}
+
+.studio-review-candidate-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.studio-review-candidate-label input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--navy);
+}
+
+.studio-review-candidate-title {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.studio-review-candidate-meta,
+.studio-review-candidate-links {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.studio-review-candidate-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.studio-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.studio-review-start,
+.studio-review-secondary {
+  min-height: 44px;
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 8px;
+}
+
+.studio-review-start {
+  color: var(--amber-dark);
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+}
+
+.studio-review-secondary {
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+}
+
+.studio-review-start:disabled,
+.studio-review-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.studio-review-start:focus-visible,
+.studio-review-secondary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.studio-review-results {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-review-result {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.studio-review-result[data-outcome="failed"] {
+  border-color: var(--danger);
+}
+
+.studio-review-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+}
+
+.studio-review-outcome {
+  padding: 2px 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--stone);
+  border-radius: 999px;
+}
+
+.studio-review-outcome[data-outcome="complete"] {
+  color: var(--success);
+}
+
+.studio-review-outcome[data-outcome="partial"] {
+  color: var(--amber-dark);
+}
+
+.studio-review-outcome[data-outcome="failed"] {
+  color: var(--danger);
+}
+
+.studio-review-outcome[data-outcome="recorded"] {
+  color: var(--navy);
+}
+
+.studio-review-failure {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.studio-review-result-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+@media (max-width: 480px) {
+  .studio-review-search {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  /* In a column, `flex-basis` would size the height; keep the field compact. */
+  .studio-review-search-input {
+    flex: 1 1 auto;
+  }
+
+  .studio-review-search-go {
+    width: 100%;
+  }
+}

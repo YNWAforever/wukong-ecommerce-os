@@ -1852,6 +1852,101 @@ export const STUDIO_COPY = {
   ],
   "studio.error.retry": ["重試", "Retry"],
 
+  // -- bounded multi-listing review -----------------------------------------
+  "studio.rail.reviews": ["多商品審核", "Reviews"],
+  "studio.reviews.title": ["多商品審核", "Multi-listing review"],
+  "studio.reviews.lede": [
+    "選取最多五個商品，一次執行既有的概況審查及缺口檢視。每個商品各自保留對話，不會自動產生文案。",
+    "Select up to five listings and run the existing workspace audit and gap review once. Each listing keeps its own conversation; no copy is generated automatically.",
+  ],
+  "studio.reviews.rule": [
+    "只會在按下開始審核時執行；不會排程、不會在背景重試，也不會呼叫模型。",
+    "Runs only when Start review is pressed; nothing is scheduled, retried in the background, or sent to a model.",
+  ],
+  "studio.reviews.selectTitle": ["選取商品", "Select listings"],
+  "studio.reviews.selectHint": [
+    "已選 {count} / {limit} 個商品。",
+    "{count} of {limit} listings selected.",
+  ],
+  "studio.reviews.capReached": [
+    "已達 {limit} 個上限。請先取消一個選取，再選其他商品。",
+    "The limit is {limit}. Clear one selection before choosing another.",
+  ],
+  "studio.reviews.searchLabel": ["搜尋商品", "Search listings"],
+  "studio.reviews.searchPlaceholder": ["標題或 SKU", "Title or SKU"],
+  "studio.reviews.search": ["搜尋", "Search"],
+  "studio.reviews.empty": ["沒有符合的商品。", "No listings match."],
+  "studio.reviews.notOperator": [
+    "需要操作員或以上權限才能開始審核。你仍可查看已記錄的結果。",
+    "An operator or higher role is required to start reviews. Recorded results are still readable.",
+  ],
+  "studio.reviews.start": ["開始審核", "Start review"],
+  "studio.reviews.starting": ["正在審核…", "Reviewing…"],
+  "studio.reviews.noSelection": [
+    "先選取至少一個商品。",
+    "Select at least one listing first.",
+  ],
+  "studio.reviews.requestFailed": [
+    "未能完成這次審核請求。已記錄的結果仍可查看，請重試。",
+    "The review request could not be completed. Recorded results remain available; try again.",
+  ],
+  "studio.reviews.completed": [
+    "這次審核請求已完成。結果如下。",
+    "The review request finished. Results are below.",
+  ],
+  "studio.reviews.resultsTitle": ["審核結果", "Review results"],
+  "studio.reviews.resultsHint": [
+    "結果連結到已記錄版本確切的成品，較新版本不會取代它。",
+    "Results link to the exact recorded version; a newer version never replaces them.",
+  ],
+  "studio.reviews.resultsEmpty": [
+    "尚未有審核結果。選取商品並開始審核，或開啟已記錄的結果。",
+    "No review results yet. Select listings and start a review, or open recorded results.",
+  ],
+  "studio.reviews.latest": ["最新記錄", "Latest recorded"],
+  "studio.reviews.notRecorded": ["尚未記錄", "Not recorded"],
+  "studio.reviews.noActiveVersion": ["沒有生效版本", "No active version"],
+  "studio.reviews.blockingFlags": [
+    "封鎖中標記：{count}",
+    "{count} blocking flags",
+  ],
+  "studio.reviews.openAudit": ["概況審查", "Workspace audit"],
+  "studio.reviews.openGap": ["缺口檢視", "Listing gaps"],
+  "studio.reviews.openThread": ["開啟對話", "Open conversation"],
+  "studio.reviews.selectFailed": ["選取失敗的商品", "Select failed listings"],
+  "studio.reviews.page": ["第 {page} 頁", "Page {page}"],
+  "studio.reviews.previous": ["上一頁", "Previous"],
+  "studio.reviews.next": ["下一頁", "Next"],
+  "studio.reviews.total": ["共 {count} 個商品", "{count} listings"],
+  "studio.reviews.listUnavailable": [
+    "無法讀取商品清單。",
+    "The listing list is unavailable.",
+  ],
+  "studio.reviews.reconstructionUnavailable": [
+    "無法讀取已記錄的結果。",
+    "Recorded results are unavailable.",
+  ],
+  "studio.reviews.outcome.complete": ["完成", "Complete"],
+  "studio.reviews.outcome.partial": ["部分完成", "Partial"],
+  "studio.reviews.outcome.failed": ["失敗", "Failed"],
+  "studio.reviews.outcome.recorded": ["已記錄", "Recorded"],
+  "studio.reviews.failure.listing_unavailable": [
+    "找不到此商品，或此工作區無權存取。",
+    "The listing is missing or not accessible to this workspace.",
+  ],
+  "studio.reviews.failure.listing_changed": [
+    "商品在開始審核前已變更。請重新載入頁面後再試。",
+    "The listing changed before review started. Reload the page and try again.",
+  ],
+  "studio.reviews.failure.review_unavailable": [
+    "已有部分審核記錄，但其餘步驟未能完成。請開啟對話查看。",
+    "Part of the review was recorded, but the remaining step did not finish. Open the conversation.",
+  ],
+  "studio.reviews.failure.review_failed": [
+    "此商品的審核未能完成。其他商品不受影響；可重新選取再試。",
+    "This listing's review did not complete. Other listings are unaffected; select it again to retry.",
+  ],
+
   // -- route states ---------------------------------------------------------
   "studio.loading": ["正在載入工作室…", "Loading Studio…"],
   "studio.notFound.title": ["找不到工作室頁面", "Studio page not found"],
