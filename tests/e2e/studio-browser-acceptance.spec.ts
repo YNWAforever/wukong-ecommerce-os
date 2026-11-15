@@ -195,9 +195,9 @@ test("exact artifact links retain historical content, reject stale review and re
     fullPage: true,
   });
   await page.goto(`/studio/outputs/${id}?revision=1&digest=${"0".repeat(64)}`);
-  await expect(page.getByRole("alert")).toContainText(
-    "artifact link is invalid",
-  );
+  await expect(
+    page.getByRole("alert").filter({ hasText: "artifact link is invalid" }),
+  ).toBeVisible();
   const back = page.getByRole("link", { name: "Back to inbox", exact: true });
   await back.focus();
   await back.press("Enter");
