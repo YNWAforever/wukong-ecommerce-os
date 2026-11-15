@@ -481,6 +481,19 @@ export type StudioRepository = {
       q?: string;
       offset?: number;
     }): Promise<{ items: StudioOutput[]; truncated: boolean }>;
+    /** One snapshot, at most 11 rows per pending status; no version payloads. */
+    pendingReview(): Promise<
+      Array<{
+        id: string;
+        kind: StudioOutputKind;
+        title: string;
+        status: "draft" | "saved";
+        currentVersion: number;
+        updatedAt: Date;
+        versionDigest: string | null;
+        confirmed: boolean;
+      }>
+    >;
     versions(outputId: string): Promise<StudioOutputVersion[]>;
     setStatus(
       id: string,
@@ -1340,6 +1353,35 @@ export function createStudioRepository(
           .slice(0, limit)
           .map((row) => readOutput(row as Record<string, unknown>));
         return { items, truncated: rows.length > limit };
+      },
+      async pendingReview() {
+        scope.assertOpen();
+        const rows = await transaction.execute(sql`
+          with candidates as (
+            (select id,workspace_id,kind,title,status,current_version,created_at,updated_at from studio_outputs
+              where workspace_id=${workspaceId} and status='draft' order by created_at desc,id desc limit 11)
+            union all
+            (select id,workspace_id,kind,title,status,current_version,created_at,updated_at from studio_outputs
+              where workspace_id=${workspaceId} and status='saved' order by created_at desc,id desc limit 11)
+          )
+          select c.*,v.content_digest,
+            exists(select 1 from audit_events a where a.workspace_id=c.workspace_id and a.entity_id=c.id::text
+              and a.action=('studio.output.' || c.status) and a.metadata->>'revision'=c.current_version::text
+              and a.metadata->>'contentDigest'=v.content_digest and c.status='saved') as confirmed
+          from candidates c left join studio_output_versions v
+            on v.workspace_id=c.workspace_id and v.output_id=c.id and v.revision=c.current_version
+          order by case c.status when 'draft' then 0 else 1 end,c.created_at desc,c.id desc
+        `);
+        return rows.map((row) => ({
+          id: text(row.id),
+          kind: text(row.kind) as StudioOutputKind,
+          title: text(row.title),
+          status: text(row.status) as "draft" | "saved",
+          currentVersion: Number(row.current_version),
+          updatedAt: iso(row.updated_at),
+          versionDigest: nullableText(row.content_digest),
+          confirmed: row.confirmed === true,
+        }));
       },
       async versions(outputId) {
         scope.assertOpen();

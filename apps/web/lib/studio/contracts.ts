@@ -213,7 +213,10 @@ export type StudioInboxOutputItem = {
   kind: string;
   title: string;
   status: "draft" | "saved";
-  deepLink: "/studio/outputs";
+  updatedAt: string | null;
+  pin: { revision: number; digest: string } | null;
+  confirmation: "not_applicable" | "confirmed" | "unconfirmed" | "unavailable";
+  deepLink: string | null;
 };
 
 /** A recent conversation; labelled as recent, with no fabricated reply status. */

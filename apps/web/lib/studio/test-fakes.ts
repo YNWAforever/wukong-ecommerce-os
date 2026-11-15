@@ -921,6 +921,54 @@ export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
             (version) =>
               version.outputId === id && version.revision === revision,
           ) ?? null,
+        pendingReview: async () => {
+          state.writes.push("outputs.pendingReview");
+          if (shouldFailSource("outputs"))
+            throw new Error("fake outputs source unavailable");
+          const candidates = (["draft", "saved"] as const).flatMap((status) =>
+            state.outputs
+              .filter(
+                (output) =>
+                  output.workspaceId === settings.workspaceId &&
+                  output.status === status,
+              )
+              .sort(
+                (a, b) =>
+                  b.createdAt.getTime() - a.createdAt.getTime() ||
+                  b.id.localeCompare(a.id),
+              )
+              .slice(0, 11),
+          );
+          return candidates.map((output) => {
+            const version = state.outputVersions.find(
+              (entry) =>
+                entry.workspaceId === output.workspaceId &&
+                entry.outputId === output.id &&
+                entry.revision === output.currentVersion,
+            );
+            const confirmed =
+              output.status === "saved" &&
+              !!version &&
+              state.audits.some(
+                (event) =>
+                  event.workspaceId === output.workspaceId &&
+                  event.entityId === output.id &&
+                  event.action === "studio.output.saved" &&
+                  event.metadata.revision === output.currentVersion &&
+                  event.metadata.contentDigest === version.contentDigest,
+              );
+            return {
+              id: output.id,
+              kind: output.kind,
+              title: output.title,
+              status: output.status as "draft" | "saved",
+              currentVersion: output.currentVersion,
+              updatedAt: output.updatedAt,
+              versionDigest: version?.contentDigest ?? null,
+              confirmed,
+            };
+          });
+        },
         statusConfirmation: async (id: string) => {
           const output = state.outputs.find((entry) => entry.id === id);
           const version = state.outputVersions.find(

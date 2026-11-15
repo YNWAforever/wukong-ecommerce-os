@@ -264,6 +264,24 @@ export const STUDIO_COPY = {
     "Saved (awaiting sign-off)",
   ],
   "studio.inbox.outputs.open": ["開啟輸出頁", "Open outputs"],
+  "studio.inbox.outputs.viewDrafts": ["查看所有草稿", "View all drafts"],
+  "studio.inbox.outputs.viewSaved": ["查看待簽核成品", "View saved artifacts"],
+  "studio.inbox.outputs.confirmed": [
+    "已記錄此版本的儲存確認；等待簽核。",
+    "Save confirmed for this version; awaiting sign-off.",
+  ],
+  "studio.inbox.outputs.unconfirmed": [
+    "已儲存狀態尚未確認此版本。請開啟成品並明確確認。",
+    "Saved status is unconfirmed for this version. Open it and confirm explicitly.",
+  ],
+  "studio.inbox.outputs.versionUnavailable": [
+    "無法核實版本資料；目前未提供精確版本連結。請在輸出頁檢查記錄。",
+    "Version metadata is unavailable; an exact-version link cannot be provided. Check its record in outputs.",
+  ],
+  "studio.inbox.outputs.freshnessOnOpen": [
+    "開啟成品時會重新檢查證據是否仍然有效。瀏覽收件匣不會執行模型或變更商品內容。",
+    "Evidence freshness is checked when you open an artifact. Browsing the inbox does not run a model or change listings.",
+  ],
   "studio.inbox.conversationsTitle": ["近期對話", "Recent conversations"],
   "studio.inbox.conversations.empty": ["還沒有對話。", "No conversations yet."],
   "studio.inbox.conversations.open": ["開啟對話", "Open conversation"],

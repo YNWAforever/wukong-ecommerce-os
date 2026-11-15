@@ -116,14 +116,20 @@ function populatedInbox(): StudioInboxResult {
         kind: "copy_proposal",
         title: "Draft proposal",
         status: "draft",
-        deepLink: "/studio/outputs",
+        updatedAt: AS_OF,
+        pin: { revision: 1, digest: "a".repeat(64) },
+        confirmation: "not_applicable",
+        deepLink: `/studio/outputs/output-draft?revision=1&digest=${"a".repeat(64)}`,
       },
       {
         outputId: "output-saved",
         kind: "merchant_audit",
         title: "Saved audit",
         status: "saved",
-        deepLink: "/studio/outputs",
+        updatedAt: AS_OF,
+        pin: { revision: 2, digest: "b".repeat(64) },
+        confirmation: "confirmed",
+        deepLink: `/studio/outputs/output-saved?revision=2&digest=${"b".repeat(64)}`,
       },
     ],
     truncated: false,
@@ -161,6 +167,32 @@ afterEach(() => {
 });
 
 describe("StudioInboxPage", () => {
+  it("links exact versions, exposes filtered lists and labels an unconfirmed saved status", async () => {
+    const inbox = populatedInbox();
+    inbox.outputs.items[1]!.confirmation = "unconfirmed";
+    state.inbox = inbox;
+    const html = await render();
+    expect(html).toContain(
+      `/studio/outputs/output-draft?revision=1&amp;digest=${"a".repeat(64)}`,
+    );
+    expect(html).toContain("Saved status is unconfirmed");
+    expect(html).toContain('href="/studio/outputs?status=draft"');
+    expect(html).toContain('href="/studio/outputs?status=saved"');
+    expect(html).toContain("Evidence freshness is checked when you open");
+  });
+  it("keeps missing version metadata visible without inventing an actionable version link", async () => {
+    const inbox = populatedInbox();
+    Object.assign(inbox.outputs.items[0]!, {
+      pin: null,
+      deepLink: null,
+      confirmation: "unavailable",
+    });
+    state.inbox = inbox;
+    const html = await render();
+    expect(html).toContain("Draft proposal");
+    expect(html).toContain("Version metadata is unavailable");
+    expect(html).not.toContain("/studio/outputs/output-draft?");
+  });
   it("renders the four aggregated sections with counts and deep links", async () => {
     state.inbox = populatedInbox();
     const html = await render();

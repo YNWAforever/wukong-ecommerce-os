@@ -56,8 +56,14 @@ test("exact artifact links retain historical content, reject stale review and re
   const canonicalBefore = await (
     await page.request.get(`/api/listings/${SUPPLIER_LISTING_ID}`)
   ).json();
-  let posts = 0;
+  let posts = 0,
+    detailReads = 0;
   page.on("request", (request) => {
+    if (
+      request.method() === "GET" &&
+      /^\/(?:api\/)?studio\/outputs\//.test(new URL(request.url()).pathname)
+    )
+      detailReads++;
     if (
       request.method() === "POST" &&
       new URL(request.url()).pathname.startsWith("/api/studio/")
@@ -65,6 +71,31 @@ test("exact artifact links retain historical content, reject stale review and re
       posts++;
   });
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/studio/inbox");
+  const inboxArtifact = page.getByRole("link", {
+    name: "Pinned reviewer acceptance",
+    exact: true,
+  });
+  await expect(inboxArtifact).toHaveAttribute(
+    "href",
+    `/studio/outputs/${id}?revision=2&digest=${current.contentDigest}`,
+  );
+  await expect(
+    page.getByText(/Saved status is unconfirmed for this version/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "View all drafts", exact: true }),
+  ).toHaveAttribute("href", "/studio/outputs?status=draft");
+  await page.screenshot({
+    path: "node_modules/.studio-evidence/studio-reviewer-inbox-390.png",
+    fullPage: true,
+  });
+  expect(detailReads).toBe(0);
+  await inboxArtifact.click();
+  await expect(
+    page.getByText("Current reviewer proposal", { exact: true }),
+  ).toBeVisible();
+  expect(posts).toBe(0);
   await page.goto(`/studio/outputs/${id}`);
   await expect(page).toHaveURL(
     new RegExp(

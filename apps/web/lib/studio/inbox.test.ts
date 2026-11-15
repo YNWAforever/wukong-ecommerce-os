@@ -23,7 +23,16 @@ function job(id: string, status: string, minutes: number) {
 }
 
 function output(id: string, status: string, kind = "copy_proposal") {
-  return { id, kind, title: `Artifact ${id}`, status };
+  return {
+    id,
+    kind,
+    title: `Artifact ${id}`,
+    status,
+    currentVersion: 1,
+    versionDigest: "a".repeat(64),
+    updatedAt: NOW,
+    confirmed: false,
+  };
 }
 
 function thread(id: string, minutes: number) {
@@ -174,6 +183,50 @@ describe("buildStudioInbox", () => {
     });
     expect(many.outputs.items).toHaveLength(STUDIO_INBOX_LIMITS.outputs);
     expect(many.outputs.truncated).toBe(true);
+  });
+
+  it("links the exact version and distinguishes confirmed, legacy and unavailable metadata", () => {
+    const inbox = buildStudioInbox({
+      ...FULL_INPUT,
+      outputs: [
+        output("draft", "draft"),
+        { ...output("confirmed", "saved"), currentVersion: 2, confirmed: true },
+        output("legacy", "saved"),
+        { ...output("broken", "saved"), versionDigest: "invalid" },
+        {
+          ...output("missing", "draft"),
+          currentVersion: 0,
+          versionDigest: null,
+        },
+      ],
+    });
+    const draft = inbox.outputs.items.find(
+      (item) => item.outputId === "draft",
+    )!;
+    expect(draft).toMatchObject({
+      pin: { revision: 1, digest: "a".repeat(64) },
+      confirmation: "not_applicable",
+      updatedAt: NOW.toISOString(),
+      deepLink: `/studio/outputs/draft?revision=1&digest=${"a".repeat(64)}`,
+    });
+    expect(
+      inbox.outputs.items.find((item) => item.outputId === "confirmed"),
+    ).toMatchObject({
+      pin: { revision: 2, digest: "a".repeat(64) },
+      confirmation: "confirmed",
+    });
+    expect(
+      inbox.outputs.items.find((item) => item.outputId === "legacy")
+        ?.confirmation,
+    ).toBe("unconfirmed");
+    for (const id of ["broken", "missing"])
+      expect(
+        inbox.outputs.items.find((item) => item.outputId === id),
+      ).toMatchObject({
+        pin: null,
+        deepLink: null,
+        confirmation: "unavailable",
+      });
   });
 
   it("bounds recent conversations and links each one to its thread", () => {

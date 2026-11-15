@@ -923,6 +923,111 @@ describe.skipIf(!enabled)("studio repositories", () => {
     expect(output.outputId).toBeTruthy();
   });
 
+  it("reads pending exact-version metadata in a workspace snapshot without payloads or inherited approval", async () => {
+    const workspace = "studio-inbox-metadata";
+    await admin!`insert into workspaces(id,name,profile) values(${workspace},'Inbox metadata','{}')`;
+    const result = await studioRepositories(workspace, async (repos) => {
+      const output = await repos.studio.outputs.create({
+        kind: "merchant_audit",
+        title: "Inbox proof",
+        createdBy: "actor-a",
+      });
+      await repos.studio.outputs.addVersion({
+        outputId: output.id,
+        payload: { privateEvidence: "Not inbox data" },
+        contentDigest: "a".repeat(64),
+        asOf: new Date(),
+        createdBy: "actor-a",
+      });
+      await repos.studio.outputs.setStatus(output.id, "saved");
+      expect((await repos.studio.outputs.pendingReview())[0]).toMatchObject({
+        id: output.id,
+        confirmed: false,
+        versionDigest: "a".repeat(64),
+        currentVersion: 1,
+      });
+      await repos.audit.write({
+        workspaceId: workspace,
+        actorId: "actor-a",
+        action: "studio.output.saved",
+        entityId: output.id,
+        metadata: { revision: 1, contentDigest: "a".repeat(64) },
+      });
+      const saved = (await repos.studio.outputs.pendingReview())[0]!;
+      expect(saved.confirmed).toBe(true);
+      expect(saved).not.toHaveProperty("payload");
+      expect(saved).not.toHaveProperty("scope");
+      await repos.studio.outputs.addVersion({
+        outputId: output.id,
+        payload: { privateEvidence: "New evidence" },
+        contentDigest: "b".repeat(64),
+        asOf: new Date(),
+        createdBy: "actor-a",
+      });
+      expect((await repos.studio.outputs.pendingReview())[0]).toMatchObject({
+        id: output.id,
+        status: "draft",
+        confirmed: false,
+        currentVersion: 2,
+        versionDigest: "b".repeat(64),
+      });
+      const empty = await repos.studio.outputs.create({
+        kind: "finding",
+        title: "Missing version",
+        createdBy: "actor-a",
+      });
+      expect(
+        (await repos.studio.outputs.pendingReview()).find(
+          (row) => row.id === empty.id,
+        ),
+      ).toMatchObject({
+        currentVersion: 0,
+        versionDigest: null,
+        confirmed: false,
+      });
+      return [output.id, empty.id];
+    });
+    const foreign = await studioRepositories(WORKSPACE_B, (repos) =>
+      repos.studio.outputs.pendingReview(),
+    );
+    expect(foreign.some((row) => result.includes(row.id))).toBe(false);
+  });
+
+  it("filters pending statuses before limiting to eleven each despite newer completed history", async () => {
+    const workspace = "studio-inbox-bounds";
+    await admin!`insert into workspaces(id,name,profile) values(${workspace},'Inbox bounds','{}')`;
+    await studioRepositories(workspace, async (repos) => {
+      for (const status of ["draft", "saved", "signed_off"] as const)
+        for (
+          let index = 0;
+          index < (status === "signed_off" ? 55 : 12);
+          index++
+        ) {
+          const output = await repos.studio.outputs.create({
+            kind: "merchant_audit",
+            title: `Bounded ${status} ${index}`,
+            createdBy: "actor-a",
+          });
+          await repos.studio.outputs.addVersion({
+            outputId: output.id,
+            payload: { checks: [] },
+            contentDigest: "c".repeat(64),
+            asOf: new Date(),
+            createdBy: "actor-a",
+          });
+          if (status !== "draft")
+            await repos.studio.outputs.setStatus(output.id, status);
+        }
+      const items = await repos.studio.outputs.pendingReview();
+      expect(items).toHaveLength(22);
+      expect(items.slice(0, 11).every((row) => row.status === "draft")).toBe(
+        true,
+      );
+      expect(items.slice(11).every((row) => row.status === "saved")).toBe(true);
+      expect(items.every((row) => !("payload" in row))).toBe(true);
+    });
+  });
+
   it("confirms only the current status/revision/digest and clears approval on a new version", async () => {
     const outputId = await studioRepositories(WORKSPACE_A, async (repos) => {
       const output = await repos.studio.outputs.create({

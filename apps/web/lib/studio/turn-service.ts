@@ -2158,7 +2158,7 @@ export function createStudioService(deps: StudioServiceDeps) {
      * Read-only orchestration inbox (P3.1): one `forWorkspace` transaction reads
      * the same canonical records the overview/list pages use, then
      * `buildStudioInbox` classifies and bounds them. Viewer+ like overview; no
-     * writes, no model calls and no new repository methods.
+     * writes or model calls; pending artifacts are filtered/bounded in SQL.
      */
     async inbox(): Promise<StudioInboxResult> {
       const { session, role } = await requireStudioSession(deps, "viewer");
@@ -2175,9 +2175,7 @@ export function createStudioService(deps: StudioServiceDeps) {
               repos.listings.countByStatus(),
               repos.qualityProjection.read(),
               repos.pipelineRuns.listForWorkspace(20),
-              repos.studio.outputs
-                .list({ limit: 50 })
-                .then((listed) => listed.items),
+              repos.studio.outputs.pendingReview(),
               // Visibility is applied in SQL before LIMIT so another user's
               // private thread never reaches the inbox aggregate.
               repos.studio.threads.list({
