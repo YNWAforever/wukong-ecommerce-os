@@ -279,7 +279,7 @@ export const STUDIO_COPY = {
     "Version metadata is unavailable; an exact-version link cannot be provided. Check its record in outputs.",
   ],
   "studio.inbox.outputs.freshnessOnOpen": [
-    "開啟成品時會重新檢查證據是否仍然有效。瀏覽收件匣不會執行模型或變更刊登內容。",
+    "開啟成品時會重新檢查證據是否仍然有效。瀏覽收件匣不會執行模型或變更商品內容。",
     "Evidence freshness is checked when you open an artifact. Browsing the inbox does not run a model or change listings.",
   ],
   "studio.inbox.conversationsTitle": ["近期對話", "Recent conversations"],
