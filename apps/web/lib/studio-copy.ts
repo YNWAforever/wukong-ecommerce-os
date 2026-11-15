@@ -1120,6 +1120,23 @@ export const STUDIO_COPY = {
   "studio.outputs.kind.finding": ["發現", "Finding"],
   "studio.outputs.kind.unknown": ["其他成品", "Other artifact"],
   "studio.outputs.artifact": ["成品", "Artifact"],
+  "studio.outputs.historical": [
+    "此連結顯示歷史版本，僅供閱讀。儲存及簽核功能已停用。",
+    "This link shows a historical version for reading. Save and sign-off are disabled.",
+  ],
+  "studio.outputs.pinnedUnavailable": [
+    "所選版本的證據已過時或無法核實。儲存及簽核功能已停用。",
+    "The selected version's evidence is stale or unavailable. Save and sign-off are disabled.",
+  ],
+  "studio.outputs.currentStatus": [
+    "目前成品狀態：",
+    "Current artifact status:",
+  ],
+  "studio.outputs.backToInbox": ["返回收件匣", "Back to inbox"],
+  "studio.outputs.invalidPin": [
+    "成品連結無效。請從收件匣重新開啟成品。",
+    "This artifact link is invalid. Open the artifact again from the inbox.",
+  ],
   "studio.outputs.currentVersion": [
     "目前版本 {version}",
     "Current version {version}",

@@ -333,6 +333,35 @@ try {
       )
       ON CONFLICT (workspace_id, id) DO NOTHING
     `;
+    // Dedicated immutable two-version artifact; existing handoff fixtures stay unchanged.
+    const pinnedOutputId = "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a08";
+    await tx`INSERT INTO studio_outputs(id,workspace_id,kind,title,status,current_version,created_by)
+      VALUES (${pinnedOutputId},${WORKSPACE_ID},'copy_proposal','Pinned reviewer acceptance','draft',2,${USER_ID})
+      ON CONFLICT(workspace_id,id) DO NOTHING`;
+    for (const revision of [1, 2]) {
+      const payload = {
+        ...HANDOFF_PAYLOAD,
+        fields: [
+          {
+            ...HANDOFF_PAYLOAD.fields[0],
+            proposed:
+              revision === 1
+                ? "Historical reviewer proposal"
+                : "Current reviewer proposal",
+          },
+        ],
+      };
+      const digest = createHash("sha256")
+        .update(canonicalJson(payload))
+        .digest("hex");
+      const versionId =
+        revision === 1
+          ? "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a09"
+          : "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a0a";
+      await tx`INSERT INTO studio_output_versions(id,workspace_id,output_id,revision,payload,content_digest,as_of,scope,created_by)
+        VALUES (${versionId},${WORKSPACE_ID},${pinnedOutputId},${revision},${sql.json(payload)},${digest},now(),${sql.json({})},${USER_ID})
+        ON CONFLICT(workspace_id,id) DO NOTHING`;
+    }
   });
   console.log(
     JSON.stringify({

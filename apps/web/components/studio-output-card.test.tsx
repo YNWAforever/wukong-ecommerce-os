@@ -104,6 +104,150 @@ afterEach(async () => {
 });
 
 describe("StudioOutputCard", () => {
+  const selectedPin = { expectedRevision: 1, expectedDigest: "a".repeat(64) };
+  it("renders the server-verified selected detail without another initial read", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount({
+      versionPin: selectedPin,
+      initialDetail: detailBody(),
+      canSave: false,
+      canSignOff: false,
+    });
+    expect(container.textContent).toContain("Synthetic proposed title");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(buttonByText(container, "Save artifact")?.disabled).toBe(true);
+    expect(buttonByText(container, "Sign off")?.disabled).toBe(true);
+  });
+  it("renders a historical selection instead of latest and cannot save or sign it off", async () => {
+    const body = detailBody();
+    const newer = {
+      ...body.versions[0]!,
+      revision: 2,
+      contentDigest: "b".repeat(64),
+      payload: {
+        ...proposalPayload,
+        fields: [
+          {
+            ...proposalPayload.fields[0]!,
+            proposed: "Newer proposal must not replace history",
+          },
+        ],
+      },
+    };
+    const fetcher = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount({
+      versionPin: selectedPin,
+      initialDetail: {
+        ...body,
+        output: { ...body.output, currentVersion: 2 },
+        versions: [...body.versions, newer],
+      },
+    });
+    expect(container.textContent).toContain("historical version");
+    expect(container.textContent).toContain("Current artifact status:");
+    expect(container.textContent).toContain("Synthetic proposed title");
+    expect(container.textContent).not.toContain(
+      "Newer proposal must not replace history",
+    );
+    expect(buttonByText(container, "Save artifact")?.disabled).toBe(true);
+    expect(buttonByText(container, "Sign off")?.disabled).toBe(true);
+    await act(async () => {
+      buttonByText(container, "Save artifact")?.click();
+      buttonByText(container, "Sign off")?.click();
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(container.querySelector('a[href*="/export?"]')).toBeNull();
+  });
+  it("requests the exact pin and rejects a response that silently follows latest", async () => {
+    const body = detailBody();
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        ...body,
+        output: { ...body.output, currentVersion: 2 },
+        versions: [
+          {
+            ...body.versions[0]!,
+            revision: 2,
+            contentDigest: "b".repeat(64),
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount({ versionPin: selectedPin });
+    expect(String(fetcher.mock.calls[0]![0])).toBe(
+      `/api/studio/outputs/output-1?revision=1&digest=${selectedPin.expectedDigest}`,
+    );
+    expect(container.textContent).toContain("could not be loaded");
+    expect(container.textContent).not.toContain("Synthetic proposed title");
+    expect(buttonByText(container, "Sign off")).toBeUndefined();
+  });
+  it.each(["stale", "unavailable"])(
+    "blocks both review actions for %s pinned evidence",
+    async (freshness) => {
+      vi.stubGlobal("fetch", vi.fn());
+      const body = detailBody();
+      const container = await mount({
+        versionPin: selectedPin,
+        initialDetail: { ...body, output: { ...body.output, freshness } },
+      });
+      expect(buttonByText(container, "Save artifact")?.disabled).toBe(true);
+      expect(buttonByText(container, "Sign off")?.disabled).toBe(true);
+      expect(container.textContent).toContain("stale or unavailable");
+    },
+  );
+  it("ignores a late response after the pin changes on the same artifact", async () => {
+    let release!: (response: Response) => void;
+    const body = detailBody();
+    const latest = {
+      ...body,
+      output: { ...body.output, currentVersion: 2 },
+      versions: [
+        {
+          ...body.versions[0]!,
+          revision: 2,
+          contentDigest: "b".repeat(64),
+          payload: {
+            ...proposalPayload,
+            fields: [
+              {
+                ...proposalPayload.fields[0]!,
+                proposed: "Chosen revision two",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            release = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(Response.json(latest));
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount({ versionPin: selectedPin });
+    await act(async () =>
+      roots[roots.length - 1]!.render(
+        <StudioOutputCard
+          locale="en"
+          outputId="output-1"
+          canSignOff
+          versionPin={{ expectedRevision: 2, expectedDigest: "b".repeat(64) }}
+        />,
+      ),
+    );
+    await flush();
+    await act(async () => release(Response.json(body)));
+    await flush();
+    expect(container.textContent).toContain("Chosen revision two");
+    expect(container.textContent).not.toContain("Synthetic proposed title");
+  });
   it("reads the artifact and renders kind, title, status, version, digest and the review card", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
