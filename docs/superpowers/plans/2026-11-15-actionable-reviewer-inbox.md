@@ -16,7 +16,7 @@ Inbox → exact proposal → explicit review decision → recorded completion. R
 
 ### PR 1 implementation record
 
-The candidate adds paired pinned GET validation, a single-version scoped read with digest verification, a server-rendered canonical detail URL, optional pinned/seeded card mode, historical read-only controls and explicit viewer save gating. Old unqueried API and card callers remain compatible. Local baseline: 34 output/card checks. Candidate verification: 778 Studio checks across 75 suites, 28 CI contract checks, full web types, strict browser-spec types and seed syntax passed. The browser fixture now contains a separate immutable two-version artifact; acceptance checks owner history/reload/stale rejection and viewer current-version controls without model sends or canonical changes. Linux browser/integration/build and exact release verification remain required.
+The candidate adds paired pinned GET validation, a single-version scoped read with digest verification, a server-rendered canonical detail URL, optional pinned/seeded card mode, historical read-only controls and explicit viewer save gating. Old unqueried API and card callers remain compatible. Local baseline: 34 output/card checks. Candidate verification: 778 Studio checks across 75 suites, 28 CI contract checks, full web types, strict browser-spec types and seed syntax passed. The browser fixture now contains a separate immutable two-version artifact; acceptance checks owner history/reload/stale rejection and viewer current-version controls without model sends or canonical changes. Shipped as PR #227, head `345522a2d466a0957c1d84e3b6128e68608688fe`, merge `e878f569e6b5be9103f72914ffd51773087b51fc`. PR CI 43681641170 and main CI 43683258181 passed (including real browser/PostgreSQL/audit/build gates). Production `dpl_EzwbZN3Ni1pS1qk9qY37ztoxt6XF` was READY/production at the exact merge; alias and unauthenticated sign-in/Studio/settings/pinned-output probes passed. The retained English 390px historical screenshot shows cramped table columns; PR 3 will improve that layout.
 
 ## PR 2 — actionable bounded inbox
 
@@ -25,6 +25,10 @@ The candidate adds paired pinned GET validation, a single-version scoped read wi
 - Batch current-version digest/confirmation metadata; do not load every payload or fan out freshness checks across the inbox. Detail and mutations perform freshness checks.
 - Keep recorded status distinct from verified confirmation; legacy/missing/unavailable metadata cannot claim completed review. Inbox remains read-only.
 - Reuse existing tables; scope every read through the resolved server workspace and existing visibility rules.
+
+### PR 2 implementation record
+
+The candidate uses one SQL snapshot: separate status-filtered candidate windows (11 drafts + 11 saved), current-version digest joins and matching audit confirmation via EXISTS. It returns no version payload/scope, excludes completed history before LIMIT and preserves workspace predicates on every join. The builder displays 10, reports truncation, provides exact links only with valid pins and keeps missing/legacy confirmation explicit. Artifact-link prefetch is disabled so viewing the inbox cannot load detail payloads in the background. Filtered View all links reuse existing outputs pages. Local DB build, web/browser-spec types and 781 Studio checks passed; two additional disposable PostgreSQL cases and the authenticated inbox-to-exact-version browser check gate CI.
 
 ## PR 3 — reviewer acceptance and release evidence
 

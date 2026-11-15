@@ -1233,6 +1233,10 @@ describe("studio inbox", () => {
       deepLink: expect.stringMatching(/^\/studio\/t\//),
     });
     // Read-only: no write, no budget reservation and no output audit event.
+    expect(
+      fake.state.writes.filter((action) => action === "outputs.pendingReview"),
+    ).toHaveLength(1);
+    expect(fake.state.writes).not.toContain("outputs.list");
     expect(fake.state.writes).not.toContain("budget.reserve");
     expect(
       fake.state.writes.filter((action) =>

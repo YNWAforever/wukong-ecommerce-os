@@ -211,6 +211,18 @@ export default async function StudioInboxPage() {
             href={inbox.outputs.deepLink}
             linkKey="studio.inbox.outputs.open"
           />
+          <p className={styles["studio-evidence-note"]}>
+            <Link href="/studio/outputs?status=draft">
+              {studioCopy(locale, "studio.inbox.outputs.viewDrafts")}
+            </Link>
+            {" · "}
+            <Link href="/studio/outputs?status=saved">
+              {studioCopy(locale, "studio.inbox.outputs.viewSaved")}
+            </Link>
+          </p>
+          <p className={styles["studio-evidence-note"]}>
+            {studioCopy(locale, "studio.inbox.outputs.freshnessOnOpen")}
+          </p>
           {inbox.outputs.unavailable ? (
             <p className={styles["studio-evidence-note"]}>
               {studioCopy(locale, "studio.inbox.unavailable")}
@@ -226,21 +238,53 @@ export default async function StudioInboxPage() {
                   key={output.outputId}
                   className={styles["studio-inbox-item"]}
                 >
-                  <Link
-                    className={styles["studio-evidence-link"]}
-                    href={output.deepLink}
-                  >
-                    {output.title}
-                  </Link>
+                  {output.deepLink ? (
+                    <Link
+                      prefetch={false}
+                      className={styles["studio-evidence-link"]}
+                      href={output.deepLink}
+                    >
+                      {output.title}
+                    </Link>
+                  ) : (
+                    <strong>{output.title}</strong>
+                  )}
                   <span className={styles["studio-inbox-item-meta"]}>
-                    {output.kind} ·{" "}
+                    {studioCopy(
+                      locale,
+                      output.kind === "copy_proposal"
+                        ? "studio.outputs.kind.copy_proposal"
+                        : output.kind === "gap_report"
+                          ? "studio.outputs.kind.gap_report"
+                          : output.kind === "finding"
+                            ? "studio.outputs.kind.finding"
+                            : output.kind === "merchant_audit"
+                              ? "studio.outputs.kind.merchant_audit"
+                              : "studio.outputs.kind.unknown",
+                    )}{" "}
+                    ·{" "}
                     {studioCopy(
                       locale,
                       output.status === "draft"
                         ? "studio.inbox.outputs.draft"
                         : "studio.inbox.outputs.saved",
                     )}
+                    {output.updatedAt
+                      ? ` · ${formatHkDate(output.updatedAt, locale)}`
+                      : ""}
                   </span>
+                  {output.confirmation !== "not_applicable" ? (
+                    <span className={styles["studio-inbox-item-meta"]}>
+                      {studioCopy(
+                        locale,
+                        output.confirmation === "confirmed"
+                          ? "studio.inbox.outputs.confirmed"
+                          : output.confirmation === "unconfirmed"
+                            ? "studio.inbox.outputs.unconfirmed"
+                            : "studio.inbox.outputs.versionUnavailable",
+                      )}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

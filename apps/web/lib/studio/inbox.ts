@@ -11,7 +11,7 @@ import type {
  *
  * It receives records that the service already read through one
  * `db.forWorkspace` transaction and only classifies/bounds them. There are no
- * writes, no model calls and no new repository methods. An input that is `null`
+ * writes or model calls; pending metadata arrives from one bounded SQL snapshot. An input that is `null`
  * means "that source could not be read": the section is marked unavailable and
  * its counts stay `null`, never a fabricated zero. Bounds are explicit and each
  * bounded list says `truncated` when records were dropped.
@@ -52,6 +52,10 @@ export type StudioInboxInput = {
     kind: string;
     title: string;
     status: string;
+    currentVersion?: number;
+    versionDigest?: string | null;
+    updatedAt?: Date;
+    confirmed?: boolean;
   }> | null;
   threads: ReadonlyArray<{
     id: string;
@@ -140,13 +144,39 @@ function buildOutputs(input: StudioInboxInput): StudioInboxResult["outputs"] {
   const saved = input.outputs.filter((output) => output.status === "saved");
   const combined = [...drafts, ...saved];
   const visible = combined.slice(0, STUDIO_INBOX_LIMITS.outputs);
-  const items: StudioInboxOutputItem[] = visible.map((output) => ({
-    outputId: output.id,
-    kind: output.kind,
-    title: output.title,
-    status: output.status === "draft" ? "draft" : "saved",
-    deepLink: "/studio/outputs",
-  }));
+  const items: StudioInboxOutputItem[] = visible.map<StudioInboxOutputItem>(
+    (output) => {
+      const pin =
+        Number.isSafeInteger(output.currentVersion) &&
+        output.currentVersion! > 0 &&
+        typeof output.versionDigest === "string" &&
+        /^[a-f0-9]{64}$/.test(output.versionDigest)
+          ? { revision: output.currentVersion!, digest: output.versionDigest }
+          : null;
+      return {
+        outputId: output.id,
+        kind: output.kind,
+        title: output.title,
+        status: output.status === "draft" ? "draft" : "saved",
+        updatedAt:
+          output.updatedAt && Number.isFinite(output.updatedAt.getTime())
+            ? output.updatedAt.toISOString()
+            : null,
+        pin,
+        confirmation:
+          pin === null
+            ? "unavailable"
+            : output.status === "draft"
+              ? "not_applicable"
+              : output.confirmed === true
+                ? "confirmed"
+                : "unconfirmed",
+        deepLink: pin
+          ? `/studio/outputs/${encodeURIComponent(output.id)}?revision=${pin.revision}&digest=${pin.digest}`
+          : null,
+      };
+    },
+  );
   return {
     items,
     truncated: combined.length > visible.length,
