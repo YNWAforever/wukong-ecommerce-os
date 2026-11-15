@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
@@ -81,9 +80,10 @@ export default async function StudioOutputDetailPage({
       <h1 className={styles["studio-home-title"]}>
         {studioCopy(locale, "studio.outputs.artifact")}
       </h1>
-      <Link className={styles["studio-evidence-link"]} href="/studio/inbox">
+      {/* A full navigation reads a fresh inbox after API review mutations. */}
+      <a className={styles["studio-evidence-link"]} href="/studio/inbox">
         {studioCopy(locale, "studio.outputs.backToInbox")}
-      </Link>
+      </a>
       {error ||
       !detail ||
       !parsed.success ||

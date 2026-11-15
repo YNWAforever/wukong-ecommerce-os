@@ -1,5 +1,8 @@
-import { expect, test, type Page } from "@playwright/test";
-import type { StudioRunResponse } from "../../apps/web/lib/studio/contracts";
+import { expect, test, type Page, type BrowserContext } from "@playwright/test";
+import type {
+  StudioRunResponse,
+  GetOutputResult,
+} from "../../apps/web/lib/studio/contracts";
 
 test.skip(
   process.env.STUDIO_GUIDED_ACCEPTANCE !== "1",
@@ -7,7 +10,12 @@ test.skip(
 );
 const ID = "5b16a8c2-8f6e-4e57-9b1e-1f0f0b6f7a01";
 const PASSWORD = "Local-only studio browser password 1!";
-async function signIn(page: Page, baseURL: string, viewer = false) {
+async function signIn(
+  page: Page,
+  baseURL: string,
+  viewer = false,
+  email?: string,
+) {
   await page
     .context()
     .addCookies([{ name: "locale", value: "en", url: baseURL }]);
@@ -15,9 +23,10 @@ async function signIn(page: Page, baseURL: string, viewer = false) {
   await page
     .getByLabel("Email address")
     .fill(
-      viewer
-        ? "studio-browser-viewer@local.invalid"
-        : "studio-browser-e2e@local.invalid",
+      email ??
+        (viewer
+          ? "studio-browser-viewer@local.invalid"
+          : "studio-browser-e2e@local.invalid"),
     );
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: /^Sign in with/ }).click();
@@ -78,6 +87,7 @@ async function send(page: Page) {
 test("guided listing journey uses records, resumes without sending and hands off an exact fake-model proposal", async ({
   page,
   baseURL,
+  browser,
 }, info) => {
   test.setTimeout(120_000);
   if (!baseURL) throw new Error("Missing fixture URL");
@@ -99,6 +109,8 @@ test("guided listing journey uses records, resumes without sending and hands off
     ).status(),
   ).toBe(200);
   const before = await (await page.request.get(`/api/listings/${ID}`)).json();
+  const reviewContexts: BrowserContext[] = [];
+  let reviewMessagePosts = 0;
   let messagePosts = 0;
   page.on("request", (request) => {
     if (
@@ -221,17 +233,163 @@ test("guided listing journey uses records, resumes without sending and hands off
     await expect(journey).toContainText("save the exact proposal");
     expect(messagePosts).toBe(3);
     const outputId = copy.reply.outputs[0].outputId;
-    const proposal = page.locator(`[data-output-id="${outputId}"]`);
-    await proposal
-      .getByRole("button", { name: "Save artifact", exact: true })
-      .click();
-    await expect(proposal).toContainText("Saved");
-    await proposal
-      .getByRole("button", { name: "Sign off", exact: true })
-      .click();
-    await expect(
-      proposal.getByText("Signed off", { exact: true }).first(),
-    ).toBeVisible();
+    const outputResponse = await page.request.get(
+      `/api/studio/outputs/${outputId}`,
+    );
+    expect(outputResponse.status()).toBe(200);
+    const output = (await outputResponse.json()) as GetOutputResult;
+    const version = output.versions.find(
+      (entry) => entry.revision === output.output.currentVersion,
+    )!;
+    const pin = {
+      expectedRevision: version.revision,
+      expectedDigest: version.contentDigest,
+    };
+    const pinnedUrl = `/studio/outputs/${outputId}?revision=${version.revision}&digest=${version.contentDigest}`;
+    for (const role of ["operator", "reviewer"] as const) {
+      const context = await browser.newContext({
+        baseURL,
+        viewport: { width: 390, height: 844 },
+      });
+      reviewContexts.push(context);
+      const reviewPage = await context.newPage();
+      reviewPage.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          /\/api\/studio\/threads\/[^/]+\/messages$/.test(
+            new URL(request.url()).pathname,
+          )
+        )
+          reviewMessagePosts++;
+      });
+      await signIn(
+        reviewPage,
+        baseURL,
+        false,
+        `studio-browser-${role}@local.invalid`,
+      );
+      await reviewPage.goto("/studio/inbox");
+      const artifactLink = reviewPage.locator(`a[href="${pinnedUrl}"]`);
+      await expect(artifactLink).toBeVisible();
+      await artifactLink.focus();
+      await artifactLink.press("Enter");
+      await expect(reviewPage).toHaveURL(new URL(pinnedUrl, baseURL).href);
+      await expect(
+        reviewPage.getByText("Acceptance copy proposed for human review.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      const card = reviewPage.locator(`[data-output-id="${outputId}"]`);
+      if (role === "operator") {
+        await expect(
+          card.getByRole("button", { name: "Sign off", exact: true }),
+        ).toBeDisabled();
+        expect(
+          (
+            await reviewPage.request.post(`/api/studio/outputs/${outputId}`, {
+              data: { action: "sign_off", ...pin },
+            })
+          ).status(),
+        ).toBe(403);
+        await card
+          .getByRole("button", { name: "Save artifact", exact: true })
+          .focus();
+        await card
+          .getByRole("button", { name: "Save artifact", exact: true })
+          .press("Enter");
+        await expect(
+          card.getByText("Saved", { exact: true }).first(),
+        ).toBeVisible();
+        const replay = await reviewPage.request.post(
+          `/api/studio/outputs/${outputId}`,
+          { data: { action: "save", ...pin } },
+        );
+        expect(replay.status()).toBe(200);
+        expect(await replay.json()).toMatchObject({
+          replayed: true,
+          version: version.revision,
+          status: "saved",
+        });
+        await reviewPage.reload();
+        await expect(
+          card.getByText("Saved", { exact: true }).first(),
+        ).toBeVisible();
+        await reviewPage.screenshot({
+          path: "node_modules/.studio-evidence/studio-reviewer-operator-390.png",
+          fullPage: true,
+        });
+      } else {
+        await card
+          .getByRole("button", { name: "Sign off", exact: true })
+          .focus();
+        await card
+          .getByRole("button", { name: "Sign off", exact: true })
+          .press("Enter");
+        await expect(
+          card.getByText("Signed off", { exact: true }).first(),
+        ).toBeVisible();
+        const replay = await reviewPage.request.post(
+          `/api/studio/outputs/${outputId}`,
+          { data: { action: "sign_off", ...pin } },
+        );
+        expect(replay.status()).toBe(200);
+        expect(await replay.json()).toMatchObject({
+          replayed: true,
+          version: version.revision,
+          status: "signed_off",
+        });
+        const back = reviewPage.getByRole("link", {
+          name: "Back to inbox",
+          exact: true,
+        });
+        await back.focus();
+        await back.press("Enter");
+        await expect(reviewPage).toHaveURL(
+          new URL("/studio/inbox", baseURL).href,
+        );
+        await expect(reviewPage.locator(`a[href="${pinnedUrl}"]`)).toHaveCount(
+          0,
+        );
+        await reviewPage.reload();
+        await expect(reviewPage.locator(`a[href="${pinnedUrl}"]`)).toHaveCount(
+          0,
+        );
+        await reviewPage
+          .context()
+          .addCookies([{ name: "locale", value: "zh-Hant", url: baseURL }]);
+        await reviewPage.goto(pinnedUrl);
+        await expect(
+          reviewPage.getByText("已簽核", { exact: true }).first(),
+        ).toBeVisible();
+        await expect(
+          reviewPage.getByRole("link", { name: "返回收件匣", exact: true }),
+        ).toBeVisible();
+        expect(
+          await reviewPage
+            .locator('[data-proposal-row="true"] td')
+            .evaluateAll((cells) =>
+              cells.every((cell) => cell.getBoundingClientRect().width >= 250),
+            ),
+        ).toBe(true);
+        expect(
+          await reviewPage
+            .locator('[data-proposal-row="true"] code')
+            .first()
+            .evaluate((code) => code.getClientRects().length),
+        ).toBe(1);
+        expect(
+          await reviewPage.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        ).toBe(true);
+        await reviewPage.screenshot({
+          path: "node_modules/.studio-evidence/studio-reviewer-confirmed-390-zh.png",
+          fullPage: true,
+        });
+      }
+      expect(reviewMessagePosts).toBe(0);
+      expect(messagePosts).toBe(3);
+    }
     await journey
       .getByRole("button", { name: "Refresh journey status", exact: true })
       .click();
@@ -307,6 +465,7 @@ test("guided listing journey uses records, resumes without sending and hands off
         await page.request.patch("/api/studio/settings", { data: original })
       ).status(),
     ).toBe(200);
+    for (const context of reviewContexts) await context.close();
   }
 });
 

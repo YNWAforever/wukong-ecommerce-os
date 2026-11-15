@@ -202,6 +202,10 @@ const DATABASE_URL =
   process.env.DATABASE_ADMIN_URL ??
   "postgres://wukong:wukong@127.0.0.1:54329/wukong";
 
+const seedTarget = new URL(DATABASE_URL);
+if (!["127.0.0.1", "localhost", "[::1]"].includes(seedTarget.hostname))
+  throw new Error("Refusing non-loopback Studio browser seed target");
+
 const ARGON2_OPTIONS = {
   algorithm: 2,
   version: 1,
@@ -258,6 +262,17 @@ try {
     await tx`INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password) VALUES ('acct_studio_browser_e2e', ${USER_ID}, ${USER_ID}, 'credential', ${passwordHash})`;
     await tx`DELETE FROM auth_accounts WHERE user_id = ${VIEWER_USER_ID} OR account_id = ${VIEWER_USER_ID}`;
     await tx`INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password) VALUES ('acct_studio_browser_viewer_e2e', ${VIEWER_USER_ID}, ${VIEWER_USER_ID}, 'credential', ${passwordHash})`;
+    for (const role of ["operator", "reviewer"]) {
+      const actorId = `user_studio_browser_${role}_e2e`;
+      const email = `studio-browser-${role}@local.invalid`;
+      await tx`INSERT INTO users(id,email,name,auth_email_verified) VALUES(${actorId},${email},${`Studio Browser ${role}`},true)
+        ON CONFLICT(id) DO UPDATE SET email=excluded.email,name=excluded.name,auth_email_verified=true`;
+      await tx`INSERT INTO memberships(workspace_id,user_id,role) VALUES(${WORKSPACE_ID},${actorId},${role})
+        ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=excluded.role`;
+      await tx`INSERT INTO workspace_invites(workspace_id,email,role,status) VALUES(${WORKSPACE_ID},${email},${role},'accepted')`;
+      await tx`DELETE FROM auth_accounts WHERE user_id=${actorId} OR account_id=${actorId}`;
+      await tx`INSERT INTO auth_accounts(id,user_id,account_id,provider_id,password) VALUES(${`acct_studio_browser_${role}_e2e`},${actorId},${actorId},'credential',${passwordHash})`;
+    }
     await tx`
       INSERT INTO studio_workspace_settings (workspace_id, enabled, updated_by)
       VALUES (${WORKSPACE_ID}, true, ${USER_ID})
@@ -362,6 +377,13 @@ try {
         VALUES (${versionId},${WORKSPACE_ID},${pinnedOutputId},${revision},${sql.json(payload)},${digest},now(),${sql.json({})},${USER_ID})
         ON CONFLICT(workspace_id,id) DO NOTHING`;
     }
+    const foreignWorkspace = "ws_studio_browser_foreign";
+    const foreignOutput = "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a0b";
+    await tx`INSERT INTO workspaces(id,name,profile) VALUES(${foreignWorkspace},'Foreign Studio fixture',${sql.json(WORKSPACE_PROFILE)}) ON CONFLICT(id) DO NOTHING`;
+    await tx`INSERT INTO studio_outputs(id,workspace_id,kind,title,status,current_version,created_by)
+      VALUES(${foreignOutput},${foreignWorkspace},'copy_proposal','Foreign private fixture','draft',1,${USER_ID}) ON CONFLICT(workspace_id,id) DO NOTHING`;
+    await tx`INSERT INTO studio_output_versions(id,workspace_id,output_id,revision,payload,content_digest,as_of,scope,created_by)
+      VALUES('6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a0c',${foreignWorkspace},${foreignOutput},1,${sql.json(HANDOFF_PAYLOAD)},${HANDOFF_CONTENT_DIGEST},now(),${sql.json({})},${USER_ID}) ON CONFLICT(workspace_id,id) DO NOTHING`;
   });
   console.log(
     JSON.stringify({

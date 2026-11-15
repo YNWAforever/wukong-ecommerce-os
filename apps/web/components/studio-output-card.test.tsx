@@ -119,8 +119,8 @@ describe("StudioOutputCard", () => {
     expect(buttonByText(container, "Save artifact")?.disabled).toBe(true);
     expect(buttonByText(container, "Sign off")?.disabled).toBe(true);
   });
-  it("renders a historical selection instead of latest and cannot save or sign it off", async () => {
-    const body = detailBody();
+  it("renders a historical selection instead of latest and cannot inherit saved review or export status", async () => {
+    const body = detailBody("saved");
     const newer = {
       ...body.versions[0]!,
       revision: 2,
