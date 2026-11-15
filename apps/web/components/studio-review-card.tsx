@@ -163,7 +163,7 @@ export function StudioReviewCard({
             {studioCopy(locale, "studio.review.noFields")}
           </p>
         ) : (
-          <table className={styles["studio-review-table"]}>
+          <table role="table" className={styles["studio-review-table"]}>
             <thead>
               <tr>
                 <th scope="col">
@@ -188,16 +188,34 @@ export function StudioReviewCard({
                   data-proposal-row="true"
                 >
                   <td>
+                    <span
+                      aria-hidden="true"
+                      className={styles["studio-review-mobile-label"]}
+                    >
+                      {studioCopy(locale, "studio.review.table.field")}
+                    </span>
                     <code className={styles["studio-review-field"]}>
                       {field.field}
                     </code>
                   </td>
                   <td className={styles["studio-review-value"]}>
+                    <span
+                      aria-hidden="true"
+                      className={styles["studio-review-mobile-label"]}
+                    >
+                      {studioCopy(locale, "studio.review.table.current")}
+                    </span>
                     {valueOrUnavailable(locale, field.current)}
                   </td>
                   <td
                     className={`${styles["studio-review-value"]} ${styles["studio-review-proposed"]}`}
                   >
+                    <span
+                      aria-hidden="true"
+                      className={styles["studio-review-mobile-label"]}
+                    >
+                      {studioCopy(locale, "studio.review.table.proposed")}
+                    </span>
                     <span>{valueOrUnavailable(locale, field.proposed)}</span>
                     <button
                       type="button"
@@ -209,6 +227,12 @@ export function StudioReviewCard({
                     </button>
                   </td>
                   <td>
+                    <span
+                      aria-hidden="true"
+                      className={styles["studio-review-mobile-label"]}
+                    >
+                      {studioCopy(locale, "studio.review.table.evidence")}
+                    </span>
                     {field.evidenceRefs.length === 0 ? (
                       <span className={styles["studio-review-unavailable"]}>
                         {studioCopy(locale, "studio.review.evidenceNone")}

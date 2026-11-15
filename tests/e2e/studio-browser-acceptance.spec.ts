@@ -151,6 +151,35 @@ test("exact artifact links retain historical content, reject stale review and re
     `/api/studio/outputs/${id}?revision=1&digest=${"0".repeat(64)}`,
   );
   expect(tampered.status()).toBe(409);
+  expect(
+    (
+      await page.request.get(
+        `/api/studio/outputs/${id}?revision=999&digest=${current.contentDigest}`,
+      )
+    ).status(),
+  ).toBe(404);
+  const handoff = (await (
+    await page.request.get(`/api/studio/outputs/${HANDOFF_OUTPUT_ID}`)
+  ).json()) as GetOutputResult;
+  const foreignId = "6c27b9d3-2a4a-4b6b-9e9e-2f0f0b6f7a0b";
+  const foreignPin = {
+    expectedRevision: 1,
+    expectedDigest: handoff.versions[0]!.contentDigest,
+  };
+  expect(
+    (
+      await page.request.get(
+        `/api/studio/outputs/${foreignId}?revision=1&digest=${foreignPin.expectedDigest}`,
+      )
+    ).status(),
+  ).toBe(404);
+  expect(
+    (
+      await page.request.post(`/api/studio/outputs/${foreignId}`, {
+        data: { action: "save", ...foreignPin },
+      })
+    ).status(),
+  ).toBe(404);
   const after = (await (
     await page.request.get(`/api/studio/outputs/${id}`)
   ).json()) as GetOutputResult;
@@ -165,6 +194,19 @@ test("exact artifact links retain historical content, reject stale review and re
     path: "node_modules/.studio-evidence/studio-reviewer-pinned-history-390.png",
     fullPage: true,
   });
+  await page.goto(`/studio/outputs/${id}?revision=1&digest=${"0".repeat(64)}`);
+  await expect(page.getByRole("alert")).toContainText(
+    "artifact link is invalid",
+  );
+  const back = page.getByRole("link", { name: "Back to inbox", exact: true });
+  await back.focus();
+  await back.press("Enter");
+  await expect(page).toHaveURL(
+    new URL("/studio/inbox", baseURL ?? "http://127.0.0.1:49300").href,
+  );
+  await expect(
+    page.getByText("Foreign private fixture", { exact: true }),
+  ).toHaveCount(0);
   await page.context().clearCookies();
   await signIn(page, baseURL ?? "http://127.0.0.1:49300", VIEWER_EMAIL);
   await page.goto(
@@ -179,6 +221,18 @@ test("exact artifact links retain historical content, reject stale review and re
   await expect(
     page.getByRole("button", { name: "Sign off", exact: true }),
   ).toBeDisabled();
+  for (const action of ["save", "sign_off"])
+    expect(
+      (
+        await page.request.post(`/api/studio/outputs/${id}`, {
+          data: {
+            action,
+            expectedRevision: 2,
+            expectedDigest: current.contentDigest,
+          },
+        })
+      ).status(),
+    ).toBe(403);
   expect(posts).toBe(0);
 });
 

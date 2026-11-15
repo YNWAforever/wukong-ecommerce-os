@@ -252,6 +252,11 @@ jobs:
         run: pnpm build
       - name: Verify sharp's native library is bundled
         run: node --test tests/sharp-native-bundling.test.mjs tests/pdf-worker-bundling.test.mjs
+      - name: Install CJK fonts for browser evidence
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-match 'sans:lang=zh-tw'
       - name: Install Chromium
         # Browser binary only. `--with-deps` shells out to apt, and GitHub's
         # Ubuntu mirrors intermittently fail DNS resolution on the runner

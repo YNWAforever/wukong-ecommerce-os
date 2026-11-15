@@ -6,9 +6,11 @@ evidence work have shipped; external MCP activation and SHOPLINE writes remain s
 The **workspace audit → selected-listing gap review → copy proposal → reviewer handoff** milestone
 shipped in PRs #223–#225, with explicit Send and existing Studio records. Exact-version integrity,
 structured context/durable gap reports, guided UI and authenticated fake-model acceptance are live.
-The operator selected **website-scan retry recovery** as the next development scope: same-scan
-explicit delivery recovery, retained evidence and bounded diagnostics, without provider calls or
-connector activation.
+**Website-scan retry recovery** shipped in PR #226 with same-scan explicit recovery, retained evidence
+and bounded diagnostics. The next approved three-PR cycle, **actionable reviewer inbox**, adds exact
+artifact-version detail (PR #227), bounded pending-artifact links and confirmation metadata (PR #228),
+and operator-to-reviewer acceptance with mobile/CJK evidence. It retains explicit actions and existing
+tables; read navigation never submits a model request or changes canonical listing data.
 
 The dated sections below preserve the original sequencing and release history. Their historical
 "not built"/"flags off" statements are superseded by the latest dated status entries. Runtime policy
@@ -498,13 +500,35 @@ sign-in, Studio redirect and unauthenticated settings smoke results.
 
 The operator selected [website-scan retry recovery](2026-11-15-website-scan-dispatch-recovery.md)
 after the completed guided milestone. A queued replacement could report service unavailability
-while keeping the prior preview disabled and exposing no explicit delivery recovery. The candidate
+while keeping the prior preview disabled and exposing no explicit delivery recovery. The delivered change
 uses the existing dispatch counter/time/status for atomic, actor-audited claims and fenced completion,
 returns persisted state, and exposes same-scan delivery retry separately from a new scan. Reloads
 remain reads; active document leases and original deadlines remain authoritative. Browser coverage
 uses an isolated persisted failure and the actual authenticated recovery/Queue path. Bounded,
-sanitized fixture logs are retained for diagnosis. Local policy, API/UI, repository/RLS and existing
-consumer/sweeper checks pass; exact-head CI and production/main verification remain release gates.
+sanitized fixture logs are retained for diagnosis. PR #226 shipped at merge
+`3cbe90b7b14226a5caba5371556dc63ee3cd44d5`: exact-head CI `43623429032` and main CI `43625955085`
+passed; production `dpl_J54WJGutubf7wdpJtrCJfbPHrhmK` was READY at that exact merge with expected
+alias/authentication smoke results. The initial transient ingress cause remains unproven. Its old
+Chinese screenshot had missing runner fonts; it is not typography sign-off.
+
+### Actionable reviewer inbox (approved 2026-11-15)
+
+The [approved three-PR plan and delivery record](2026-11-15-actionable-reviewer-inbox.md) builds on the
+completed guided journey: inbox → exact saved artifact → explicit reviewer decision → recorded state.
+
+- PR #227 shipped immutable revision/digest detail, single-version GET reads, server-verified payloads,
+  historical read-only controls and viewer save gating. Merge `e878f569`, PR CI `43681641170`, main CI
+  `43683258181` and READY production `dpl_EzwbZN3Ni1pS1qk9qY37ztoxt6XF` were verified.
+- PR #228 shipped one bounded SQL snapshot of pending statuses with exact saved confirmation metadata,
+  exact links, honest missing/legacy states, filtered outputs navigation and disabled detail prefetch.
+  Merge `ee49c9ff`, corrected-head CI `43686571228`, main CI `43688043718` and READY production
+  `dpl_DKpCRvHEdPAuape64xUYsLoRWJSN` were verified. Full local web suite: 3,209 passing checks.
+- The final acceptance release uses separate operator/reviewer sessions, keyboard save/sign-off and
+  replay, inbox completion after reload, unchanged canonical records, role/foreign/missing/tampered
+  cases, readable 390px proposal rows and installed CJK fonts. The release PR carries its exact-head,
+  production and main-CI evidence; retained screenshots use synthetic fixture data only.
 
 Scheduling, batches, assignments/notifications, new connectors and external MCP activation remain
-later decisions. This recovery adds no generic workflow engine or schema migration.
+later decisions. No workflow engine, schema migration, provider/budget change or paid development call
+is introduced. After this cycle, choose bounded manually initiated multi-listing review versus the
+first read-only business connector as a separate product decision.
