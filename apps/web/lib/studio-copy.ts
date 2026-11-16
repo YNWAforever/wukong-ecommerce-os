@@ -111,6 +111,95 @@ export const STUDIO_COPY = {
   "studio.home.composerTitle": ["開始對話", "Start a conversation"],
   "studio.home.templatesTitle": ["角色範本", "Role templates"],
 
+  // -- today queue (P1) -----------------------------------------------------
+  "studio.today.title": ["今天", "Today"],
+  "studio.today.lede": [
+    "依優先次序列出工作區需要你處理的工作；唯讀，不會呼叫 AI。",
+    "Your workspace's work in priority order; read-only, no AI call.",
+  ],
+  "studio.today.queueLabel": ["待辦清單", "Work queue"],
+  "studio.today.allClear": [
+    "目前沒有需要處理的工作。",
+    "Nothing needs your attention right now.",
+  ],
+  "studio.today.unavailable": [
+    "未能讀取工作清單；未顯示估算或虛構數字。",
+    "The work queue could not be read; no estimated or invented numbers are shown.",
+  ],
+  "studio.today.partial": [
+    "部分來源無法讀取，清單可能不完整。",
+    "Some sources could not be read, so the queue may be incomplete.",
+  ],
+  "studio.today.truncated": [
+    "部分來源只列出最近記錄；完整清單請開啟收件匣。",
+    "Some sources list only their most recent records; open the inbox for the full list.",
+  ],
+  "studio.today.more": [
+    "另有 {count} 項；開啟收件匣查看全部。",
+    "And {count} more; open the inbox to see them all.",
+  ],
+  "studio.today.owner.operator": ["操作員", "Operator"],
+  "studio.today.owner.reviewer": ["審核員", "Reviewer"],
+  "studio.today.owner.admin": ["管理員", "Admin"],
+  "studio.today.line.review": [
+    "{count} 個商品等待處理或審核",
+    "{count} listing(s) waiting for review or intake",
+  ],
+  "studio.today.line.gaps": [
+    "{count} 個商品有品質缺口",
+    "{count} listing(s) with quality gaps",
+  ],
+  "studio.today.line.noActive": [
+    "{count} 個商品沒有生效版本",
+    "{count} listing(s) without an active version",
+  ],
+  "studio.today.line.unassessable": [
+    "{count} 個生效版本無法評估",
+    "{count} unassessable active version(s)",
+  ],
+  "studio.today.job.failed": ["管線工作失敗", "Pipeline job failed"],
+  "studio.today.job.running": [
+    "管線工作仍在執行",
+    "Pipeline job still running",
+  ],
+  "studio.today.job.queued": ["管線工作排隊中", "Pipeline job queued"],
+  "studio.today.job.cancelled": ["管線工作已取消", "Pipeline job cancelled"],
+  "studio.today.job.other": [
+    "管線工作需要處理",
+    "Pipeline job needs attention",
+  ],
+  "studio.today.line.draftOutput": [
+    "草稿待你處理：{title}",
+    "Draft ready for review: {title}",
+  ],
+  "studio.today.line.signoffOutput": [
+    "已儲存成果待簽核：{title}",
+    "Saved work awaiting sign-off: {title}",
+  ],
+  "studio.today.line.conversation": [
+    "對話等待你回覆：{title}",
+    "Conversation wants your reply: {title}",
+  ],
+  "studio.today.action.review": ["開啟工作台", "Open workbench"],
+  "studio.today.action.quality": ["開啟品質頁", "Open quality"],
+  "studio.today.action.jobs": ["開啟工作頁", "Open jobs"],
+  "studio.today.action.outputs": ["開啟成果頁", "Open saved work"],
+  "studio.today.action.thread": ["開啟對話", "Open conversation"],
+  "studio.today.howTitle": ["如何運作", "How this works"],
+  "studio.today.howStep1": [
+    "在商品頁開始引導審核；Studio 會讀取記錄並提出下一步。",
+    "Start a guided review from a listing; Studio reads records and proposes the next step.",
+  ],
+  "studio.today.howStep2": [
+    "檢查結果、來源與限制；不會自動變更商品。",
+    "Check the result, evidence and limits; nothing changes automatically.",
+  ],
+  "studio.today.howStep3": [
+    "交由審核員簽核，再匯出。",
+    "Hand it to a reviewer for sign-off, then export.",
+  ],
+  "studio.today.moreSkills": ["更多技能", "More skills"],
+
   // -- composer -------------------------------------------------------------
   "studio.composer.label": ["訊息", "Message"],
   "studio.composer.placeholder": [
@@ -140,8 +229,8 @@ export const STUDIO_COPY = {
     "Messages are limited to 2000 characters.",
   ],
   "studio.composer.viewerNote": [
-    "你的角色只能閱讀；傳送需要操作員或以上權限。",
-    "Your role can read only; sending requires operator or higher.",
+    "你的角色只能閱讀；建立對話請聯絡管理員或操作員。",
+    "Your role can read only; ask an admin or operator to start a conversation.",
   ],
   "studio.composer.attach": ["附加檔案", "Attach files"],
   "studio.composer.attachUnavailable": [
@@ -291,6 +380,12 @@ export const STUDIO_COPY = {
   "studio.inbox.conversationsTitle": ["近期對話", "Recent conversations"],
   "studio.inbox.conversations.empty": ["還沒有對話。", "No conversations yet."],
   "studio.inbox.conversations.open": ["開啟對話", "Open conversation"],
+  "studio.inbox.queueTitle": ["優先處理", "Priority queue"],
+  "studio.inbox.queueLede": [
+    "先處理最上面的一項；下方依來源保留完整細節。",
+    "Start at the top; the details stay below, grouped by source.",
+  ],
+  "studio.inbox.browseTitle": ["依來源瀏覽", "Browse by source"],
   "studio.inbox.homeLink": ["開啟收件匣", "Open the inbox"],
   "studio.overview.openBlockingFlags": [
     "未解決的阻塞標記",

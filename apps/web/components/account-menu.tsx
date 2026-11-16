@@ -4,18 +4,54 @@ import { useEffect, useState } from "react";
 import { signOutAccount } from "../lib/account-session";
 import { clearWorkSession } from "../lib/catalog-session-state";
 import type { Locale } from "../lib/locale";
+import type { WorkspaceRole } from "../lib/session-context";
 import { localized } from "../lib/ui-copy";
 import styles from "./account-menu.module.css";
+
+/**
+ * One line of what the signed-in role can do (P1 role clarity).
+ *
+ * The server remains the authority; this only tells a person who to ask for the
+ * action they cannot take, instead of offering a control that silently refuses
+ * or hides a destination without explanation.
+ */
+const ROLE_CAPABILITY: Record<
+  WorkspaceRole,
+  { readonly zh: string; readonly en: string }
+> = {
+  viewer: {
+    zh: "你只能閱讀；建立對話或審核請聯絡管理員或操作員。",
+    en: "Read-only: ask an admin or operator to start a conversation or review.",
+  },
+  operator: {
+    zh: "你可以執行引導審核並準備內容；簽核與設定需要審核員或管理員。",
+    en: "You can run guided reviews and prepare work; sign-off and settings need a reviewer or admin.",
+  },
+  reviewer: {
+    zh: "你可以審核並簽核已準備的內容；設定與連線需要管理員。",
+    en: "You can review and sign off prepared work; settings and connections need an admin.",
+  },
+  admin: {
+    zh: "你可以審核、簽核並管理工作區設定與連線。",
+    en: "You can review, sign off and manage workspace settings and connections.",
+  },
+  owner: {
+    zh: "完整工作區控制，包括設定、連線與角色。",
+    en: "Full workspace control, including settings, connections and roles.",
+  },
+};
 
 export function AccountMenu({
   user,
   workspaceName,
   roleLabel,
+  role,
   locale,
 }: {
   user: { userId: string; email: string; name: string | null };
   workspaceName: string;
   roleLabel: string;
+  role?: WorkspaceRole;
   locale: Locale;
 }) {
   const [pending, setPending] = useState(false);
@@ -94,6 +130,15 @@ export function AccountMenu({
         <span>
           {workspaceName} · {roleLabel}
         </span>
+        {role ? (
+          <p className={styles["capability"]} data-role={role}>
+            {localized(
+              locale,
+              ROLE_CAPABILITY[role].zh,
+              ROLE_CAPABILITY[role].en,
+            )}
+          </p>
+        ) : null}
         <Link href="/support">
           {localized(locale, "支援及支援編號", "Support and request ID")}
         </Link>

@@ -100,3 +100,12 @@
     transition: none;
   }
 }
+
+.capability {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}

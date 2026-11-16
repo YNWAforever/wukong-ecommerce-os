@@ -587,7 +587,7 @@ describe("StudioThreadView", () => {
 
     expect(sendButton(container).disabled).toBe(true);
     expect(container.textContent).toContain(
-      "Your role can read only; sending requires operator or higher.",
+      "Your role can read only; ask an admin or operator to start a conversation.",
     );
   });
 });

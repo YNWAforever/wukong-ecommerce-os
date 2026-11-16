@@ -294,6 +294,8 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
     timeout: 30_000,
   });
   await expect(page.getByText("Welcome back")).toBeVisible();
+  // The home leads with the Today queue, not the greeting or templates.
+  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect(page.getByText("STUDIO", { exact: true }).first()).toBeVisible();
 
   // Send a deterministic records question; no model flag is on.
@@ -378,6 +380,11 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
   await expect(
     page.getByRole("heading", { name: "Orchestration inbox" }),
   ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByRole("heading", { name: "Priority queue" }),
+  ).toBeVisible();
+  // The per-source cards stay available under the disclosure.
+  await page.getByText("Browse by source").click();
   await expect(page.getByText("Needs attention").first()).toBeVisible();
   await expect(page.getByText("Recent pipeline jobs").first()).toBeVisible();
   await expect(
@@ -420,6 +427,7 @@ test("flags-on studio: supplier intel finding renders read-only and persists", a
   });
 
   // The supplier template is pilot-interactive through the registry.
+  await page.getByText("More skills").click();
   const supplierCard = page
     .getByRole("listitem")
     .filter({ hasText: "Supplier intel" });
@@ -610,6 +618,7 @@ test("flags-on studio: confirmed draft-from-sources dispatch creates one listing
   ).toContainText("dispatch-source.png", { timeout: 60_000 });
 
   // Fill the listing-draft template (it never sends), then note the intent.
+  await page.getByText("More skills").click();
   const templateCard = page
     .locator('[data-interactive="true"]')
     .filter({ hasText: "Listing draft" })

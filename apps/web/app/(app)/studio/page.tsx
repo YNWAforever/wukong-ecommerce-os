@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ApiError } from "../../../lib/route-support";
 
 import { StudioHome } from "../../../components/studio-home";
+import { StudioToday } from "../../../components/studio-today";
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
 import {
   authSessionContext,
@@ -51,6 +52,21 @@ export default async function StudioHomePage({
       return null;
     });
 
+  // Today reuses the read-only inbox aggregate; a failed read renders the
+  // honest unavailable line in `StudioToday` instead of an empty queue.
+  const inbox = await studioService()
+    .inbox()
+    .catch((error: unknown) => {
+      console.info(
+        JSON.stringify({
+          event: "studio_home_today_read_failed",
+          outcome: "failure",
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        }),
+      );
+      return null;
+    });
+
   const query = await searchParams;
   let initialGuidedAction;
   let guideUnavailable = false;
@@ -84,6 +100,7 @@ export default async function StudioHomePage({
       locale={locale}
       overview={overview}
       canCreateThread={canCreateThread}
+      today={<StudioToday locale={locale} inbox={inbox} limit={6} showHowTo />}
       {...(initialGuidedAction ? { initialGuidedAction } : {})}
       guideUnavailable={guideUnavailable}
     />

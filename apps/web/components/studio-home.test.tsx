@@ -419,7 +419,7 @@ describe("StudioHome", () => {
     const html = render("en", { canCreateThread: false });
 
     expect(html).toContain(
-      "Your role can read only; sending requires operator or higher.",
+      "Your role can read only; ask an admin or operator to start a conversation.",
     );
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Send<\/button>/);
   });

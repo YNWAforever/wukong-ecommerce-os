@@ -1221,17 +1221,17 @@ export function ListingReviewClient({
           {stateLabel(model.status, locale)}
         </span>
       </div>
-      <SourceReadinessSummary readiness={snapshot.sourceReadiness} banner />
       {studioGuideEnabled ? (
         <p>
           <Link
-            className={studioStyles["studio-secondary-button"]}
+            className={studioStyles["studio-primary-button"]}
             href={`/studio?guideListing=${encodeURIComponent(listingId)}&guideVersion=${encodeURIComponent(snapshot.activeVersion?.id ?? "none")}`}
           >
             {guidedCopy(locale, "entry")}
           </Link>
         </p>
       ) : null}
+      <SourceReadinessSummary readiness={snapshot.sourceReadiness} banner />
       {studioHandoff ? (
         <StudioHandoffBanner
           locale={locale}

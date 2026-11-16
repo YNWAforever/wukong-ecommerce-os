@@ -88,6 +88,7 @@ test.describe("studio enabled for a workspace", () => {
     ).toBeVisible();
 
     // A template fills the composer and does not send.
+    await page.getByText("More skills").click();
     await page
       .getByRole("button", { name: "Fill the composer" })
       .first()

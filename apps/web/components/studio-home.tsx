@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 
 import { getSkill } from "@wukong/core";
 
@@ -164,6 +164,12 @@ export type StudioHomeProps = {
   readonly overview?: StudioOverviewResult | null;
   readonly canCreateThread?: boolean;
   readonly initialGuidedAction?: Extract<GuidedAction, { kind: "audit" }>;
+  /**
+   * Server-rendered "Today" queue (P1). It is a node rather than data so the
+   * home stays a client component while the queue still renders from the
+   * server-read inbox aggregate.
+   */
+  readonly today?: ReactNode;
   readonly guideUnavailable?: boolean;
 };
 
@@ -172,6 +178,7 @@ export function StudioHome({
   overview = null,
   canCreateThread = false,
   initialGuidedAction,
+  today,
   guideUnavailable = false,
 }: StudioHomeProps) {
   const router = useRouter();
@@ -301,6 +308,8 @@ export function StudioHome({
         {studioCopy(locale, "studio.home.staticNotice")}
       </p>
 
+      {today}
+
       {guideUnavailable ? (
         <p role="status" className={styles["studio-notice"]}>
           {guidedCopy(locale, "initialStale")}
@@ -368,73 +377,76 @@ export function StudioHome({
 
       <StudioHomeOverview locale={locale} overview={overview} />
 
-      <section
-        className={styles["studio-section"]}
-        aria-label={studioCopy(locale, "studio.templates.title")}
-      >
-        <div className={styles["studio-section-header"]}>
-          <h2 className={styles["studio-section-title"]}>
-            {studioCopy(locale, "studio.templates.title")}
-          </h2>
+      <details className={styles["studio-disclosure"]}>
+        <summary>{studioCopy(locale, "studio.today.moreSkills")}</summary>
+        <section
+          className={`${styles["studio-section"]} ${styles["studio-disclosure-body"]}`}
+          aria-label={studioCopy(locale, "studio.templates.title")}
+        >
+          <div className={styles["studio-section-header"]}>
+            <h2 className={styles["studio-section-title"]}>
+              {studioCopy(locale, "studio.templates.title")}
+            </h2>
+            <p className={styles["studio-section-lede"]}>
+              {studioCopy(locale, "studio.templates.intro")}
+            </p>
+          </div>
           <p className={styles["studio-section-lede"]}>
-            {studioCopy(locale, "studio.templates.intro")}
+            {studioCopy(locale, "studio.templates.unavailableHint")}
           </p>
-        </div>
-        <p className={styles["studio-section-lede"]}>
-          {studioCopy(locale, "studio.templates.unavailableHint")}
-        </p>
-        <ul className={styles["studio-template-grid"]}>
-          {STUDIO_TEMPLATES.map((template) => {
-            const interactive =
-              template.availability === "pilot" &&
-              template.starterKey !== undefined;
-            return (
-              <li
-                key={template.id}
-                className={styles["studio-template-card"]}
-                data-availability={template.availability}
-                data-interactive={interactive ? "true" : "false"}
-              >
-                <div className={styles["studio-template-header"]}>
-                  <h3 className={styles["studio-template-title"]}>
-                    {studioCopy(locale, template.titleKey)}
-                  </h3>
-                  <span
-                    className={styles["studio-badge"]}
-                    data-availability={template.availability}
-                  >
-                    {studioCopy(
-                      locale,
-                      AVAILABILITY_KEY[template.availability],
-                    )}
-                  </span>
-                </div>
-                <p className={styles["studio-template-outcome"]}>
-                  {studioCopy(locale, template.outcomeKey)}
-                </p>
-                <p className={styles["studio-template-limitation"]}>
-                  {studioCopy(locale, template.limitationKey)}
-                </p>
-                {interactive ? (
-                  <button
-                    type="button"
-                    className={styles["studio-template-fill"]}
-                    onClick={() => fillComposer(template)}
-                    disabled={session.inFlight}
-                    title={studioCopy(locale, "studio.templates.fillHint")}
-                  >
-                    {studioCopy(locale, "studio.templates.fill")}
-                  </button>
-                ) : (
-                  <p className={styles["studio-template-unavailable"]}>
-                    {studioCopy(locale, "studio.honest.notYetAvailable")}
+          <ul className={styles["studio-template-grid"]}>
+            {STUDIO_TEMPLATES.map((template) => {
+              const interactive =
+                template.availability === "pilot" &&
+                template.starterKey !== undefined;
+              return (
+                <li
+                  key={template.id}
+                  className={styles["studio-template-card"]}
+                  data-availability={template.availability}
+                  data-interactive={interactive ? "true" : "false"}
+                >
+                  <div className={styles["studio-template-header"]}>
+                    <h3 className={styles["studio-template-title"]}>
+                      {studioCopy(locale, template.titleKey)}
+                    </h3>
+                    <span
+                      className={styles["studio-badge"]}
+                      data-availability={template.availability}
+                    >
+                      {studioCopy(
+                        locale,
+                        AVAILABILITY_KEY[template.availability],
+                      )}
+                    </span>
+                  </div>
+                  <p className={styles["studio-template-outcome"]}>
+                    {studioCopy(locale, template.outcomeKey)}
                   </p>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+                  <p className={styles["studio-template-limitation"]}>
+                    {studioCopy(locale, template.limitationKey)}
+                  </p>
+                  {interactive ? (
+                    <button
+                      type="button"
+                      className={styles["studio-template-fill"]}
+                      onClick={() => fillComposer(template)}
+                      disabled={session.inFlight}
+                      title={studioCopy(locale, "studio.templates.fillHint")}
+                    >
+                      {studioCopy(locale, "studio.templates.fill")}
+                    </button>
+                  ) : (
+                    <p className={styles["studio-template-unavailable"]}>
+                      {studioCopy(locale, "studio.honest.notYetAvailable")}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      </details>
     </div>
   );
 }

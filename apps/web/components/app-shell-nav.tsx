@@ -36,6 +36,8 @@ type AppShellNavProps = {
   workspaceOptions?: WorkspaceOption[];
   roleLabelZh: string;
   roleLabelEn: string;
+  /** Signed-in workspace role, shown with its capability summary in the menu. */
+  workspaceRole?: WorkspaceRole;
   initialLocale: Locale;
   accountUser?: { userId: string; email: string; name: string | null };
   onLocaleChange?: (locale: Locale) => void;
@@ -58,6 +60,7 @@ export function AppShellNav({
   workspaceOptions = [],
   roleLabelZh,
   roleLabelEn,
+  workspaceRole,
   initialLocale,
   accountUser,
   onLocaleChange,
@@ -403,6 +406,7 @@ export function AppShellNav({
               user={accountUser}
               workspaceName={workspaceName}
               roleLabel={localized(locale, roleLabelZh, roleLabelEn)}
+              {...(workspaceRole ? { role: workspaceRole } : {})}
               locale={locale}
             />
           ) : (
