@@ -99,7 +99,7 @@ describe("StudioOutputsPage", () => {
 
     const html = await render();
 
-    expect(html).toContain("Outputs");
+    expect(html).toContain("Saved work");
     expect(html).toContain("Synthetic copy proposal");
     expect(html).toContain("Synthetic gap report");
     expect(html).toContain("Copy proposal");
@@ -127,7 +127,7 @@ describe("StudioOutputsPage", () => {
   it("shows the honest empty state with what will fill it", async () => {
     const html = await render();
 
-    expect(html).toContain("No saved outputs.");
+    expect(html).toContain("No saved work yet.");
     expect(html).toContain("Artifacts appear here after a skill saves one.");
   });
 
@@ -188,7 +188,7 @@ describe("StudioOutputsPage", () => {
   it("renders the honest filtered-empty state instead of the unfiltered one", async () => {
     const html = await render({ kind: "finding" });
     expect(html).toContain("No artifacts match these filters.");
-    expect(html).not.toContain("No saved outputs.");
+    expect(html).not.toContain("No saved work yet.");
     expect(html).toContain("0 artifact(s)");
   });
 
@@ -263,7 +263,7 @@ describe("StudioOutputsPage", () => {
     state.items = [listItem()];
     state.locale = "zh-Hant";
     const html = await render();
-    expect(html).toContain("輸出");
+    expect(html).toContain("已儲存成果");
     expect(html).toContain("文案建議");
     expect(html).toContain("已儲存");
   });

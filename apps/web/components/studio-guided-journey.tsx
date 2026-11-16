@@ -51,7 +51,8 @@ export function StudioGuidedJourney({
   canSignOff = false,
   aiEnabled,
   blocked,
-  onPrepare,
+  sending = false,
+  onSend,
   onReload,
 }: {
   locale: Locale;
@@ -62,9 +63,11 @@ export function StudioGuidedJourney({
   canSignOff?: boolean;
   aiEnabled: boolean;
   blocked: boolean;
-  onPrepare: (action: GuidedAction) => void;
+  sending?: boolean;
+  onSend: (action: GuidedAction, text: string) => void;
   onReload: () => void;
 }) {
+  const [confirming, setConfirming] = useState<GuidedAction | null>(null);
   const descriptor = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const operator = messages[i];
@@ -189,6 +192,11 @@ export function StudioGuidedJourney({
       controller.abort();
     };
   }, [key, refresh, threadId]);
+  useEffect(() => {
+    // A reload or a new recorded turn can change the next step; an old
+    // confirmation panel must never send a stale pinned request.
+    setConfirming(null);
+  }, [key, messages.length, threadId]);
   if (!descriptor) return null;
   const detail = loaded?.key === key ? loaded.detail : null;
   const version = detail?.versions.find(
@@ -285,28 +293,89 @@ export function StudioGuidedJourney({
         <p>{guidedCopy(locale, "aiOff")}</p>
       ) : null}
       {blocked ? <p>{guidedCopy(locale, "draft")}</p> : null}
+      {next ? <p>{guidedCopy(locale, "sendHint")}</p> : null}
       {next ? (
-        <button
-          type="button"
-          className={styles["studio-secondary-button"]}
-          disabled={
-            !canSend ||
-            blocked ||
-            descriptor.pending ||
-            noVersion ||
-            (next.kind === "copy_proposal" && !aiEnabled)
-          }
-          onClick={() => onPrepare(next)}
-        >
-          {guidedCopy(
-            locale,
-            descriptor.noResult
-              ? "prepareAgain"
-              : next.kind === "gap_review"
-                ? "prepareGap"
-                : "prepareCopy",
-          )}
-        </button>
+        confirming ? (
+          <div
+            className={styles["studio-guided-confirm"]}
+            role="group"
+            aria-label={guidedCopy(locale, "confirmTitle")}
+          >
+            <p className={styles["studio-guided-confirm-title"]}>
+              {guidedCopy(locale, "confirmTitle")}
+            </p>
+            <p className={styles["studio-guided-confirm-text"]}>
+              {guidedCopy(
+                locale,
+                confirming.kind === "audit"
+                  ? "auditRequest"
+                  : confirming.kind === "gap_review"
+                    ? "gapRequest"
+                    : "copyRequest",
+              )}
+            </p>
+            <p className={styles["studio-guided-confirm-hint"]}>
+              {guidedCopy(locale, "confirmHint")}
+            </p>
+            <div className={styles["studio-guided-confirm-actions"]}>
+              <button
+                type="button"
+                className={styles["studio-primary-button"]}
+                disabled={!canSend || blocked || sending}
+                onClick={() => {
+                  const action = confirming;
+                  setConfirming(null);
+                  onSend(
+                    action,
+                    guidedCopy(
+                      locale,
+                      action.kind === "audit"
+                        ? "auditRequest"
+                        : action.kind === "gap_review"
+                          ? "gapRequest"
+                          : "copyRequest",
+                    ),
+                  );
+                }}
+              >
+                {sending
+                  ? guidedCopy(locale, "sending")
+                  : guidedCopy(locale, "confirmSend")}
+              </button>
+              <button
+                type="button"
+                className={styles["studio-secondary-button"]}
+                onClick={() => setConfirming(null)}
+                disabled={sending}
+              >
+                {guidedCopy(locale, "confirmCancel")}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className={styles["studio-secondary-button"]}
+            disabled={
+              !canSend ||
+              blocked ||
+              sending ||
+              descriptor.pending ||
+              noVersion ||
+              (next.kind === "copy_proposal" && !aiEnabled)
+            }
+            onClick={() => setConfirming(next)}
+          >
+            {guidedCopy(
+              locale,
+              descriptor.noResult
+                ? "prepareAgain"
+                : next.kind === "gap_review"
+                  ? "prepareGap"
+                  : "prepareCopy",
+            )}
+          </button>
+        )
       ) : null}
       {scope?.stage === "copy_proposal" && usable ? (
         <p>{guidedCopy(locale, saved ? "ready" : "saveHint")}</p>
@@ -337,7 +406,6 @@ export function StudioGuidedJourney({
           <a href="/studio/outputs">{guidedCopy(locale, "artifacts")}</a>
         </p>
       ) : null}
-      <p>{guidedCopy(locale, "sendHint")}</p>
       <button
         type="button"
         className={styles["studio-secondary-button"]}

@@ -139,7 +139,7 @@ async function mount(
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
-  const onPrepare = vi.fn(),
+  const onSend = vi.fn(),
     onReload = vi.fn();
   await act(async () => {
     root.render(
@@ -150,13 +150,13 @@ async function mount(
         canSend
         aiEnabled
         blocked={false}
-        onPrepare={onPrepare}
+        onSend={onSend}
         onReload={onReload}
         {...props}
       />,
     );
   });
-  return { container, onPrepare, onReload };
+  return { container, onSend, onReload };
 }
 function button(container: HTMLElement, text: string) {
   return Array.from(container.querySelectorAll("button")).find(
@@ -165,25 +165,34 @@ function button(container: HTMLElement, text: string) {
 }
 
 describe("guided journey", () => {
-  it("loads recorded progress with GET and only prepares the next request on click", async () => {
+  it("loads recorded progress and sends only after the request is confirmed", async () => {
     const fetch = vi.fn(
       async (_url: string, _init?: RequestInit) =>
         new Response(JSON.stringify(detail())),
     );
     vi.stubGlobal("fetch", fetch);
     const ui = await mount();
-    const next = button(ui.container, "Prepare gap review")!;
-    await act(async () => next.click());
-    expect(ui.onPrepare).toHaveBeenCalledWith({
-      kind: "gap_review",
-      sourceOutputId: OUTPUT,
-      sourceRevision: 1,
-      sourceDigest: DIGEST,
-    });
+    await act(async () => button(ui.container, "Prepare gap review")?.click());
+    expect(ui.onSend).not.toHaveBeenCalled();
+    expect(ui.container.textContent).toContain("Send this request?");
+    expect(ui.container.textContent).toContain(
+      "Review the recorded gaps for the selected listing version.",
+    );
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch.mock.calls[0]?.[0]).toContain("/api/studio/outputs/");
     expect(ui.container.textContent).toContain(
       "Canonical listing data stays unchanged",
+    );
+
+    await act(async () => button(ui.container, "Send request")?.click());
+    expect(ui.onSend).toHaveBeenCalledWith(
+      {
+        kind: "gap_review",
+        sourceOutputId: OUTPUT,
+        sourceRevision: 1,
+        sourceDigest: DIGEST,
+      },
+      "Review the recorded gaps for the selected listing version.",
     );
   });
   it.each([{ blocked: true }, { canSend: false }])(
@@ -198,7 +207,7 @@ describe("guided journey", () => {
       await act(async () =>
         button(ui.container, "Prepare gap review")?.click(),
       );
-      expect(ui.onPrepare).not.toHaveBeenCalled();
+      expect(ui.onSend).not.toHaveBeenCalled();
     },
   );
   it.each(["stale", "unavailable"])("blocks %s evidence", async (freshness) => {
@@ -243,7 +252,7 @@ describe("guided journey", () => {
       button(ui.container, "Refresh journey status")?.click(),
     );
     expect(ui.onReload).toHaveBeenCalledTimes(1);
-    expect(ui.onPrepare).not.toHaveBeenCalled();
+    expect(ui.onSend).not.toHaveBeenCalled();
   });
   it("recovers a paid artifact after a lost reply without preparing another model request", async () => {
     const fetcher = vi.fn(
@@ -269,7 +278,7 @@ describe("guided journey", () => {
       "Recovered the recorded artifact",
     );
     expect(button(ui.container, "Prepare another attempt")).toBeUndefined();
-    expect(ui.onPrepare).not.toHaveBeenCalled();
+    expect(ui.onSend).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it("does not treat a partial reply with an uncertain hold as safely retryable", async () => {
@@ -294,7 +303,7 @@ describe("guided journey", () => {
     expect(ui.container.textContent).toContain(
       "recorded attempt needs checking",
     );
-    expect(ui.onPrepare).not.toHaveBeenCalled();
+    expect(ui.onSend).not.toHaveBeenCalled();
   });
   it("blocks copy when AI is disabled", async () => {
     vi.stubGlobal(

@@ -220,7 +220,7 @@ describe("StudioTurn", () => {
       reply({ outputs: [{ outputId: "output-1", revision: 3 }] }),
     );
 
-    expect(html).toContain("Outputs");
+    expect(html).toContain("Results");
     expect(html).toContain('data-output-id="output-1"');
     // The card fetches its detail client-side; static rendering shows the
     // loading state rather than invented content.

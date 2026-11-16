@@ -29,7 +29,8 @@
 /* -- rail ---------------------------------------------------------------- */
 
 .studio-rail {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   align-content: start;
   min-width: 0;
@@ -37,6 +38,41 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
+}
+
+.studio-rail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.studio-rail-current {
+  display: none;
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.studio-rail-toggle {
+  display: none;
+  min-height: 44px;
+  padding: 8px 12px;
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--stone);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.studio-rail-menu {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
 .studio-rail-workspace {
@@ -86,8 +122,24 @@
 }
 
 .studio-rail-nav {
+  display: grid;
+  gap: 12px;
   border-top: 1px solid var(--line);
   padding-top: 12px;
+}
+
+.studio-rail-group {
+  display: grid;
+  gap: 4px;
+}
+
+.studio-rail-group-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .studio-rail-list {
@@ -113,6 +165,13 @@
 .studio-rail-link:hover {
   color: var(--navy);
   background: var(--nav-active-bg);
+}
+
+.studio-rail-link[data-active="true"] {
+  color: var(--navy);
+  font-weight: 800;
+  background: var(--nav-active-bg);
+  box-shadow: inset 3px 0 0 var(--navy);
 }
 
 .studio-rail-link:focus-visible {
@@ -281,6 +340,72 @@
 .studio-composer-attach:disabled {
   cursor: not-allowed;
   opacity: 0.75;
+}
+
+.studio-primary-button {
+  min-height: 44px;
+  padding: 10px 18px;
+  color: var(--amber-dark);
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+  border-radius: 8px;
+}
+
+.studio-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.studio-primary-button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* -- guided request confirmation ----------------------------------------- */
+
+.studio-guided-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: var(--stone);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.studio-guided-confirm-title {
+  margin: 0;
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.studio-guided-confirm-text {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.studio-guided-confirm-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.studio-guided-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .studio-composer-hint {
@@ -1642,17 +1767,36 @@
     gap: 16px;
   }
 
+  /* Compact bar: workspace, current section and Menu. The full rail expands
+     only on request, so the page content starts right below the bar. */
+  .studio-rail {
+    padding: 10px 14px;
+  }
+
+  .studio-rail-current {
+    display: block;
+  }
+
+  .studio-rail-toggle {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .studio-rail[data-open="false"] .studio-rail-menu {
+    display: none;
+  }
+
   .studio-rail-nav {
     border-top: none;
     padding-top: 0;
   }
 
   .studio-rail-list {
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    overflow-x: auto;
-    gap: 4px;
-    padding-bottom: 4px;
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+    gap: 2px;
+    padding-bottom: 0;
   }
 }
 
@@ -1666,12 +1810,12 @@
   }
 
   .studio-rail {
-    padding: 14px;
+    padding: 12px;
   }
 
   .studio-rail-list {
     grid-auto-flow: row;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     overflow-x: visible;
   }
 
@@ -1918,8 +2062,25 @@ article.studio-output .studio-output-body {
   padding: 0;
 }
 
+.studio-output-version-details {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.studio-output-version-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.studio-output-version-details > summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .studio-output-version-meta {
-  margin: 0;
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;

@@ -904,7 +904,7 @@ test("flags-on studio: every Studio surface renders for an owner", async ({
   const surfaces = [
     { path: "/studio", heading: "Welcome back" },
     { path: "/studio/threads", heading: "Conversations" },
-    { path: "/studio/outputs", heading: "Outputs" },
+    { path: "/studio/outputs", heading: "Saved work" },
     { path: "/studio/inbox", heading: "Orchestration inbox" },
     { path: "/studio/connections", heading: "Tools and connections" },
     { path: "/studio/settings", heading: "Studio settings" },
@@ -970,7 +970,7 @@ test("flags-on studio: a viewer is read-only and admin settings stay hidden", as
   // Every read surface stays available to the viewer.
   const readSurfaces = [
     { path: "/studio/threads", heading: "Conversations" },
-    { path: "/studio/outputs", heading: "Outputs" },
+    { path: "/studio/outputs", heading: "Saved work" },
     { path: "/studio/inbox", heading: "Orchestration inbox" },
     { path: "/studio/connections", heading: "Tools and connections" },
   ] as const;

@@ -1,5 +1,6 @@
 import type { Locale } from "./locale";
 import { localized, type BilingualMessage } from "./ui-copy";
+import { STUDIO_TERMS } from "./studio/terms";
 
 /**
  * Every Conversation Studio string, as `[zh-Hant, en]` tuples.
@@ -68,11 +69,16 @@ export const STUDIO_COPY = {
     "Could not create the conversation. Try again.",
   ],
   "studio.rail.navigation": ["工作室導覽", "Studio navigation"],
+  "studio.rail.group.work": ["工作", "Work"],
+  "studio.rail.group.records": ["記錄", "Records"],
+  "studio.rail.group.admin": ["管理", "Admin"],
+  "studio.rail.menu": ["選單", "Menu"],
+  "studio.rail.menuClose": ["收起選單", "Close menu"],
   "studio.rail.overview": ["總覽", "Overview"],
   "studio.rail.inbox": ["收件匣", "Inbox"],
   "studio.rail.conversations": ["對話", "Conversations"],
-  "studio.rail.outputs": ["輸出", "Outputs"],
-  "studio.rail.tools": ["工具", "Tools"],
+  "studio.rail.outputs": STUDIO_TERMS.savedWork,
+  "studio.rail.tools": ["連線", "Connections"],
   "studio.rail.settings": ["設定", "Settings"],
   "studio.rail.recent": ["最近的對話", "Recent conversations"],
   "studio.rail.recentEmpty": [
@@ -481,6 +487,8 @@ export const STUDIO_COPY = {
   "studio.thread.limitations": ["已知限制", "Known limitations"],
   "studio.thread.followUps": ["延伸問題", "Follow-up questions"],
   "studio.thread.skill": ["技能", "Skill"],
+  "studio.thread.guided": ["引導審查", "Guided review"],
+  "studio.thread.outputs": ["本次成果", "Results"],
   "studio.thread.noSkill": ["未指定技能", "No skill selected"],
   "studio.thread.status.open": ["進行中", "Open"],
   "studio.thread.status.archived": ["已封存", "Archived"],
@@ -1075,8 +1083,9 @@ export const STUDIO_COPY = {
   "studio.model.noClaims": ["沒有可顯示的主張。", "No claims to show."],
 
   // -- outputs and sign-off -------------------------------------------------
-  "studio.outputs.title": ["輸出", "Outputs"],
-  "studio.outputs.empty": ["沒有已儲存的輸出。", "No saved outputs."],
+  "studio.outputs.title": STUDIO_TERMS.savedWork,
+  "studio.outputs.details": ["版本詳情", "Version details"],
+  "studio.outputs.empty": ["沒有已儲存的成果。", "No saved work yet."],
   "studio.outputs.version": ["版本", "Version"],
   "studio.outputs.asOf": ["資料截至", "As of"],
   "studio.outputs.scope": ["範圍", "Scope"],
@@ -1853,10 +1862,10 @@ export const STUDIO_COPY = {
   "studio.error.retry": ["重試", "Retry"],
 
   // -- bounded multi-listing review -----------------------------------------
-  "studio.rail.reviews": ["多商品審核", "Reviews"],
-  "studio.reviews.title": ["多商品審核", "Multi-listing review"],
+  "studio.rail.reviews": STUDIO_TERMS.batchReview,
+  "studio.reviews.title": STUDIO_TERMS.batchReview,
   "studio.reviews.lede": [
-    "選取最多五個商品，一次執行既有的概況審查及缺口檢視。每個商品各自保留對話，不會自動產生文案。",
+    "選取最多五個商品，一次執行既有的工作區稽核及缺口檢視。每個商品各自保留對話，不會自動產生文案。",
     "Select up to five listings and run the existing workspace audit and gap review once. Each listing keeps its own conversation; no copy is generated automatically.",
   ],
   "studio.reviews.rule": [

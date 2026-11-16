@@ -434,10 +434,10 @@ function AssistantTurn({
       {reply.outputs.length > 0 ? (
         <section
           className={styles["studio-turn-outputs"]}
-          aria-label={studioCopy(locale, "studio.outputs.title")}
+          aria-label={studioCopy(locale, "studio.thread.outputs")}
         >
           <h4 className={styles["studio-evidence-subtitle"]}>
-            {studioCopy(locale, "studio.outputs.title")}
+            {studioCopy(locale, "studio.thread.outputs")}
           </h4>
           <ul className={styles["studio-output-list"]}>
             {reply.outputs.map((output) => (

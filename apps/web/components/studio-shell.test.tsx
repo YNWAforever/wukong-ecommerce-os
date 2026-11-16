@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigation = vi.hoisted(() => ({
   push: vi.fn(),
+  pathname: "/studio",
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: navigation.push }),
+  usePathname: () => navigation.pathname,
 }));
 
 import { StudioShell } from "./studio-shell";
@@ -45,6 +47,10 @@ function render(overrides: Partial<Parameters<typeof StudioShell>[0]> = {}) {
   );
 }
 
+function activeAnchor(html: string): string {
+  return html.match(/<a[^>]*aria-current="page"[^>]*>/)?.[0] ?? "";
+}
+
 const roots: ReturnType<typeof createRoot>[] = [];
 
 async function mount(
@@ -66,6 +72,7 @@ async function mount(
 
 beforeEach(() => {
   navigation.push.mockReset();
+  navigation.pathname = "/studio";
 });
 
 afterEach(async () => {
@@ -77,7 +84,7 @@ afterEach(async () => {
 });
 
 describe("StudioShell", () => {
-  it("renders the workspace name, the implemented destinations, the settings destination and the page slot", () => {
+  it("renders the workspace name, the work and records destinations, and the page slot", () => {
     const html = render();
 
     expect(html).toContain("Opak Cellar");
@@ -88,15 +95,59 @@ describe("StudioShell", () => {
       "/studio/reviews",
       "/studio/threads",
       "/studio/outputs",
-      "/studio/connections",
-      "/studio/settings",
     ]) {
       expect(html).toContain(`href="${href}"`);
     }
     expect(html).toContain("Inbox");
-    // Settings is a real destination now; the page itself gates on admin.
-    expect(html).toContain("Settings");
-    expect(html).not.toContain("Settings are not available yet.");
+    expect(html).toContain("Batch review");
+    expect(html).toContain("Saved work");
+    // Admin destinations are not dangled in front of an operator: the settings
+    // page answers 404 to them, which used to look like a broken Studio.
+    expect(html).not.toContain('href="/studio/settings"');
+    expect(html).not.toContain('href="/studio/connections"');
+  });
+
+  it("renders admin destinations only for administrators", () => {
+    const html = render({ canAdmin: true });
+
+    expect(html).toContain('href="/studio/settings"');
+    expect(html).toContain('href="/studio/connections"');
+    expect(html).toContain("Admin");
+  });
+
+  it("marks the current destination with aria-current", () => {
+    navigation.pathname = "/studio/inbox";
+    const html = render();
+
+    const active = activeAnchor(html);
+    expect(active).toContain('href="/studio/inbox"');
+    expect(active).not.toContain('href="/studio"');
+  });
+
+  it("marks conversations for a thread detail page and keeps Overview exact", () => {
+    navigation.pathname = "/studio/t/thread-1";
+    expect(activeAnchor(render())).toContain('href="/studio/threads"');
+
+    navigation.pathname = "/studio";
+    expect(activeAnchor(render())).toContain('href="/studio"');
+  });
+
+  it("expands and collapses the compact rail menu", async () => {
+    const container = await mount();
+
+    const toggle = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Menu",
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("aside")?.getAttribute("data-open")).toBe(
+      "false",
+    );
+
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector("aside")?.getAttribute("data-open")).toBe(
+      "true",
+    );
   });
 
   it("renders recent conversations from props with thread links", () => {
@@ -162,6 +213,7 @@ describe("StudioShell", () => {
         locale="zh-Hant"
         workspaceName="Opak Cellar"
         recentThreads={[]}
+        canAdmin
       >
         <p>page content</p>
       </StudioShell>,
@@ -171,5 +223,7 @@ describe("StudioShell", () => {
     expect(html).toContain("總覽");
     expect(html).toContain("設定");
     expect(html).toContain("還沒有對話");
+    expect(html).toContain("批次審查");
+    expect(html).toContain("已儲存成果");
   });
 });

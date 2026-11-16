@@ -80,6 +80,7 @@ export default async function StudioLayout({
       recentThreads={recentThreads.items}
       recentTruncated={recentThreads.truncated}
       canCreateThread={requireWorkspaceRole("operator", session.role)}
+      canAdmin={requireWorkspaceRole("admin", session.role)}
     >
       {children}
     </StudioShell>

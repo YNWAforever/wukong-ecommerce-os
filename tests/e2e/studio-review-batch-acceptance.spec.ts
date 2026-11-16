@@ -155,7 +155,7 @@ test("bounded multi-listing review runs both deterministic stages per listing an
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/studio/reviews");
     await expect(
-      page.getByRole("heading", { name: "Multi-listing review", exact: true }),
+      page.getByRole("heading", { name: "Batch review", exact: true }),
     ).toBeVisible();
     const candidateA = page.locator(`[data-listing-id="${LISTING_A}"]`);
     const candidateB = page.locator(`[data-listing-id="${LISTING_B}"]`);
@@ -262,7 +262,7 @@ test("bounded multi-listing review runs both deterministic stages per listing an
       `${new URL("/studio/reviews", baseURL).toString()}?listingIds=${LISTING_A},${LISTING_B}`,
     );
     await expect(
-      page.getByRole("heading", { name: "多商品審核", exact: true }),
+      page.getByRole("heading", { name: "批次審查", exact: true }),
     ).toBeVisible();
     await expect(page.locator('[data-review-result="true"]')).toHaveCount(2);
     await expect(
