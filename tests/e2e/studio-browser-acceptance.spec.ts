@@ -364,11 +364,11 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
     fullPage: true,
   });
 
-  // The conversation also appears in the threads list.
+  // The conversation also appears in the threads list. The rail's recent list
+  // is collapsed at this viewport, so match the visible page link only.
+  const threadPath = new URL(threadUrl).pathname;
   await page.goto("/studio/threads");
-  await expect(
-    page.getByRole("main").locator('a[href^="/studio/t/"]').first(),
-  ).toBeVisible({
+  await expect(page.locator(`a[href="${threadPath}"]:visible`)).toBeVisible({
     timeout: 30_000,
   });
   // The orchestration inbox aggregates the same workspace records: the
@@ -384,13 +384,13 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
     page.getByText("Artifacts needing action").first(),
   ).toBeVisible();
   await expect(
-    page.getByRole("main").getByText("Recent conversations").first(),
+    page
+      .getByRole("heading", { name: "Recent conversations", exact: true })
+      .filter({ visible: true })
+      .first(),
   ).toBeVisible();
   await expect(
-    page
-      .getByRole("main")
-      .locator(`a[href="${new URL(threadUrl).pathname}"]`)
-      .first(),
+    page.locator(`a[href="${threadPath}"]:visible`).first(),
   ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({
     path: "test-results/studio-inbox-acceptance.png",

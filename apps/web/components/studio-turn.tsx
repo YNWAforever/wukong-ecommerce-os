@@ -1,6 +1,7 @@
 import type { Locale } from "../lib/locale";
 import { renderStudioLine } from "../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
+import { studioSkillTerm } from "../lib/studio/terms";
 import {
   turnReplySchema,
   type ModelAnalysis,
@@ -142,7 +143,7 @@ function OperatorTurn({
               <span className={styles["studio-skill-chip-label"]}>
                 {studioCopy(locale, "studio.thread.skill")}
               </span>
-              <span>{content.skillKey}</span>
+              <span>{studioSkillTerm(locale, content.skillKey)}</span>
             </p>
           ) : null}
         </>

@@ -138,7 +138,7 @@ describe("StudioTurn", () => {
 
     expect(html).toContain('data-role="assistant"');
     expect(html).toContain("From your records");
-    expect(html).toContain("Skill: catalog.find");
+    expect(html).toContain("Skill: Catalog search");
     expect(html).toContain("Found 2 matching listing records");
     expect(html).toContain("Listing listing-1: status approved");
     expect(html).toContain("Execution trace · 2 steps");

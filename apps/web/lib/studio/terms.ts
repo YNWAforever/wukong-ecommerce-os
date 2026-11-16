@@ -24,7 +24,12 @@ export const STUDIO_TERMS = {
   conversation: ["對話", "Conversation"],
   needsAttention: ["待辦", "Needs attention"],
   catalogSearch: ["商品搜尋", "Catalog search"],
+  listingDraft: ["商品草稿", "Listing draft"],
+  imagePreparation: ["圖片準備", "Image preparation"],
+  categoryMapping: ["分類對應", "Category mapping"],
+  supplierIntel: ["供應商情報", "Supplier intel"],
   guidedReview: ["引導審查", "Guided review"],
+  tool: ["工具", "Tool"],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type StudioTermKey = keyof typeof STUDIO_TERMS;
@@ -45,18 +50,20 @@ export function studioTermMessage(key: StudioTermKey): {
 
 /**
  * Human names for skill identifiers. A thread stores a `skillKey`; the UI shows
- * the matching term and never the raw identifier. Unknown skills fall back to
- * the guided-review term rather than leaking `some.skill_key` to the operator.
+ * the matching term and never the raw identifier. Unknown skills fall back to a
+ * neutral "Tool" term rather than leaking `some.skill_key` to the operator.
  */
 export const STUDIO_SKILL_TERMS: Record<string, StudioTermKey> = {
   "catalog.find": "catalogSearch",
   "catalog.gap_review": "gapReview",
   "listing.copy_proposal": "copyProposal",
-  "listing.draft_from_sources": "listingReview",
+  "listing.draft_from_sources": "listingDraft",
   "merchant.audit": "workspaceAudit",
-  "product_shot.prepare": "listingReview",
-  "category.map_proposal": "gapReview",
-  "supplier.intel_proposal": "gapReview",
+  "product_shot.prepare": "imagePreparation",
+  "category.map_proposal": "categoryMapping",
+  "supplier.intel_proposal": "supplierIntel",
+  "customer.reply_draft": "copyProposal",
+  "logistics.followup": "tool",
 };
 
 export function studioSkillTerm(
@@ -64,5 +71,5 @@ export function studioSkillTerm(
   skillKey: string | null,
 ): string | null {
   if (skillKey === null) return null;
-  return studioTerm(locale, STUDIO_SKILL_TERMS[skillKey] ?? "guidedReview");
+  return studioTerm(locale, STUDIO_SKILL_TERMS[skillKey] ?? "tool");
 }

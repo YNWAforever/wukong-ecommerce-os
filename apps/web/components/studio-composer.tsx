@@ -16,6 +16,7 @@ import {
   type StudioComposerAttachmentState,
 } from "../lib/studio/attachments";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
+import { studioSkillTerm } from "../lib/studio/terms";
 import styles from "./studio.module.css";
 
 /**
@@ -212,7 +213,9 @@ export function StudioComposer({
           <span className={styles["studio-skill-chip-label"]}>
             {studioCopy(locale, "studio.composer.skillLabel")}
           </span>
-          <span className={styles["studio-skill-chip-value"]}>{skillKey}</span>
+          <span className={styles["studio-skill-chip-value"]}>
+            {studioSkillTerm(locale, skillKey)}
+          </span>
           {onClearSkill ? (
             <button
               type="button"

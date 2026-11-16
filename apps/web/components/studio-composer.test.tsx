@@ -199,7 +199,7 @@ describe("StudioComposer", () => {
     });
 
     expect(container.textContent).toContain("Selected skill");
-    expect(container.textContent).toContain("catalog.find");
+    expect(container.textContent).toContain("Catalog search");
     const clear = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent === "Clear skill",
     ) as HTMLButtonElement;

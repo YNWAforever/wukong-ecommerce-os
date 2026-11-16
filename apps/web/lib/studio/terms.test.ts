@@ -61,7 +61,7 @@ describe("Studio vocabulary", () => {
   it("never shows a raw skill key, and falls back to a human term", () => {
     expect(studioSkillTerm("en", "merchant.audit")).toBe("Workspace audit");
     expect(studioSkillTerm("zh-Hant", "catalog.gap_review")).toBe("缺口檢視");
-    expect(studioSkillTerm("en", "some.unknown_skill")).toBe("Guided review");
+    expect(studioSkillTerm("en", "some.unknown_skill")).toBe("Tool");
     expect(studioSkillTerm("en", null)).toBeNull();
   });
 });

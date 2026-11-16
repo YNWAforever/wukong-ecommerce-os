@@ -453,7 +453,7 @@ export const STUDIO_COPY = {
     "沒有收件匣資料來源，因此不提供此功能。",
     "No inbox data source exists, so this capability is unavailable.",
   ],
-  "studio.template.merchantAudit.title": ["商家稽核", "Merchant audit"],
+  "studio.template.merchantAudit.title": STUDIO_TERMS.workspaceAudit,
   "studio.template.merchantAudit.outcome": [
     "整理商品品質與記錄覆蓋的報告。",
     "Assemble a report from listing quality and record coverage.",
@@ -463,8 +463,8 @@ export const STUDIO_COPY = {
     "Read-only audit with a versioned report; listings are never changed and Studio never approves or publishes.",
   ],
   "studio.template.merchantAudit.starter": [
-    "產生商家與 SEO 稽核：",
-    "Run a merchant and SEO audit: ",
+    "產生工作區與 SEO 稽核：",
+    "Run a workspace and SEO audit: ",
   ],
   "studio.template.logistics.title": ["物流跟進", "Logistics follow-up"],
   "studio.template.logistics.outcome": [
@@ -1143,7 +1143,7 @@ export const STUDIO_COPY = {
   // -- output cards (plan Task 9) -------------------------------------------
   "studio.outputs.kind.copy_proposal": ["文案建議", "Copy proposal"],
   "studio.outputs.kind.gap_report": ["缺口報告", "Gap report"],
-  "studio.outputs.kind.merchant_audit": ["商家稽核", "Merchant audit"],
+  "studio.outputs.kind.merchant_audit": STUDIO_TERMS.workspaceAudit,
   "studio.outputs.kind.finding": ["發現", "Finding"],
   "studio.outputs.kind.unknown": ["其他成品", "Other artifact"],
   "studio.outputs.artifact": ["成品", "Artifact"],
@@ -1702,7 +1702,7 @@ export const STUDIO_COPY = {
   "studio.dispatch.runState.unavailable": ["未能提供", "Unavailable"],
 
   // -- merchant audit report card (plan Task 11) ---------------------------
-  "studio.report.title": ["商戶稽核報告", "Merchant audit report"],
+  "studio.report.title": ["工作區稽核報告", "Workspace audit report"],
   "studio.report.period": ["期間：{period}", "Period: {period}"],
   "studio.report.periodUnset": [
     "未指定（目前總計）",
@@ -1919,8 +1919,8 @@ export const STUDIO_COPY = {
     "封鎖中標記：{count}",
     "{count} blocking flags",
   ],
-  "studio.reviews.openAudit": ["概況審查", "Workspace audit"],
-  "studio.reviews.openGap": ["缺口檢視", "Listing gaps"],
+  "studio.reviews.openAudit": STUDIO_TERMS.workspaceAudit,
+  "studio.reviews.openGap": STUDIO_TERMS.gapReview,
   "studio.reviews.openThread": ["開啟對話", "Open conversation"],
   "studio.reviews.selectFailed": ["選取失敗的商品", "Select failed listings"],
   "studio.reviews.page": ["第 {page} 頁", "Page {page}"],
