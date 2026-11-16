@@ -9,6 +9,7 @@ import type {
   StudioInboxResult,
 } from "../../../../lib/studio/contracts";
 import { formatHkDate } from "../../../../lib/ui-copy";
+import { StudioToday } from "../../../../components/studio-today";
 import styles from "../../../../components/studio.module.css";
 import { studioService } from "../studio-service";
 
@@ -124,221 +125,238 @@ export default async function StudioInboxPage() {
         </p>
       </header>
 
-      <div className={styles["studio-inbox-grid"]}>
-        <section
-          className={styles["studio-report"]}
-          aria-label={studioCopy(locale, "studio.inbox.attentionTitle")}
-        >
-          <SectionHeader
-            locale={locale}
-            titleKey="studio.inbox.attentionTitle"
-            href={inbox.needsAttention.deepLink}
-            linkKey="studio.inbox.attention.openQuality"
-          />
-          {inbox.needsAttention.unavailable ? (
-            <p className={styles["studio-evidence-note"]}>
-              {studioCopy(locale, "studio.inbox.unavailable")}
-            </p>
-          ) : attentionWithCounts ? (
-            <ul className={styles["studio-turn-list"]}>
-              {inbox.needsAttention.items.map((item) => (
-                <li key={item.key}>
-                  {item.count === null
-                    ? studioCopy(locale, "studio.inbox.unavailable")
-                    : renderStudioLine(locale, {
-                        key: ATTENTION_KEYS[item.key],
-                        values: { count: item.count },
-                      })}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={styles["studio-evidence-note"]}>
-              {studioCopy(locale, "studio.inbox.attention.allClear")}
-            </p>
-          )}
-        </section>
+      <StudioToday
+        locale={locale}
+        inbox={inbox}
+        limit={20}
+        titleKey="studio.inbox.queueTitle"
+        ledeKey="studio.inbox.queueLede"
+        showSourceNotes
+      />
 
-        <section
-          className={styles["studio-report"]}
-          aria-label={studioCopy(locale, "studio.inbox.jobsTitle")}
-        >
-          <SectionHeader
-            locale={locale}
-            titleKey="studio.inbox.jobsTitle"
-            href={inbox.jobs.deepLink}
-            linkKey="studio.inbox.jobs.open"
-          />
-          {inbox.jobs.unavailable ? (
-            <p className={styles["studio-evidence-note"]}>
-              {studioCopy(locale, "studio.inbox.unavailable")}
-            </p>
-          ) : inbox.jobs.items.length === 0 ? (
-            <p className={styles["studio-evidence-note"]}>
-              {studioCopy(locale, "studio.inbox.jobs.empty")}
-            </p>
-          ) : (
-            <ul className={styles["studio-turn-list"]}>
-              {inbox.jobs.items.map((job) => (
-                <li key={job.jobId} className={styles["studio-inbox-item"]}>
-                  <Link
-                    className={styles["studio-evidence-link"]}
-                    href={job.deepLink}
-                  >
-                    {job.jobId}
-                  </Link>
-                  <span className={styles["studio-inbox-item-meta"]}>
-                    {renderStudioLine(locale, {
-                      key: "studio.inbox.jobs.state",
-                      values: { state: job.state },
-                    })}{" "}
-                    · {formatHkDate(job.createdAt, locale)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <TruncatedNotice locale={locale} truncated={inbox.jobs.truncated} />
-        </section>
+      <details className={styles["studio-disclosure"]}>
+        <summary>{studioCopy(locale, "studio.inbox.browseTitle")}</summary>
+        <div className={styles["studio-disclosure-body"]}>
+          <div className={styles["studio-inbox-grid"]}>
+            <section
+              className={styles["studio-report"]}
+              aria-label={studioCopy(locale, "studio.inbox.attentionTitle")}
+            >
+              <SectionHeader
+                locale={locale}
+                titleKey="studio.inbox.attentionTitle"
+                href={inbox.needsAttention.deepLink}
+                linkKey="studio.inbox.attention.openQuality"
+              />
+              {inbox.needsAttention.unavailable ? (
+                <p className={styles["studio-evidence-note"]}>
+                  {studioCopy(locale, "studio.inbox.unavailable")}
+                </p>
+              ) : attentionWithCounts ? (
+                <ul className={styles["studio-turn-list"]}>
+                  {inbox.needsAttention.items.map((item) => (
+                    <li key={item.key}>
+                      {item.count === null
+                        ? studioCopy(locale, "studio.inbox.unavailable")
+                        : renderStudioLine(locale, {
+                            key: ATTENTION_KEYS[item.key],
+                            values: { count: item.count },
+                          })}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className={styles["studio-evidence-note"]}>
+                  {studioCopy(locale, "studio.inbox.attention.allClear")}
+                </p>
+              )}
+            </section>
 
-        <section
-          className={styles["studio-report"]}
-          aria-label={studioCopy(locale, "studio.inbox.outputsTitle")}
-        >
-          <SectionHeader
-            locale={locale}
-            titleKey="studio.inbox.outputsTitle"
-            href={inbox.outputs.deepLink}
-            linkKey="studio.inbox.outputs.open"
-          />
-          <p className={styles["studio-evidence-note"]}>
-            <Link href="/studio/outputs?status=draft">
-              {studioCopy(locale, "studio.inbox.outputs.viewDrafts")}
-            </Link>
-            {" · "}
-            <Link href="/studio/outputs?status=saved">
-              {studioCopy(locale, "studio.inbox.outputs.viewSaved")}
-            </Link>
-          </p>
-          <p className={styles["studio-evidence-note"]}>
-            {studioCopy(locale, "studio.inbox.outputs.freshnessOnOpen")}
-          </p>
-          {inbox.outputs.unavailable ? (
-            <p className={styles["studio-evidence-note"]}>
-              {studioCopy(locale, "studio.inbox.unavailable")}
-            </p>
-          ) : inbox.outputs.items.length === 0 ? (
-            <p className={styles["studio-evidence-note"]}>
-              {studioCopy(locale, "studio.inbox.outputs.empty")}
-            </p>
-          ) : (
-            <ul className={styles["studio-turn-list"]}>
-              {inbox.outputs.items.map((output) => (
-                <li
-                  key={output.outputId}
-                  className={styles["studio-inbox-item"]}
-                >
-                  {output.deepLink ? (
-                    <Link
-                      prefetch={false}
-                      className={styles["studio-evidence-link"]}
-                      href={output.deepLink}
+            <section
+              className={styles["studio-report"]}
+              aria-label={studioCopy(locale, "studio.inbox.jobsTitle")}
+            >
+              <SectionHeader
+                locale={locale}
+                titleKey="studio.inbox.jobsTitle"
+                href={inbox.jobs.deepLink}
+                linkKey="studio.inbox.jobs.open"
+              />
+              {inbox.jobs.unavailable ? (
+                <p className={styles["studio-evidence-note"]}>
+                  {studioCopy(locale, "studio.inbox.unavailable")}
+                </p>
+              ) : inbox.jobs.items.length === 0 ? (
+                <p className={styles["studio-evidence-note"]}>
+                  {studioCopy(locale, "studio.inbox.jobs.empty")}
+                </p>
+              ) : (
+                <ul className={styles["studio-turn-list"]}>
+                  {inbox.jobs.items.map((job) => (
+                    <li key={job.jobId} className={styles["studio-inbox-item"]}>
+                      <Link
+                        className={styles["studio-evidence-link"]}
+                        href={job.deepLink}
+                      >
+                        {job.jobId}
+                      </Link>
+                      <span className={styles["studio-inbox-item-meta"]}>
+                        {renderStudioLine(locale, {
+                          key: "studio.inbox.jobs.state",
+                          values: { state: job.state },
+                        })}{" "}
+                        · {formatHkDate(job.createdAt, locale)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <TruncatedNotice
+                locale={locale}
+                truncated={inbox.jobs.truncated}
+              />
+            </section>
+
+            <section
+              className={styles["studio-report"]}
+              aria-label={studioCopy(locale, "studio.inbox.outputsTitle")}
+            >
+              <SectionHeader
+                locale={locale}
+                titleKey="studio.inbox.outputsTitle"
+                href={inbox.outputs.deepLink}
+                linkKey="studio.inbox.outputs.open"
+              />
+              <p className={styles["studio-evidence-note"]}>
+                <Link href="/studio/outputs?status=draft">
+                  {studioCopy(locale, "studio.inbox.outputs.viewDrafts")}
+                </Link>
+                {" · "}
+                <Link href="/studio/outputs?status=saved">
+                  {studioCopy(locale, "studio.inbox.outputs.viewSaved")}
+                </Link>
+              </p>
+              <p className={styles["studio-evidence-note"]}>
+                {studioCopy(locale, "studio.inbox.outputs.freshnessOnOpen")}
+              </p>
+              {inbox.outputs.unavailable ? (
+                <p className={styles["studio-evidence-note"]}>
+                  {studioCopy(locale, "studio.inbox.unavailable")}
+                </p>
+              ) : inbox.outputs.items.length === 0 ? (
+                <p className={styles["studio-evidence-note"]}>
+                  {studioCopy(locale, "studio.inbox.outputs.empty")}
+                </p>
+              ) : (
+                <ul className={styles["studio-turn-list"]}>
+                  {inbox.outputs.items.map((output) => (
+                    <li
+                      key={output.outputId}
+                      className={styles["studio-inbox-item"]}
                     >
-                      {output.title}
-                    </Link>
-                  ) : (
-                    <strong>{output.title}</strong>
-                  )}
-                  <span className={styles["studio-inbox-item-meta"]}>
-                    {studioCopy(
-                      locale,
-                      output.kind === "copy_proposal"
-                        ? "studio.outputs.kind.copy_proposal"
-                        : output.kind === "gap_report"
-                          ? "studio.outputs.kind.gap_report"
-                          : output.kind === "finding"
-                            ? "studio.outputs.kind.finding"
-                            : output.kind === "merchant_audit"
-                              ? "studio.outputs.kind.merchant_audit"
-                              : "studio.outputs.kind.unknown",
-                    )}{" "}
-                    ·{" "}
-                    {studioCopy(
-                      locale,
-                      output.status === "draft"
-                        ? "studio.inbox.outputs.draft"
-                        : "studio.inbox.outputs.saved",
-                    )}
-                    {output.updatedAt
-                      ? ` · ${formatHkDate(output.updatedAt, locale)}`
-                      : ""}
-                  </span>
-                  {output.confirmation !== "not_applicable" ? (
-                    <span className={styles["studio-inbox-item-meta"]}>
-                      {studioCopy(
-                        locale,
-                        output.confirmation === "confirmed"
-                          ? "studio.inbox.outputs.confirmed"
-                          : output.confirmation === "unconfirmed"
-                            ? "studio.inbox.outputs.unconfirmed"
-                            : "studio.inbox.outputs.versionUnavailable",
+                      {output.deepLink ? (
+                        <Link
+                          prefetch={false}
+                          className={styles["studio-evidence-link"]}
+                          href={output.deepLink}
+                        >
+                          {output.title}
+                        </Link>
+                      ) : (
+                        <strong>{output.title}</strong>
                       )}
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-          <TruncatedNotice
-            locale={locale}
-            truncated={inbox.outputs.truncated}
-          />
-        </section>
+                      <span className={styles["studio-inbox-item-meta"]}>
+                        {studioCopy(
+                          locale,
+                          output.kind === "copy_proposal"
+                            ? "studio.outputs.kind.copy_proposal"
+                            : output.kind === "gap_report"
+                              ? "studio.outputs.kind.gap_report"
+                              : output.kind === "finding"
+                                ? "studio.outputs.kind.finding"
+                                : output.kind === "merchant_audit"
+                                  ? "studio.outputs.kind.merchant_audit"
+                                  : "studio.outputs.kind.unknown",
+                        )}{" "}
+                        ·{" "}
+                        {studioCopy(
+                          locale,
+                          output.status === "draft"
+                            ? "studio.inbox.outputs.draft"
+                            : "studio.inbox.outputs.saved",
+                        )}
+                        {output.updatedAt
+                          ? ` · ${formatHkDate(output.updatedAt, locale)}`
+                          : ""}
+                      </span>
+                      {output.confirmation !== "not_applicable" ? (
+                        <span className={styles["studio-inbox-item-meta"]}>
+                          {studioCopy(
+                            locale,
+                            output.confirmation === "confirmed"
+                              ? "studio.inbox.outputs.confirmed"
+                              : output.confirmation === "unconfirmed"
+                                ? "studio.inbox.outputs.unconfirmed"
+                                : "studio.inbox.outputs.versionUnavailable",
+                          )}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <TruncatedNotice
+                locale={locale}
+                truncated={inbox.outputs.truncated}
+              />
+            </section>
 
-        <section
-          className={styles["studio-report"]}
-          aria-label={studioCopy(locale, "studio.inbox.conversationsTitle")}
-        >
-          <SectionHeader
-            locale={locale}
-            titleKey="studio.inbox.conversationsTitle"
-            href={inbox.conversations.deepLink}
-            linkKey="studio.inbox.conversations.open"
-          />
-          {inbox.conversations.unavailable ? (
-            <p className={styles["studio-evidence-note"]}>
-              {studioCopy(locale, "studio.inbox.unavailable")}
-            </p>
-          ) : inbox.conversations.items.length === 0 ? (
-            <p className={styles["studio-evidence-note"]}>
-              {studioCopy(locale, "studio.inbox.conversations.empty")}
-            </p>
-          ) : (
-            <ul className={styles["studio-turn-list"]}>
-              {inbox.conversations.items.map((thread) => (
-                <li
-                  key={thread.threadId}
-                  className={styles["studio-inbox-item"]}
-                >
-                  <Link
-                    className={styles["studio-evidence-link"]}
-                    href={thread.deepLink}
-                  >
-                    {thread.title}
-                  </Link>
-                  <span className={styles["studio-inbox-item-meta"]}>
-                    {formatHkDate(thread.updatedAt, locale)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <TruncatedNotice
-            locale={locale}
-            truncated={inbox.conversations.truncated}
-          />
-        </section>
-      </div>
+            <section
+              className={styles["studio-report"]}
+              aria-label={studioCopy(locale, "studio.inbox.conversationsTitle")}
+            >
+              <SectionHeader
+                locale={locale}
+                titleKey="studio.inbox.conversationsTitle"
+                href={inbox.conversations.deepLink}
+                linkKey="studio.inbox.conversations.open"
+              />
+              {inbox.conversations.unavailable ? (
+                <p className={styles["studio-evidence-note"]}>
+                  {studioCopy(locale, "studio.inbox.unavailable")}
+                </p>
+              ) : inbox.conversations.items.length === 0 ? (
+                <p className={styles["studio-evidence-note"]}>
+                  {studioCopy(locale, "studio.inbox.conversations.empty")}
+                </p>
+              ) : (
+                <ul className={styles["studio-turn-list"]}>
+                  {inbox.conversations.items.map((thread) => (
+                    <li
+                      key={thread.threadId}
+                      className={styles["studio-inbox-item"]}
+                    >
+                      <Link
+                        className={styles["studio-evidence-link"]}
+                        href={thread.deepLink}
+                      >
+                        {thread.title}
+                      </Link>
+                      <span className={styles["studio-inbox-item-meta"]}>
+                        {formatHkDate(thread.updatedAt, locale)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <TruncatedNotice
+                locale={locale}
+                truncated={inbox.conversations.truncated}
+              />
+            </section>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

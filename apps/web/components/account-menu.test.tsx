@@ -25,6 +25,7 @@ it("shows actual user identity, workspace, role and support entry", () => {
         }}
         workspaceName="Synthetic cellar"
         roleLabel="Operator"
+        role="operator"
         locale="en"
       />,
     ),
@@ -33,6 +34,9 @@ it("shows actual user identity, workspace, role and support entry", () => {
   expect(container.textContent).toContain("synthetic@local.invalid");
   expect(container.textContent).toContain("Synthetic cellar");
   expect(container.textContent).toContain("Operator");
+  expect(container.textContent).toContain(
+    "You can run guided reviews and prepare work",
+  );
   expect(container.querySelector('a[href="/support"]')).not.toBeNull();
 });
 it("reports failed server logout and retains stored work", async () => {

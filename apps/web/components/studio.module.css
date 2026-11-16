@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Conversation Studio (P1 static shell).
  *
  * Plain CSS Module, no Tailwind/Radix/shadcn. Colour, spacing and radius
@@ -9,7 +9,7 @@
  * --nav-active-bg, --shadow). The two local properties on `.studio` below are
  * layout-only values with no design-token equivalent.
  *
- * A11y floors from the design spec §2.5: 12px minimum text, 44px minimum
+ * A11y floors from the design spec 禮2.5: 12px minimum text, 44px minimum
  * targets, a visible 3px focus ring, and no horizontal overflow at 390px.
  */
 
@@ -3360,5 +3360,174 @@ article.studio-output .studio-output-body {
 
   .studio-review-search-go {
     width: 100%;
+  }
+}
+
+/* -- today queue (P1) ------------------------------------------------------ */
+
+.studio-today {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 18px 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.studio-today-header {
+  display: grid;
+  gap: 4px;
+}
+
+.studio-today-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.studio-today-lede {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.studio-today-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.studio-today-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+
+.studio-today-owner {
+  flex: 0 0 auto;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.studio-today-owner[data-owner="reviewer"] {
+  color: var(--amber-dark);
+  border-color: var(--amber);
+}
+
+.studio-today-line {
+  flex: 1 1 auto;
+  min-width: 220px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.studio-today-action {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber-dark);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.studio-today-action:hover {
+  text-decoration: underline;
+}
+
+.studio-today-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.studio-today-more,
+.studio-today-partial {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.studio-today-more a {
+  color: var(--amber-dark);
+}
+
+.studio-how {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.studio-how-title {
+  margin: 0;
+  font-size: 13px;
+}
+
+.studio-how-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  display: grid;
+  gap: 3px;
+}
+
+.studio-disclosure {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 0;
+}
+
+.studio-disclosure > summary {
+  cursor: pointer;
+  padding: 14px 20px;
+  font-weight: 600;
+  font-size: 14px;
+  list-style-position: inside;
+}
+
+.studio-disclosure > summary:hover {
+  color: var(--amber-dark);
+}
+
+.studio-disclosure-body {
+  padding: 0 20px 18px;
+  display: grid;
+  gap: 14px;
+}
+
+@media (max-width: 620px) {
+  .studio-today {
+    padding: 14px;
+  }
+
+  .studio-today-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .studio-today-line {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .studio-today-action {
+    padding-top: 2px;
   }
 }

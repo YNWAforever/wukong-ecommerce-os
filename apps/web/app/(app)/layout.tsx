@@ -88,6 +88,7 @@ export default async function AppLayout({
           workspaceOptions={workspaceOptions}
           roleLabelZh={roleLabel.zh}
           roleLabelEn={roleLabel.en}
+          workspaceRole={account.role}
           accountUser={account.user}
           initialLocale={locale}
         />
