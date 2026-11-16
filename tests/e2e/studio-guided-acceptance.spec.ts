@@ -286,7 +286,11 @@ test("guided listing journey uses records, resumes without sending and hands off
         `studio-browser-${role}@local.invalid`,
       );
       await reviewPage.goto("/studio/inbox");
-      const artifactLink = reviewPage.locator(`a[href="${pinnedUrl}"]`);
+      // The same pinned artifact is linked from the priority queue and from the
+      // collapsed source card; open the queue's visible link.
+      const artifactLink = reviewPage
+        .locator(`a[href="${pinnedUrl}"]:visible`)
+        .first();
       await expect(artifactLink).toBeVisible();
       await artifactLink.focus();
       await artifactLink.press("Enter");
