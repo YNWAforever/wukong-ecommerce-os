@@ -72,6 +72,9 @@ test("exact artifact links retain historical content, reject stale review and re
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/studio/inbox");
+  // The per-source cards live under the disclosure now; the priority queue is
+  // the page's primary list.
+  await page.getByText("Browse by source").click();
   const inboxArtifact = page.getByRole("link", {
     name: "Pinned reviewer acceptance",
     exact: true,
@@ -978,7 +981,7 @@ test("flags-on studio: a viewer is read-only and admin settings stay hidden", as
   ).toBeDisabled();
   await expect(
     page.getByText(
-      "Your role can read only; sending requires operator or higher.",
+      "Your role can read only; ask an admin or operator to start a conversation.",
       { exact: false },
     ),
   ).toBeVisible();
