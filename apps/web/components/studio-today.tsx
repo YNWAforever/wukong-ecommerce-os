@@ -93,7 +93,13 @@ export function StudioToday({
               <span className={styles["studio-today-line"]}>
                 {renderStudioLine(locale, entry.line)}
               </span>
-              <Link className={styles["studio-today-action"]} href={entry.href}>
+              {/* The queue must not eager-fetch every artifact detail; a
+                  click is the only read. */}
+              <Link
+                className={styles["studio-today-action"]}
+                href={entry.href}
+                prefetch={false}
+              >
                 {studioCopy(locale, entry.actionKey)}
               </Link>
             </li>
