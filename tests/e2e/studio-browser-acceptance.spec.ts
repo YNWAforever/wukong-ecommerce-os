@@ -366,7 +366,9 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
 
   // The conversation also appears in the threads list.
   await page.goto("/studio/threads");
-  await expect(page.locator('a[href^="/studio/t/"]').first()).toBeVisible({
+  await expect(
+    page.getByRole("main").locator('a[href^="/studio/t/"]').first(),
+  ).toBeVisible({
     timeout: 30_000,
   });
   // The orchestration inbox aggregates the same workspace records: the
@@ -381,9 +383,14 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
   await expect(
     page.getByText("Artifacts needing action").first(),
   ).toBeVisible();
-  await expect(page.getByText("Recent conversations").first()).toBeVisible();
   await expect(
-    page.locator(`a[href="${new URL(threadUrl).pathname}"]`).first(),
+    page.getByRole("main").getByText("Recent conversations").first(),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("main")
+      .locator(`a[href="${new URL(threadUrl).pathname}"]`)
+      .first(),
   ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({
     path: "test-results/studio-inbox-acceptance.png",
