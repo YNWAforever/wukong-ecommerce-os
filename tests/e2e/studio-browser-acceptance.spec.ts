@@ -618,9 +618,9 @@ test("flags-on studio: confirmed draft-from-sources dispatch creates one listing
   const composer = page.getByRole("textbox", { name: "Message" });
   const intent = `${await composer.inputValue()}acceptance dispatch source`;
   await composer.fill(intent);
-  await expect(
-    page.getByText("listing.draft_from_sources").first(),
-  ).toBeVisible();
+  await expect(page.getByText("Selected skill").locator("..")).toContainText(
+    "Listing draft",
+  );
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.waitForURL(/\/studio\/t\/[0-9a-f-]{36}$/, { timeout: 90_000 });
   const threadId = new URL(page.url()).pathname.split("/").pop()!;
