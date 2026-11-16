@@ -8,6 +8,7 @@ import {
 } from "../../../../lib/studio/contracts";
 import { renderStudioLine } from "../../../../lib/studio-render";
 import { studioCopy } from "../../../../lib/studio-copy";
+import { studioSkillTerm } from "../../../../lib/studio/terms";
 import { formatHkDate } from "../../../../lib/ui-copy";
 import styles from "../../../../components/studio.module.css";
 import { studioService } from "../studio-service";
@@ -204,8 +205,8 @@ export default async function StudioThreadsPage({
                       locale,
                     )}
                   </time>
-                  {thread.skillKey
-                    ? ` · ${studioCopy(locale, "studio.thread.skill")}: ${thread.skillKey}`
+                  {studioSkillTerm(locale, thread.skillKey)
+                    ? ` · ${studioSkillTerm(locale, thread.skillKey)}`
                     : ""}
                 </span>
               </Link>

@@ -364,9 +364,11 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
     fullPage: true,
   });
 
-  // The conversation also appears in the threads list.
+  // The conversation also appears in the threads list. The rail's recent list
+  // is collapsed at this viewport, so match the visible page link only.
+  const threadPath = new URL(threadUrl).pathname;
   await page.goto("/studio/threads");
-  await expect(page.locator('a[href^="/studio/t/"]').first()).toBeVisible({
+  await expect(page.locator(`a[href="${threadPath}"]:visible`)).toBeVisible({
     timeout: 30_000,
   });
   // The orchestration inbox aggregates the same workspace records: the
@@ -381,9 +383,14 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
   await expect(
     page.getByText("Artifacts needing action").first(),
   ).toBeVisible();
-  await expect(page.getByText("Recent conversations").first()).toBeVisible();
   await expect(
-    page.locator(`a[href="${new URL(threadUrl).pathname}"]`).first(),
+    page
+      .getByRole("heading", { name: "Recent conversations", exact: true })
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible();
+  await expect(
+    page.locator(`a[href="${threadPath}"]:visible`).first(),
   ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({
     path: "test-results/studio-inbox-acceptance.png",
@@ -611,9 +618,9 @@ test("flags-on studio: confirmed draft-from-sources dispatch creates one listing
   const composer = page.getByRole("textbox", { name: "Message" });
   const intent = `${await composer.inputValue()}acceptance dispatch source`;
   await composer.fill(intent);
-  await expect(
-    page.getByText("listing.draft_from_sources").first(),
-  ).toBeVisible();
+  await expect(page.getByText("Selected skill").locator("..")).toContainText(
+    "Listing draft",
+  );
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.waitForURL(/\/studio\/t\/[0-9a-f-]{36}$/, { timeout: 90_000 });
   const threadId = new URL(page.url()).pathname.split("/").pop()!;
@@ -904,7 +911,7 @@ test("flags-on studio: every Studio surface renders for an owner", async ({
   const surfaces = [
     { path: "/studio", heading: "Welcome back" },
     { path: "/studio/threads", heading: "Conversations" },
-    { path: "/studio/outputs", heading: "Outputs" },
+    { path: "/studio/outputs", heading: "Saved work" },
     { path: "/studio/inbox", heading: "Orchestration inbox" },
     { path: "/studio/connections", heading: "Tools and connections" },
     { path: "/studio/settings", heading: "Studio settings" },
@@ -970,7 +977,7 @@ test("flags-on studio: a viewer is read-only and admin settings stay hidden", as
   // Every read surface stays available to the viewer.
   const readSurfaces = [
     { path: "/studio/threads", heading: "Conversations" },
-    { path: "/studio/outputs", heading: "Outputs" },
+    { path: "/studio/outputs", heading: "Saved work" },
     { path: "/studio/inbox", heading: "Orchestration inbox" },
     { path: "/studio/connections", heading: "Tools and connections" },
   ] as const;

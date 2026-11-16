@@ -138,7 +138,7 @@ describe("StudioTurn", () => {
 
     expect(html).toContain('data-role="assistant"');
     expect(html).toContain("From your records");
-    expect(html).toContain("Skill: catalog.find");
+    expect(html).toContain("Skill: Catalog search");
     expect(html).toContain("Found 2 matching listing records");
     expect(html).toContain("Listing listing-1: status approved");
     expect(html).toContain("Execution trace · 2 steps");
@@ -220,7 +220,7 @@ describe("StudioTurn", () => {
       reply({ outputs: [{ outputId: "output-1", revision: 3 }] }),
     );
 
-    expect(html).toContain("Outputs");
+    expect(html).toContain("Results");
     expect(html).toContain('data-output-id="output-1"');
     // The card fetches its detail client-side; static rendering shows the
     // loading state rather than invented content.

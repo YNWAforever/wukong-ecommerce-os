@@ -84,7 +84,7 @@ describe("StudioReportCard", () => {
   it("renders the listing counts, quality summary and export attempts from the artifact", () => {
     const html = render("en");
 
-    expect(html).toContain("Merchant audit report");
+    expect(html).toContain("Workspace audit report");
     expect(html).toContain("Listing status");
     expect(html).toContain("approved");
     expect(html).toContain("in_review");
@@ -226,7 +226,7 @@ describe("StudioReportCard", () => {
 
   it("renders zh-Hant copy for the zh-Hant locale", () => {
     const html = render("zh-Hant");
-    expect(html).toContain("商戶稽核報告");
+    expect(html).toContain("工作區稽核報告");
     expect(html).toContain("商品狀態");
     expect(html).toContain("品質概況");
     expect(html).toContain("最近匯出紀錄");

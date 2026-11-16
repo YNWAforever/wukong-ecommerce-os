@@ -882,7 +882,7 @@ describe("StudioOutputCard", () => {
     );
 
     const container = await mount();
-    expect(container.textContent).toContain("Merchant audit report");
+    expect(container.textContent).toContain("Workspace audit report");
     expect(container.textContent).toContain(
       "Signed (HMAC-SHA256, key pilot-test); signature prefix cccccccccccccccc…",
     );

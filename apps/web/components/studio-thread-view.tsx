@@ -15,6 +15,7 @@ import type {
   StudioThreadResponse,
 } from "../lib/studio/contracts";
 import { copyTextToClipboard } from "../lib/studio/clipboard";
+import { studioSkillTerm } from "../lib/studio/terms";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import { useStudioAttachments } from "../lib/studio/attachments";
 import type { StudioTraceStep } from "../lib/studio/types";
@@ -291,6 +292,56 @@ export function StudioThreadView({
     void runSend(pendingAttempt);
   }, [pendingAttempt, runSend, session.inFlight]);
 
+  /**
+   * Send one guided step straight from the journey card. The card shows the
+   * exact request first and only calls this after an explicit "Send request",
+   * so the model-call policy is unchanged: the operator still initiates every
+   * run. The draft is mirrored into the composer so a failed send keeps the
+   * same request available for the existing Retry control.
+   */
+  const handleGuidedSend = useCallback(
+    (action: GuidedAction, text: string) => {
+      const request = text.trim();
+      if (
+        request.length === 0 ||
+        !canSend ||
+        !canGuide ||
+        session.inFlight ||
+        attachments.uploading ||
+        pendingAttempt !== null
+      ) {
+        return;
+      }
+      const clientMessageId = createStudioClientMessageId();
+      const skillKey = GUIDED_SKILLS[action.kind];
+      setPendingClientMessageId(clientMessageId);
+      setDraft(request);
+      setGuidedAction(action);
+      setSkillKey(skillKey);
+      const attempt: PendingAttempt = {
+        locale,
+        guidedAction: action,
+        text: request,
+        skillKey,
+        clientMessageId,
+        threadId: thread.threadId,
+        attachmentAssetIds: [],
+      };
+      setPendingAttempt(attempt);
+      void runSend(attempt);
+    },
+    [
+      attachments.uploading,
+      canGuide,
+      canSend,
+      locale,
+      pendingAttempt,
+      runSend,
+      session.inFlight,
+      thread.threadId,
+    ],
+  );
+
   const handleReload = useCallback(() => {
     void (async () => {
       const outcome = await session.refreshThread(thread.threadId);
@@ -330,33 +381,6 @@ export function StudioThreadView({
 
   return (
     <div className={styles["studio-thread"]}>
-      <StudioGuidedJourney
-        locale={locale}
-        threadId={thread.threadId}
-        messages={visibleMessages}
-        attempt={guideAttempt}
-        canSend={canGuide && canSend}
-        canSignOff={canSignOff}
-        aiEnabled={aiEnabled}
-        blocked={refineDisabled}
-        onReload={handleReload}
-        onPrepare={(action) => {
-          if (!canSend || !canGuide || refineDisabled) return;
-          setGuidedAction(action);
-          setSkillKey(GUIDED_SKILLS[action.kind]);
-          setDraft(
-            guidedCopy(
-              locale,
-              action.kind === "audit"
-                ? "auditRequest"
-                : action.kind === "gap_review"
-                  ? "gapRequest"
-                  : "copyRequest",
-            ),
-          );
-          composerRef.current?.focus();
-        }}
-      />
       {visibleMessages[0] && visibleMessages[0].sequence > 1 ? (
         <p className={styles["studio-notice"]}>
           {guidedCopy(locale, "history")}
@@ -390,22 +414,14 @@ export function StudioThreadView({
             )}
           </li>
           <li className={styles["studio-badge"]}>
-            {thread.skillKey
-              ? `${studioCopy(locale, "studio.thread.skill")}: ${thread.skillKey}`
-              : studioCopy(locale, "studio.thread.noSkill")}
+            {studioSkillTerm(locale, thread.skillKey) ??
+              studioCopy(locale, "studio.thread.guided")}
           </li>
           <li className={styles["studio-thread-time"]}>
             {formatHkDate(thread.createdAt, locale)}
           </li>
         </ul>
         <div className={styles["studio-thread-actions"]}>
-          <button
-            type="button"
-            className={styles["studio-secondary-button"]}
-            onClick={handleReload}
-          >
-            {studioCopy(locale, "studio.thread.reload")}
-          </button>
           <button
             type="button"
             className={styles["studio-secondary-button"]}
@@ -449,7 +465,7 @@ export function StudioThreadView({
                 className={styles["studio-composer-retry"]}
                 onClick={handleReload}
               >
-                {studioCopy(locale, "studio.thread.reload")}
+                {studioCopy(locale, "studio.error.retry")}
               </button>
             </div>
           ) : null}
@@ -499,6 +515,20 @@ export function StudioThreadView({
               {studioCopy(locale, "studio.thread.replayed")}
             </p>
           ) : null}
+
+          <StudioGuidedJourney
+            locale={locale}
+            threadId={thread.threadId}
+            messages={visibleMessages}
+            attempt={guideAttempt}
+            canSend={canGuide && canSend}
+            canSignOff={canSignOff}
+            aiEnabled={aiEnabled}
+            blocked={refineDisabled}
+            sending={session.inFlight}
+            onSend={handleGuidedSend}
+            onReload={handleReload}
+          />
 
           <div className={styles["studio-composer-sticky"]}>
             <StudioComposer

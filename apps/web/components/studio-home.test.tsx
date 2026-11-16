@@ -304,7 +304,7 @@ describe("StudioHome", () => {
 
     expect(textarea(container).value).toBe("Find and explain these listings: ");
     expect(container.textContent).toContain("Selected skill");
-    expect(container.textContent).toContain("catalog.find");
+    expect(container.textContent).toContain("Catalog search");
     expect(document.activeElement).toBe(textarea(container));
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -324,7 +324,7 @@ describe("StudioHome", () => {
 
     expect(textarea(container).value).toBe("Prepare product images for: ");
     expect(container.textContent).toContain("Selected skill");
-    expect(container.textContent).toContain("product_shot.prepare");
+    expect(container.textContent).toContain("Image preparation");
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -494,7 +494,7 @@ describe("StudioHome", () => {
       item.textContent?.includes("Listing draft"),
     );
     await act(async () => card?.querySelector("button")?.click());
-    expect(container.textContent).toContain("listing.draft_from_sources");
+    expect(container.textContent).toContain("Listing draft");
     expect(container.textContent).toContain("Uploaded");
     expect(textarea(container).value.length).toBeGreaterThan(0);
     expect(

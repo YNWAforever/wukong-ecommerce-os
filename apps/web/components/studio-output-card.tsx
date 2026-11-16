@@ -617,19 +617,22 @@ export function StudioOutputCard({
               )}
             </p>
           ) : null}
-          <p className={styles["studio-output-version-meta"]}>
-            {renderStudioLine(locale, {
-              key: "studio.outputs.revision",
-              values: { revision: version.revision },
-            })}
-            {" · "}
-            {formatHkDate(version.asOf, locale)}
-            {" · "}
-            {renderStudioLine(locale, {
-              key: "studio.outputs.digest",
-              values: { digest: `${version.contentDigest.slice(0, 12)}…` },
-            })}
-          </p>
+          <details className={styles["studio-output-version-details"]}>
+            <summary>{studioCopy(locale, "studio.outputs.details")}</summary>
+            <p className={styles["studio-output-version-meta"]}>
+              {renderStudioLine(locale, {
+                key: "studio.outputs.revision",
+                values: { revision: version.revision },
+              })}
+              {" · "}
+              {formatHkDate(version.asOf, locale)}
+              {" · "}
+              {renderStudioLine(locale, {
+                key: "studio.outputs.digest",
+                values: { digest: `${version.contentDigest.slice(0, 12)}…` },
+              })}
+            </p>
+          </details>
 
           {detail.output.kind === "copy_proposal" ? (
             <StudioReviewCard

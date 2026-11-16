@@ -35,6 +35,7 @@ vi.mock("next/navigation", () => ({
     throw new Error("notFound");
   },
   useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/studio",
 }));
 
 vi.mock("next/headers", () => ({

@@ -141,29 +141,40 @@ test("guided listing journey uses records, resumes without sending and hands off
     const auditRun = await readRun(page, audit.threadId, audit.runId);
     expect(auditRun.model).toBeNull();
     await page.reload();
-    await expect(
-      journey.getByRole("button", { name: "Prepare gap review", exact: true }),
-    ).toBeEnabled();
-    expect(messagePosts).toBe(1);
-    const composer = page.locator("textarea");
-    await composer.fill("Keep my unsent draft");
-    await expect(
-      journey.getByRole("button", { name: "Prepare gap review", exact: true }),
-    ).toBeDisabled();
-    await expect(composer).toHaveValue("Keep my unsent draft");
-    await composer.fill("");
     const prepareGap = journey.getByRole("button", {
       name: "Prepare gap review",
       exact: true,
     });
+    await expect(prepareGap).toBeEnabled();
+    expect(messagePosts).toBe(1);
+    const composer = page.locator("textarea");
+    await composer.fill("Keep my unsent draft");
+    await expect(prepareGap).toBeDisabled();
+    await expect(composer).toHaveValue("Keep my unsent draft");
+    await composer.fill("");
     await prepareGap.focus();
     await prepareGap.press("Enter");
-    await expect(composer).toBeFocused();
-    await expect(composer).toHaveValue(
+    const gapConfirm = journey.getByRole("group", {
+      name: "Send this request?",
+    });
+    await expect(gapConfirm).toBeVisible();
+    await expect(gapConfirm).toContainText(
       "Review the recorded gaps for the selected listing version.",
     );
     expect(messagePosts).toBe(1);
-    const gap = await send(page);
+    const gapPromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        /\/api\/studio\/threads\/[^/]+\/messages$/.test(
+          new URL(response.url()).pathname,
+        ),
+    );
+    await gapConfirm
+      .getByRole("button", { name: "Send request", exact: true })
+      .click();
+    const gapResponse = await gapPromise;
+    expect(gapResponse.status()).toBe(200);
+    const gap = await gapResponse.json();
     await expect(journey).toHaveAttribute("data-guided-stage", "gap_review");
     const gapRun = await readRun(page, gap.threadId, gap.runId);
     expect(gapRun.model).toBeNull();
@@ -210,6 +221,10 @@ test("guided listing journey uses records, resumes without sending and hands off
     await journey
       .getByRole("button", { name: "Prepare copy proposal", exact: true })
       .click();
+    const copyConfirm = journey.getByRole("group", {
+      name: "Send this request?",
+    });
+    await expect(copyConfirm).toBeVisible();
     expect(messagePosts).toBe(2);
     const copyPromise = page.waitForResponse(
       (response) =>
@@ -218,7 +233,9 @@ test("guided listing journey uses records, resumes without sending and hands off
           new URL(response.url()).pathname,
         ),
     );
-    await page.getByRole("button", { name: "Send", exact: true }).dblclick();
+    await copyConfirm
+      .getByRole("button", { name: "Send request", exact: true })
+      .click();
     const copyResponse = await copyPromise;
     expect(copyResponse.status()).toBe(200);
     const copy = await copyResponse.json();

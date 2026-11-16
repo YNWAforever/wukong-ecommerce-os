@@ -214,7 +214,7 @@ describe("StudioThreadView", () => {
     expect(input.value).toBe("SKU-42");
     expect(document.activeElement).toBe(input);
     expect(fetcher).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("catalog.find");
+    expect(container.textContent).toContain("Catalog search");
   });
 
   it("protects an unsent draft from a refinement action", async () => {

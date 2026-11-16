@@ -127,7 +127,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("/studio/reviews", () => {
   it("renders the bounded selection and both listings for an operator", async () => {
     const html = await render();
-    expect(html).toContain("Multi-listing review");
+    expect(html).toContain("Batch review");
     expect(html).toContain("Margaux 2019");
     expect(html).toContain("Opak 2020");
     expect(html).toContain("0 of 5 listings selected.");
@@ -192,6 +192,6 @@ describe("/studio/reviews", () => {
       q: ["margaux", "opak"],
       page: ["2", "3"],
     });
-    expect(html).toContain("Multi-listing review");
+    expect(html).toContain("Batch review");
   });
 });

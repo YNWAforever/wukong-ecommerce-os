@@ -1,4 +1,5 @@
 import type { Locale } from "../locale";
+import { STUDIO_TERMS, studioTermMessage } from "./terms";
 const copy = {
   recovered: {
     en: "Recovered the recorded artifact from its run. No generation request was sent.",
@@ -8,9 +9,9 @@ const copy = {
   title: { en: "Improve this listing", "zh-Hant": "改善這個商品" },
   entry: { en: "Start guided review", "zh-Hant": "開始引導審核" },
   selected: { en: "Open selected listing", "zh-Hant": "開啟已選商品" },
-  audit: { en: "Workspace audit", "zh-Hant": "工作區概況審查" },
-  gap_review: { en: "Selected-listing gaps", "zh-Hant": "已選商品的缺口" },
-  copy_proposal: { en: "Copy proposal", "zh-Hant": "文案建議" },
+  audit: studioTermMessage("workspaceAudit"),
+  gap_review: studioTermMessage("gapReview"),
+  copy_proposal: studioTermMessage("copyProposal"),
   handoff: { en: "Reviewer handoff", "zh-Hant": "交予審核人員" },
   scope: {
     en: "The audit covers workspace records. Gap review and copy stay with this listing version. Canonical listing data stays unchanged.",
@@ -21,9 +22,18 @@ const copy = {
   prepareCopy: { en: "Prepare copy proposal", "zh-Hant": "準備文案建議" },
   prepareAgain: { en: "Prepare another attempt", "zh-Hant": "準備再次嘗試" },
   sendHint: {
-    en: "Step controls fill the composer. Review the request and press Send to run it.",
-    "zh-Hant": "步驟按鈕只會填入輸入框。請檢視要求，再按「傳送」執行。",
+    en: "Choose a step to read the exact request, then send it explicitly.",
+    "zh-Hant": "選擇步驟以查看確切要求，然後明確傳送。",
   },
+  confirmTitle: { en: "Send this request?", "zh-Hant": "傳送這項要求？" },
+  confirmHint: {
+    en: "Nothing is sent until you press Send request. The step runs once and is recorded in this conversation.",
+    "zh-Hant":
+      "按下「傳送要求」前不會傳送任何內容。此步驟只執行一次並記錄於此對話。",
+  },
+  confirmSend: { en: "Send request", "zh-Hant": "傳送要求" },
+  confirmCancel: { en: "Cancel", "zh-Hant": "取消" },
+  sending: { en: "Sending…", "zh-Hant": "正在傳送…" },
   draft: {
     en: "Send or clear your draft first. A pending retry keeps its original request.",
     "zh-Hant": "請先傳送或清除草稿。待重試的要求會保留原有內容。",

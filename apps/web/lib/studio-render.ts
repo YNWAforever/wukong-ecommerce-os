@@ -1,5 +1,6 @@
 import type { Locale } from "./locale";
 import { STUDIO_COPY, studioCopy, type StudioCopyKey } from "./studio-copy";
+import { studioSkillTerm } from "./studio/terms";
 
 /**
  * Render one persisted Studio "line" — a copy key plus values — for operators.
@@ -126,6 +127,14 @@ export function renderStudioLine(
       if (!isRenderableValue(value)) {
         missing = true;
         return placeholder;
+      }
+      // A persisted line may interpolate the internal skill key (for example
+      // "Skill: catalog.find (version 1.0.0)"). Show the operator-facing term
+      // instead, at the one place every persisted line is rendered.
+      if (name === "skill" && typeof value === "string") {
+        return (
+          studioSkillTerm(locale, value) ?? studioCopy(locale, FALLBACK_KEY)
+        );
       }
       return formatStudioValue(locale, value);
     },

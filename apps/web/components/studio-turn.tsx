@@ -1,6 +1,7 @@
 import type { Locale } from "../lib/locale";
 import { renderStudioLine } from "../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
+import { studioSkillTerm } from "../lib/studio/terms";
 import {
   turnReplySchema,
   type ModelAnalysis,
@@ -142,7 +143,7 @@ function OperatorTurn({
               <span className={styles["studio-skill-chip-label"]}>
                 {studioCopy(locale, "studio.thread.skill")}
               </span>
-              <span>{content.skillKey}</span>
+              <span>{studioSkillTerm(locale, content.skillKey)}</span>
             </p>
           ) : null}
         </>
@@ -434,10 +435,10 @@ function AssistantTurn({
       {reply.outputs.length > 0 ? (
         <section
           className={styles["studio-turn-outputs"]}
-          aria-label={studioCopy(locale, "studio.outputs.title")}
+          aria-label={studioCopy(locale, "studio.thread.outputs")}
         >
           <h4 className={styles["studio-evidence-subtitle"]}>
-            {studioCopy(locale, "studio.outputs.title")}
+            {studioCopy(locale, "studio.thread.outputs")}
           </h4>
           <ul className={styles["studio-output-list"]}>
             {reply.outputs.map((output) => (
