@@ -36,8 +36,8 @@ vi.mock("../../../../lib/studio/session", () => ({
   },
 }));
 
-vi.mock("../../../../components/admin-members-panel", () => ({
-  AdminMembersPanel: () => <div>Member administration panel</div>,
+vi.mock("../../../../components/admin-tabs", () => ({
+  AdminMembersEditor: () => <div>Member administration panel</div>,
 }));
 
 import StudioTeamPage from "./page";

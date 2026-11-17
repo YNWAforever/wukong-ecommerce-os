@@ -966,6 +966,18 @@ test("flags-on studio: every Studio surface renders for an owner", async ({
   ).toBeVisible();
   await expect(page.getByRole("table")).toBeVisible({ timeout: 30_000 });
 
+  // P3: the team page keeps the admin surface's unsaved-invite guard.
+  await page.getByLabel("Invite email address").fill("draft@example.invalid");
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Unsaved changes", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Stay here", exact: true }).click();
+  await expect(page).toHaveURL(/\/studio\/team/);
+  await expect(page.getByLabel("Invite email address")).toHaveValue(
+    "draft@example.invalid",
+  );
+
   // P3: setup links deep-link the admin tabs they name.
   await page.goto("/admin?tab=connection");
   await expect(page.locator("#admin-tab-connection")).toHaveAttribute(

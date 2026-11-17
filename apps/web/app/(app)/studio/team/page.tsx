@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
-import { AdminMembersPanel } from "../../../../components/admin-members-panel";
+import { AdminMembersEditor } from "../../../../components/admin-tabs";
 import styles from "../../../../components/studio.module.css";
 import { getDatabase } from "../../../../lib/intake-runtime";
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../../lib/locale";
@@ -93,7 +93,7 @@ export default async function StudioTeamPage() {
           </p>
         </div>
         <div className={styles["studio-team-table"]}>
-          <AdminMembersPanel />
+          <AdminMembersEditor />
         </div>
       </section>
     </>
