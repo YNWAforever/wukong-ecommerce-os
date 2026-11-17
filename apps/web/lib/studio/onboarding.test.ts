@@ -39,9 +39,9 @@ describe("buildStudioOnboarding", () => {
     expect(result.done).toBe(6);
     expect(result.unknown).toBe(0);
     expect(result.steps.map((step) => step.href)).toEqual([
-      "/studio/connections",
       "/admin",
-      "/import",
+      "/admin",
+      "/listings/import",
       "/studio/reviews",
       "/studio/outputs",
       "/batches",
@@ -70,7 +70,7 @@ describe("buildStudioOnboarding", () => {
     expect(hrefs).toMatchObject({
       store: null,
       reviewer: null,
-      catalog: "/import",
+      catalog: "/listings/import",
       review: "/studio/reviews",
       signoff: null,
       export: "/batches",

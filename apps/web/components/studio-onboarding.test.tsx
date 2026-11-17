@@ -28,8 +28,9 @@ describe("StudioOnboarding", () => {
     expect(html).toContain("Getting started · 0 of 6 done");
     expect(html).toContain("Connect SHOPLINE");
     expect(html).toContain("Add a reviewer");
-    expect(html).toContain('href="/studio/connections"');
     expect(html).toContain('href="/admin"');
+    expect(html).not.toContain('href="/studio/connections"');
+    expect(html).toContain('href="/listings/import"');
     expect(html).toContain('href="/batches"');
     expect(html).toContain("Progress is derived from workspace records");
   });
@@ -38,7 +39,7 @@ describe("StudioOnboarding", () => {
     const html = render(buildStudioOnboarding(EMPTY, "viewer"));
     expect(html).not.toContain('href="/studio/connections"');
     expect(html).not.toContain('href="/admin"');
-    expect(html).not.toContain('href="/import"');
+    expect(html).not.toContain('href="/listings/import"');
     expect(html).toContain("Ask an admin");
     expect(html).toContain("Ask an operator");
     expect(html).toContain("Ask a reviewer");

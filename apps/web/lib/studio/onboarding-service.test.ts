@@ -31,6 +31,7 @@ function createDeps(
   options: {
     failOutputs?: boolean;
     exportStatus?: "ready" | "failed";
+    exportIncluded?: boolean;
     role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
   } = {},
 ): StudioSessionDeps {
@@ -61,7 +62,20 @@ function createDeps(
     },
     exportAttempts: {
       listForWorkspace: async () => [
-        { id: "export-1", artifactStatus: options.exportStatus ?? "ready" },
+        {
+          id: "export-1",
+          artifactStatus: options.exportStatus ?? "ready",
+          manifest: [
+            {
+              listingId: "listing-1",
+              versionId: "version-1",
+              outcome:
+                options.exportIncluded === false
+                  ? "excluded_blocked"
+                  : "included",
+            },
+          ],
+        },
       ],
     },
   };
@@ -112,6 +126,16 @@ describe("studioOnboardingService", () => {
   it("does not complete export from a failed artifact", async () => {
     const service = createStudioOnboardingService(
       createDeps({ exportStatus: "failed" }),
+    );
+    const result = await service.onboarding();
+    expect(result.steps.find((step) => step.key === "export")?.state).toBe(
+      "todo",
+    );
+  });
+
+  it("requires a ready export that included at least one row", async () => {
+    const service = createStudioOnboardingService(
+      createDeps({ exportIncluded: false }),
     );
     const result = await service.onboarding();
     expect(result.steps.find((step) => step.key === "export")?.state).toBe(

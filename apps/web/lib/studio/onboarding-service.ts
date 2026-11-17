@@ -74,11 +74,15 @@ export function createStudioOnboardingService(
             artifactCount: artifactsValue ? artifactsValue.items.length : null,
             signedOffCount: signedOffValue ? signedOffValue.items.length : null,
             // A queued or failed export attempt is not "exported work"; only a
-            // ready artifact counts, so the step cannot be completed by a
-            // request that never produced a file.
+            // ready artifact that actually included at least one row counts,
+            // so a request that never produced a file cannot complete the step.
             exportCount: exportsValue
               ? exportsValue.some(
-                  (attempt) => attempt.artifactStatus === "ready",
+                  (attempt) =>
+                    attempt.artifactStatus === "ready" &&
+                    attempt.manifest.some(
+                      (entry) => entry.outcome === "included",
+                    ),
                 )
                 ? 1
                 : 0
