@@ -35,6 +35,12 @@ export type StudioSettingsViewProps = {
   tokens: readonly McpTokenView[];
   connections: McpConnectionsSnapshot;
   tools: readonly StudioToolRow[];
+  /**
+   * The settings page renders the shared header above Plan & usage, so the
+   * admin panels start immediately after it. Defaults to true for standalone
+   * renders and tests.
+   */
+  showHeader?: boolean;
 };
 
 const KIND_KEYS: Record<StudioToolRow["kind"], StudioSettingsCopyKey> = {
@@ -49,31 +55,40 @@ const COST_KEYS: Record<StudioToolRow["costClass"], StudioSettingsCopyKey> = {
   paid: "studio.settings.tools.cost.paid",
 };
 
+export function StudioSettingsHeader({ locale }: { readonly locale: Locale }) {
+  const copy = (key: StudioSettingsCopyKey) => studioSettingsCopy(locale, key);
+
+  return (
+    <header className={styles["studio-home-header"]}>
+      <p className={styles["studio-eyebrow"]}>
+        {copy("studio.settings.eyebrow")}
+      </p>
+      <h1 className={styles["studio-home-title"]}>
+        {copy("studio.settings.title")}
+      </h1>
+      <p className={styles["studio-home-lede"]}>
+        {copy("studio.settings.lede")}
+      </p>
+      <p className={styles["studio-notice"]}>
+        {copy("studio.settings.noLiveConnection")}
+      </p>
+    </header>
+  );
+}
+
 export function StudioSettingsView({
   locale,
   settingsAdmin,
   tokens,
   connections,
   tools,
+  showHeader = true,
 }: StudioSettingsViewProps) {
   const copy = (key: StudioSettingsCopyKey) => studioSettingsCopy(locale, key);
 
   return (
     <div className={styles["studio-section"]}>
-      <header className={styles["studio-home-header"]}>
-        <p className={styles["studio-eyebrow"]}>
-          {copy("studio.settings.eyebrow")}
-        </p>
-        <h1 className={styles["studio-home-title"]}>
-          {copy("studio.settings.title")}
-        </h1>
-        <p className={styles["studio-home-lede"]}>
-          {copy("studio.settings.lede")}
-        </p>
-        <p className={styles["studio-notice"]}>
-          {copy("studio.settings.noLiveConnection")}
-        </p>
-      </header>
+      {showHeader ? <StudioSettingsHeader locale={locale} /> : null}
 
       <StudioWorkspaceSettingsPanel locale={locale} initial={settingsAdmin} />
 

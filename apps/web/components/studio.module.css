@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Conversation Studio (P1 static shell).
  *
  * Plain CSS Module, no Tailwind/Radix/shadcn. Colour, spacing and radius
@@ -3530,4 +3530,265 @@ article.studio-output .studio-output-body {
   .studio-today-action {
     padding-top: 2px;
   }
+}
+
+/* -- agent suite (P2) ------------------------------------------------------ */
+
+.studio-agents-page {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+
+.studio-agents-header {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.studio-agents-group {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.studio-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-agent-card {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.studio-agent-card[data-availability="planned"],
+.studio-agent-card[data-availability="unavailable"] {
+  background: var(--stone);
+}
+
+.studio-agent-label {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.studio-agent-outcome {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.studio-agent-limit {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.studio-agent-action {
+  justify-self: start;
+  margin-top: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--navy);
+  border-radius: 999px;
+  color: var(--surface);
+  background: var(--navy);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.studio-agent-action:hover,
+.studio-agent-action:focus-visible {
+  background: var(--amber-dark);
+  border-color: var(--amber-dark);
+}
+
+.studio-agent-unavailable {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.studio-agent-truth {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.studio-agents-link {
+  color: var(--amber-dark);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.studio-agents-link:hover,
+.studio-agents-link:focus-visible {
+  text-decoration: underline;
+}
+
+@media (max-width: 620px) {
+  .studio-agent-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* -- getting started (P2) -------------------------------------------------- */
+
+.studio-setup {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.studio-setup > summary {
+  cursor: pointer;
+  padding: 14px 18px;
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  list-style-position: inside;
+}
+
+.studio-setup > summary:hover {
+  color: var(--amber-dark);
+}
+
+.studio-setup-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 16px;
+}
+
+.studio-setup-partial {
+  margin: 0;
+  color: var(--amber-dark);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.studio-setup-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-setup-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+
+.studio-setup-state {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.studio-setup-state[data-state="done"] {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.studio-setup-state[data-state="todo"] {
+  border-color: var(--amber-dark);
+  color: var(--amber-dark);
+}
+
+.studio-setup-label {
+  flex: 1 1 180px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.studio-setup-owner {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.studio-setup-action {
+  color: var(--amber-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.studio-setup-action:hover,
+.studio-setup-action:focus-visible {
+  text-decoration: underline;
+}
+
+.studio-setup-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (max-width: 620px) {
+  .studio-setup-item {
+    align-items: flex-start;
+  }
+
+  .studio-setup-label {
+    flex-basis: 100%;
+  }
+}
+
+/* -- plan and usage (P2) --------------------------------------------------- */
+
+.studio-plan-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.studio-plan-contact {
+  justify-self: start;
+  color: var(--amber-dark);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.studio-plan-contact:hover,
+.studio-plan-contact:focus-visible {
+  text-decoration: underline;
 }

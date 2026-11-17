@@ -82,6 +82,30 @@ vi.mock("../../../../lib/intake-runtime", () => ({
       callback: (repos: unknown) => unknown,
     ) => {
       const repos = {
+        memberships: {
+          listForWorkspace: async () =>
+            Array.from({ length: 4 }, (_, index) => ({
+              userId: `user-${index}`,
+              role: index === 0 ? "owner" : "operator",
+            })),
+          listInvites: async () => [
+            { id: "invite-1", email: "pending@example.test", role: "viewer" },
+          ],
+        },
+        listings: {
+          countByStatus: async () => ({
+            received: 12,
+            processing: 0,
+            needs_info: 0,
+            in_review: 0,
+            approved: 0,
+            reopened: 0,
+            publishing: 0,
+            published: 0,
+            publish_failed: 0,
+            failed: 0,
+          }),
+        },
         studio: {
           metrics: {
             summary: async () => {
@@ -224,6 +248,19 @@ describe("/studio/settings content", () => {
     expect(html).toContain("External catalogue");
     expect(html).toContain("Draft");
     expect(html).not.toContain("v1.iv.ciphertext");
+  });
+
+  it("renders the Pilot plan and recorded capacity without invented prices", async () => {
+    const html = await render();
+    expect(html).toContain("Plan &amp; usage");
+    expect(html).toContain("Pilot (design partner)");
+    expect(html).toContain("4 member(s), 1 invite(s) pending");
+    expect(html).toContain("12");
+    expect(html).toContain(
+      "Pilot agreement; no self-serve billing or online payment.",
+    );
+    expect(html).toContain("Talk to us about Growth");
+    expect(html).not.toMatch(/HK\$|\$\d/);
   });
 
   it("renders the read-only last-30-day usage summary above the form", async () => {

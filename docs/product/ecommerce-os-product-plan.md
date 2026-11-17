@@ -105,6 +105,25 @@ The workspace administration work in the current open pull request is the right 
 - data retention and export controls;
 - support tooling and operator impersonation with a strict audit trail.
 
+### 4.5.1 Product packaging status (2026-11-18)
+
+The P2 packaging milestone closes the in-product presentation gap without pretending
+to be a self-serve SaaS:
+
+- `/studio/agents` presents the reviewed agent catalogue with Pilot/Planned/Unavailable
+  maturity and no dead actions;
+- the Studio home derives a six-step getting-started checklist from durable records
+  (connection, reviewer, catalog, guided artifact, sign-off, export), never from
+  browser state;
+- Studio settings shows the Pilot agreement, seats, catalog size and the existing
+  usage projection, with no invented quotas or prices;
+- `docs/product/2026-11-18-marketing-alignment.md` maps every public agent, platform
+  and pricing claim to its runtime state for the marketing site.
+
+Still missing for a real SaaS funnel: self-serve intake, invitation acceptance,
+demo-workspace provisioning, a persisted entitlement record and billing. Those are
+the next commercial milestone; more agents are not a substitute for them.
+
 ### 4.6 Product analytics need merchant outcomes
 
 Technical tests are strong, but product success must be measured in merchant terms:
@@ -152,12 +171,16 @@ The system must keep these planes connected through durable IDs and audit events
 
 ## 6. Delivery roadmap
 
-### Phase 0 — Pilot hardening
+### Phase 0 — Pilot packaging and hardening
 
-Goal: make the Opak Cellar workflow dependable enough for weekly production use.
+Goal: make the pilot feel like one coherent product and make every public claim
+defensible before adding commercial plumbing.
 
-- Merge the workspace administration pull request after review.
-- Complete invitation delivery and acceptance.
+- Present the guided agent suite and its maturity in-product (P2).
+- Derive getting-started progress from durable records (P2).
+- Show the Pilot agreement and real usage without invented plans or quotas (P2).
+- Align the public marketing site with the capability matrix (P2 handoff).
+- Complete invitation delivery and acceptance (commercial milestone).
 - Launch Catalog Control Center for recent platform products.
 - Replace hard-coded workspace/operator labels with session-derived data.
 - Add pilot analytics: time-to-review, approval rate, publish success, cost per SKU.
@@ -225,8 +248,8 @@ These modules should consume the catalog and workflow kernel rather than introdu
 4. Add bulk cohort actions: enrich, request review, approve, publish, retry.
 5. Add workspace-derived brand and operator identity to the application shell.
 6. Add job health and cost widgets to the dashboard.
-7. Connect the `wukong-ops-suite` demo form to a real lead/trial endpoint; do not show success until the submission is persisted.
-8. Publish a capability matrix so marketing claims always match shipped connectors and modules.
+7. Connect the `wukong-ops-suite` demo form to a real lead/trial endpoint; do not show success until the submission is persisted (next commercial milestone; the runtime has no endpoint yet).
+8. Keep the marketing site on `docs/product/2026-11-18-marketing-alignment.md`; publish a public capability page only when the runtime can serve one from the same reviewed registry.
 
 ## 8. Scope guardrails
 

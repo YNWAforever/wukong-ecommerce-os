@@ -3,12 +3,15 @@ import { notFound } from "next/navigation";
 import { ApiError } from "../../../lib/route-support";
 
 import { StudioHome } from "../../../components/studio-home";
+import { StudioOnboarding } from "../../../components/studio-onboarding";
 import { StudioToday } from "../../../components/studio-today";
+import { agentById } from "../../../lib/studio/agents";
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
 import {
   authSessionContext,
   requireWorkspaceRole,
 } from "../../../lib/session-context";
+import { studioOnboardingService } from "../../../lib/studio/onboarding-service";
 import { studioService } from "./studio-service";
 
 /**
@@ -29,6 +32,7 @@ export default async function StudioHomePage({
   searchParams?: Promise<{
     guideListing?: string | string[];
     guideVersion?: string | string[];
+    agent?: string | string[];
   }>;
 } = {}) {
   const cookieStore = await cookies();
@@ -67,7 +71,30 @@ export default async function StudioHomePage({
       return null;
     });
 
+  // First-run setup is derived from durable records. A failed read simply
+  // omits the card; it must not claim progress or blank the home.
+  const onboarding = await studioOnboardingService()
+    .onboarding()
+    .catch((error: unknown) => {
+      console.info(
+        JSON.stringify({
+          event: "studio_home_onboarding_read_failed",
+          outcome: "failure",
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        }),
+      );
+      return null;
+    });
+
   const query = await searchParams;
+  const requestedAgent =
+    typeof query.agent === "string" ? agentById(query.agent) : undefined;
+  const initialAgent =
+    canCreateThread &&
+    requestedAgent?.availability === "pilot" &&
+    requestedAgent.starterKey !== undefined
+      ? requestedAgent.id
+      : undefined;
   let initialGuidedAction;
   let guideUnavailable = false;
   if (
@@ -102,6 +129,12 @@ export default async function StudioHomePage({
       canCreateThread={canCreateThread}
       today={<StudioToday locale={locale} inbox={inbox} limit={6} showHowTo />}
       {...(initialGuidedAction ? { initialGuidedAction } : {})}
+      {...(initialAgent ? { initialAgent } : {})}
+      {...(onboarding
+        ? {
+            setup: <StudioOnboarding locale={locale} result={onboarding} />,
+          }
+        : {})}
       guideUnavailable={guideUnavailable}
     />
   );

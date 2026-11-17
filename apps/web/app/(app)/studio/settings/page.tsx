@@ -1,9 +1,13 @@
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { TOOL_DEFINITIONS } from "@wukong/core";
 
-import { StudioSettingsView } from "../../../../components/studio-settings-view";
+import {
+  StudioSettingsHeader,
+  StudioSettingsView,
+} from "../../../../components/studio-settings-view";
 import styles from "../../../../components/studio.module.css";
 import { getDatabase } from "../../../../lib/intake-runtime";
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../../lib/locale";
@@ -12,6 +16,10 @@ import { authSessionContext } from "../../../../lib/session-context";
 import { isStudioEnabled } from "../../../../lib/studio-flags";
 import { createMcpConnectionService } from "../../../../lib/studio/mcp-connections";
 import { createMcpTokenService } from "../../../../lib/studio/mcp-tokens";
+import {
+  studioOnboardingService,
+  type StudioPlanUsage,
+} from "../../../../lib/studio/onboarding-service";
 import { renderStudioLine } from "../../../../lib/studio-render";
 import { requireStudioSession } from "../../../../lib/studio/session";
 import { studioCopy, type StudioCopyKey } from "../../../../lib/studio-copy";
@@ -141,6 +149,83 @@ function UsageSection({
 }
 
 /**
+ * Pilot plan and capacity tiles (P2). No tier price, quota or checkout exists
+ * yet, so the card states the pilot agreement and shows only counts the
+ * workspace actually records; unreadable counts are omitted rather than shown
+ * as zero.
+ */
+function PlanSection({
+  locale,
+  plan,
+}: {
+  readonly locale: Parameters<typeof studioCopy>[0];
+  readonly plan: StudioPlanUsage | null;
+}) {
+  return (
+    <section
+      className={styles["studio-section"]}
+      aria-label={studioCopy(locale, "studio.plan.title")}
+    >
+      <div className={styles["studio-section-header"]}>
+        <h2 className={styles["studio-section-title"]}>
+          {studioCopy(locale, "studio.plan.title")}
+        </h2>
+        <p className={styles["studio-section-lede"]}>
+          {studioCopy(locale, "studio.plan.lede")}
+        </p>
+      </div>
+      {plan === null ? (
+        <p className={styles["studio-notice"]} role="alert">
+          {studioCopy(locale, "studio.plan.unavailable")}
+        </p>
+      ) : (
+        <>
+          <ul className={styles["studio-overview-grid"]}>
+            <UsageStat
+              locale={locale}
+              labelKey="studio.plan.planLabel"
+              lineKey="studio.plan.planValue"
+              values={{}}
+            />
+            {plan.members !== null && plan.pendingInvites !== null ? (
+              <UsageStat
+                locale={locale}
+                labelKey="studio.plan.seatsLabel"
+                lineKey="studio.plan.seats"
+                values={{
+                  members: plan.members,
+                  invites: plan.pendingInvites,
+                }}
+              />
+            ) : null}
+            {plan.catalog !== null ? (
+              <UsageStat
+                locale={locale}
+                labelKey="studio.plan.catalogLabel"
+                lineKey="studio.plan.catalog"
+                values={{ count: plan.catalog }}
+              />
+            ) : null}
+            <UsageStat
+              locale={locale}
+              labelKey="studio.plan.billingLabel"
+              lineKey="studio.plan.billing"
+              values={{}}
+            />
+          </ul>
+          <p className={styles["studio-plan-note"]}>
+            {studioCopy(locale, "studio.plan.note")}
+          </p>
+          <Link className={styles["studio-plan-contact"]} href="/support">
+            {studioCopy(locale, "studio.plan.contact")}
+          </Link>
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
  * `/studio/settings` — admin-only Studio administration (plan Task 13 + A1).
  *
  * The shared `requireStudioSession(deps, "admin")` gate runs first: no
@@ -199,8 +284,25 @@ export default async function StudioSettingsPage() {
       return null;
     });
 
+  // Plan capacity is counts only; a failed read degrades to the honest
+  // unavailable line instead of zeros or invented limits.
+  const planUsage = await studioOnboardingService()
+    .planUsage()
+    .catch((error: unknown) => {
+      console.info(
+        JSON.stringify({
+          event: "studio_plan_usage_read_failed",
+          outcome: "failure",
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        }),
+      );
+      return null;
+    });
+
   return (
     <>
+      <StudioSettingsHeader locale={locale} />
+      <PlanSection locale={locale} plan={planUsage} />
       <UsageSection locale={locale} metrics={metrics} />
       <StudioSettingsView
         locale={locale}
@@ -217,6 +319,7 @@ export default async function StudioSettingsPage() {
           minRole: tool.minRole,
           costClass: tool.costClass,
         }))}
+        showHeader={false}
       />
     </>
   );

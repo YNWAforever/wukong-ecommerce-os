@@ -75,6 +75,7 @@ export const STUDIO_COPY = {
   "studio.rail.menu": ["選單", "Menu"],
   "studio.rail.menuClose": ["收起選單", "Close menu"],
   "studio.rail.overview": ["總覽", "Overview"],
+  "studio.rail.agents": ["代理", "Agents"],
   "studio.rail.inbox": ["收件匣", "Inbox"],
   "studio.rail.conversations": ["對話", "Conversations"],
   "studio.rail.outputs": STUDIO_TERMS.savedWork,
@@ -199,6 +200,43 @@ export const STUDIO_COPY = {
     "Hand it to a reviewer for sign-off, then export.",
   ],
   "studio.today.moreSkills": ["更多技能", "More skills"],
+
+  // -- getting started (P2) --------------------------------------------------
+  "studio.setup.title": ["開始使用", "Getting started"],
+  "studio.setup.summary": [
+    "開始使用 · 已完成 {done}/{total}",
+    "Getting started · {done} of {total} done",
+  ],
+  "studio.setup.lede": [
+    "依工作區記錄自動判斷進度；本機瀏覽器狀態不會標記任何步驟完成。",
+    "Progress is derived from workspace records; local browser state never marks a step done.",
+  ],
+  "studio.setup.unavailable": [
+    "未能讀取設定進度；下方畫面不受影響。",
+    "Setup progress could not be read; the rest of the page is unaffected.",
+  ],
+  "studio.setup.partial": [
+    "部分設定資料未能讀取；未顯示推算進度。",
+    "Some setup data could not be read; no estimated progress is shown.",
+  ],
+  "studio.setup.step.store": ["連接 SHOPLINE", "Connect SHOPLINE"],
+  "studio.setup.step.reviewer": ["加入審核員", "Add a reviewer"],
+  "studio.setup.step.catalog": ["準備第一個商品", "Prepare your first listing"],
+  "studio.setup.step.review": ["產生引導成果", "Produce a guided artifact"],
+  "studio.setup.step.signoff": ["簽核成果", "Sign off an artifact"],
+  "studio.setup.step.export": ["匯出已批准內容", "Export approved work"],
+  "studio.setup.state.done": ["已完成", "Done"],
+  "studio.setup.state.todo": ["待完成", "To do"],
+  "studio.setup.state.unknown": ["未知", "Unknown"],
+  "studio.setup.owner.admin": ["管理員", "Admin"],
+  "studio.setup.owner.operator": ["操作員", "Operator"],
+  "studio.setup.owner.reviewer": ["審核員", "Reviewer"],
+  "studio.setup.owner.any": ["成員", "Member"],
+  "studio.setup.open": ["前往", "Open"],
+  "studio.setup.askAdmin": ["請管理員處理", "Ask an admin"],
+  "studio.setup.askOperator": ["請操作員處理", "Ask an operator"],
+  "studio.setup.askReviewer": ["請審核員處理", "Ask a reviewer"],
+  "studio.setup.complete": ["設定完成。", "Setup complete."],
 
   // -- composer -------------------------------------------------------------
   "studio.composer.label": ["訊息", "Message"],
@@ -548,6 +586,15 @@ export const STUDIO_COPY = {
     "沒有收件匣資料來源，因此不提供此功能。",
     "No inbox data source exists, so this capability is unavailable.",
   ],
+  "studio.template.seo.title": ["SEO / Merchant", "SEO / Merchant"],
+  "studio.template.seo.outcome": [
+    "從記錄整理 SEO 欄位、Product JSON-LD 與 Merchant Feed 建議。",
+    "Prepare SEO fields, Product JSON-LD and Merchant Feed proposals from records.",
+  ],
+  "studio.template.seo.limitation": [
+    "尚未提供：此工作區未有已審核的 SEO／Merchant 技能或 feed 產生器。",
+    "Not available yet: no reviewed SEO/Merchant skill or feed generator ships in this workspace.",
+  ],
   "studio.template.merchantAudit.title": STUDIO_TERMS.workspaceAudit,
   "studio.template.merchantAudit.outcome": [
     "整理商品品質與記錄覆蓋的報告。",
@@ -570,6 +617,31 @@ export const STUDIO_COPY = {
     "沒有訂單或出貨資料來源，因此不提供此功能。",
     "No order or shipment data source exists, so this capability is unavailable.",
   ],
+
+  // -- agent suite (P2) ------------------------------------------------------
+  "studio.agents.eyebrow": ["代理套件", "AGENT SUITE"],
+  "studio.agents.title": ["引導式代理套件", "Guided agent suite"],
+  "studio.agents.lede": [
+    "每個代理只提出建議；你審核每一步，不會自動執行、批准或發佈。",
+    "Each agent proposes; you review every step. Nothing runs, approves or publishes automatically.",
+  ],
+  "studio.agents.rule": [
+    "只有「試行」代理可以帶入輸入框；規劃中或未能提供的代理會說明原因。",
+    "Only Pilot agents can fill the composer; planned or unavailable agents state why.",
+  ],
+  "studio.agents.truthNote": [
+    "成熟度對應已審核的技能登記冊，不會自行執行或發佈。",
+    "Maturity mirrors the reviewed skill registry; nothing executes or publishes by itself.",
+  ],
+  "studio.agents.group.core": ["核心代理", "Core agents"],
+  "studio.agents.group.advanced": ["進階代理", "Advanced agents"],
+  "studio.agents.group.operations": ["操作工具", "Operator tools"],
+  "studio.agents.use": ["在工作室使用", "Use in Studio"],
+  "studio.agents.askOperator": ["請操作員使用", "Ask an operator"],
+  "studio.agents.viewAll": ["檢視所有代理", "View all agents"],
+  "studio.agents.outcomeLabel": ["可做什麼", "What it does"],
+  "studio.agents.limitLabel": ["限制", "Limit"],
+  "studio.agents.openQueue": ["檢視待辦", "Open the queue"],
 
   // -- thread ---------------------------------------------------------------
   "studio.thread.title": ["對話", "Conversation"],
@@ -1855,6 +1927,37 @@ export const STUDIO_COPY = {
   "studio.report.receiptHint": [
     "收據只證明匯出檔由本部署的簽署金鑰產生；不代表外部驗證或核准。",
     "The receipt only shows the export was produced by this deployment's signing key; it is not external verification or approval.",
+  ],
+
+  // -- plan and usage (P2) ---------------------------------------------------
+  "studio.plan.title": ["方案與用量", "Plan & usage"],
+  "studio.plan.lede": [
+    "你正在使用先導工作區；容量與條款由 Wukong 聯絡人議定。",
+    "You are on a Pilot workspace; capacity and terms are agreed with your Wukong contact.",
+  ],
+  "studio.plan.pilot": ["先導計劃", "Pilot"],
+  "studio.plan.planLabel": ["方案", "Plan"],
+  "studio.plan.planValue": ["先導計劃（設計夥伴）", "Pilot (design partner)"],
+  "studio.plan.seatsLabel": ["席位", "Seats"],
+  "studio.plan.seats": [
+    "{members} 位成員（{invites} 個邀請待接受）",
+    "{members} member(s), {invites} invite(s) pending",
+  ],
+  "studio.plan.catalogLabel": ["商品記錄", "Catalog records"],
+  "studio.plan.catalog": ["{count} 個", "{count}"],
+  "studio.plan.billingLabel": ["帳單", "Billing"],
+  "studio.plan.billing": [
+    "先導合作；未提供自助帳單或網上付款。",
+    "Pilot agreement; no self-serve billing or online payment.",
+  ],
+  "studio.plan.contact": ["洽談 Growth 方案", "Talk to us about Growth"],
+  "studio.plan.unavailable": [
+    "未能讀取方案資料；未顯示推算數字。",
+    "Plan data could not be read; no estimated numbers are shown.",
+  ],
+  "studio.plan.note": [
+    "此頁不會顯示虛構配額或價格；實際容量以合約為準。",
+    "This page shows no invented quotas or prices; actual capacity follows the agreement.",
   ],
 
   // -- admin usage summary (A5.2) ------------------------------------------

@@ -42,6 +42,7 @@ type RailLink = {
 
 const WORK_LINKS: readonly RailLink[] = [
   { href: "/studio", key: "studio.rail.overview" },
+  { href: "/studio/agents", key: "studio.rail.agents" },
   { href: "/studio/inbox", key: "studio.rail.inbox" },
   { href: "/studio/reviews", key: "studio.rail.reviews" },
   {

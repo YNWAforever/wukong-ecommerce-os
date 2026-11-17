@@ -13,7 +13,8 @@ vi.mock("next/navigation", () => ({
 import type { StudioOverviewResult } from "../lib/studio/contracts";
 import type { StudioTurnReply } from "../lib/studio/types";
 import { STUDIO_COPY } from "../lib/studio-copy";
-import { STUDIO_TEMPLATES, StudioHome } from "./studio-home";
+import { STUDIO_AGENTS } from "../lib/studio/agents";
+import { StudioHome } from "./studio-home";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
@@ -203,6 +204,39 @@ describe("StudioHome", () => {
       skillKey: "merchant.audit",
     });
   });
+
+  it("prefills a requested pilot agent once and never sends it", async () => {
+    const fetcher = vi.fn(() => {
+      throw new Error("prefill must not fetch");
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = await mount({ initialAgent: "listing.copy_proposal" });
+    expect(textarea(container).value).toBe(
+      STUDIO_COPY["studio.template.copyProposal.starter"][1],
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("ignores an unavailable or planned agent request", async () => {
+    const planned = await mount({ initialAgent: "seo.merchant" });
+    expect(textarea(planned).value).toBe("");
+
+    const unavailable = await mount({ initialAgent: "logistics.followup" });
+    expect(textarea(unavailable).value).toBe("");
+
+    const unknown = await mount({ initialAgent: "not.a.real.agent" });
+    expect(textarea(unknown).value).toBe("");
+  });
+
+  it("does not prefill the composer for a reader below operator", async () => {
+    const container = await mount({
+      initialAgent: "listing.copy_proposal",
+      canCreateThread: false,
+    });
+    expect(textarea(container).value).toBe("");
+  });
+
   it("renders the greeting, composer, overview and permanent disclaimer", () => {
     const html = render();
 
@@ -228,16 +262,16 @@ describe("StudioHome", () => {
   it("renders every role template with an availability derived from the registry", () => {
     const html = render();
 
-    const pilot = STUDIO_TEMPLATES.filter(
+    const pilot = STUDIO_AGENTS.filter(
       (template) => template.availability === "pilot",
     );
-    const planned = STUDIO_TEMPLATES.filter(
+    const planned = STUDIO_AGENTS.filter(
       (template) => template.availability === "planned",
     );
-    const unavailable = STUDIO_TEMPLATES.filter(
+    const unavailable = STUDIO_AGENTS.filter(
       (template) => template.availability === "unavailable",
     );
-    expect((html.match(/<h3/g) ?? []).length).toBe(STUDIO_TEMPLATES.length);
+    expect((html.match(/<h3/g) ?? []).length).toBe(STUDIO_AGENTS.length);
     expect((html.match(/>Pilot</g) ?? []).length).toBe(pilot.length);
     expect((html.match(/>Planned</g) ?? []).length).toBe(planned.length);
     expect((html.match(/>Unavailable</g) ?? []).length).toBe(
@@ -254,9 +288,9 @@ describe("StudioHome", () => {
 
   it("derives availability from the reviewed skill registry and keeps blocked skills unavailable", () => {
     expect(
-      STUDIO_TEMPLATES.filter(
-        (template) => template.availability === "pilot",
-      ).map((template) => template.id),
+      STUDIO_AGENTS.filter((template) => template.availability === "pilot").map(
+        (template) => template.id,
+      ),
     ).toEqual([
       "catalog.find",
       "catalog.gap_review",
@@ -268,19 +302,19 @@ describe("StudioHome", () => {
       "merchant.audit",
     ]);
     expect(
-      STUDIO_TEMPLATES.filter(
+      STUDIO_AGENTS.filter(
         (template) => template.availability === "planned",
       ).map((template) => template.id),
-    ).toEqual([]);
+    ).toEqual(["seo.merchant"]);
     expect(
-      STUDIO_TEMPLATES.filter(
+      STUDIO_AGENTS.filter(
         (template) => template.availability === "unavailable",
       ).map((template) => template.id),
     ).toEqual(["customer.reply_draft", "logistics.followup"]);
     expect(
-      STUDIO_TEMPLATES.some((template) => template.availability === "ready"),
+      STUDIO_AGENTS.some((template) => template.availability === "ready"),
     ).toBe(false);
-    for (const template of STUDIO_TEMPLATES) {
+    for (const template of STUDIO_AGENTS) {
       for (const key of [
         template.titleKey,
         template.outcomeKey,
