@@ -30,6 +30,7 @@ const COUNTS = {
 function createDeps(
   options: {
     failOutputs?: boolean;
+    exportStatus?: "ready" | "failed";
     role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
   } = {},
 ): StudioSessionDeps {
@@ -58,7 +59,11 @@ function createDeps(
         },
       },
     },
-    exportAttempts: { listForWorkspace: async () => [{ id: "export-1" }] },
+    exportAttempts: {
+      listForWorkspace: async () => [
+        { id: "export-1", artifactStatus: options.exportStatus ?? "ready" },
+      ],
+    },
   };
   return {
     sessionContext: {
@@ -76,7 +81,7 @@ function createDeps(
         ) => callback(repos),
       }) as unknown as ReturnType<StudioSessionDeps["getDatabase"]>,
     isStudioEnabled: () => true,
-    env: {},
+    env: { NODE_ENV: "test" },
   };
 }
 
@@ -102,6 +107,16 @@ describe("studioOnboardingService", () => {
     expect(result.unknown).toBe(2);
     expect(result.done).toBe(4);
     expect(result.status).toBe("ready");
+  });
+
+  it("does not complete export from a failed artifact", async () => {
+    const service = createStudioOnboardingService(
+      createDeps({ exportStatus: "failed" }),
+    );
+    const result = await service.onboarding();
+    expect(result.steps.find((step) => step.key === "export")?.state).toBe(
+      "todo",
+    );
   });
 
   it("reports seats, pending invites and catalog size for an admin", async () => {

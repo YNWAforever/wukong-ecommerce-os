@@ -50,7 +50,7 @@ export function createStudioOnboardingService(
               repos.listings.countByStatus(),
               repos.studio.outputs.list({ limit: 1 }),
               repos.studio.outputs.list({ limit: 1, status: "signed_off" }),
-              repos.exportAttempts.listForWorkspace(1),
+              repos.exportAttempts.listForWorkspace(20),
             ]);
 
           const readinessValue = fulfilled(readiness);
@@ -73,7 +73,16 @@ export function createStudioOnboardingService(
               : null,
             artifactCount: artifactsValue ? artifactsValue.items.length : null,
             signedOffCount: signedOffValue ? signedOffValue.items.length : null,
-            exportCount: exportsValue ? exportsValue.length : null,
+            // A queued or failed export attempt is not "exported work"; only a
+            // ready artifact counts, so the step cannot be completed by a
+            // request that never produced a file.
+            exportCount: exportsValue
+              ? exportsValue.some(
+                  (attempt) => attempt.artifactStatus === "ready",
+                )
+                ? 1
+                : 0
+              : null,
           };
         },
       );
