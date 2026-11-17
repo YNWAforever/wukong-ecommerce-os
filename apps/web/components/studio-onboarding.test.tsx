@@ -28,7 +28,8 @@ describe("StudioOnboarding", () => {
     expect(html).toContain("Getting started · 0 of 6 done");
     expect(html).toContain("Connect SHOPLINE");
     expect(html).toContain("Add a reviewer");
-    expect(html).toContain('href="/admin"');
+    expect(html).toContain('href="/admin?tab=connection"');
+    expect(html).toContain('href="/admin?tab=members"');
     expect(html).not.toContain('href="/studio/connections"');
     expect(html).toContain('href="/listings/import"');
     expect(html).toContain('href="/batches"');
@@ -38,7 +39,8 @@ describe("StudioOnboarding", () => {
   it("does not offer an action a viewer cannot take", () => {
     const html = render(buildStudioOnboarding(EMPTY, "viewer"));
     expect(html).not.toContain('href="/studio/connections"');
-    expect(html).not.toContain('href="/admin"');
+    expect(html).not.toContain('href="/admin?tab=connection"');
+    expect(html).not.toContain('href="/admin?tab=members"');
     expect(html).not.toContain('href="/listings/import"');
     expect(html).toContain("Ask an admin");
     expect(html).toContain("Ask an operator");

@@ -58,6 +58,7 @@ const RECORD_LINKS: readonly RailLink[] = [
 
 const ADMIN_LINKS: readonly RailLink[] = [
   { href: "/studio/connections", key: "studio.rail.tools" },
+  { href: "/studio/team", key: "studio.rail.team" },
   { href: "/studio/settings", key: "studio.rail.settings" },
 ];
 

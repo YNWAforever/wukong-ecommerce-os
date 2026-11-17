@@ -55,6 +55,14 @@ describe("AdminTabs", () => {
     expect(buttons.filter((b) => b.includes('tabindex="0"'))).toHaveLength(1);
     expect(markup).toContain('aria-labelledby="admin-tab-members"');
   });
+  it("opens the requested initial tab", () => {
+    const markup = renderToStaticMarkup(
+      createElement(AdminTabs, { initialTab: "connection" }),
+    );
+    expect(markup).toContain('aria-labelledby="admin-tab-connection"');
+    expect(markup).toContain('id="admin-tab-connection"');
+    expect(markup).toContain('aria-selected="true"');
+  });
   it("keeps edits on stay, warns before unload, and discards only on explicit choice", async () => {
     vi.stubGlobal("fetch", fixtureFetch());
     const c = await mount();

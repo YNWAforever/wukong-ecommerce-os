@@ -3792,3 +3792,125 @@ article.studio-output .studio-output-body {
 .studio-plan-contact:focus-visible {
   text-decoration: underline;
 }
+
+.studio-plan-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+}
+
+/* -- team and access (P3) -------------------------------------------------- */
+
+.studio-role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-role-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--surface);
+}
+
+.studio-role-name {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.studio-role-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The shared member table is wider than a phone; on small screens it becomes
+   one labelled card per member instead of a clipped, horizontally scrolled table.
+   The labels come from AdminMembersPanel's data-label attributes. */
+.studio-team-table {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.studio-team-table table {
+  min-width: 680px;
+}
+
+@media (max-width: 620px) {
+  .studio-team-table {
+    overflow-x: visible;
+  }
+
+  .studio-team-table table {
+    min-width: 0;
+    table-layout: auto;
+  }
+
+  .studio-team-table table,
+  .studio-team-table thead,
+  .studio-team-table tbody,
+  .studio-team-table tr,
+  .studio-team-table th,
+  .studio-team-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .studio-team-table thead {
+    display: none;
+  }
+
+  .studio-team-table tbody tr {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+
+  .studio-team-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .studio-team-table tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .studio-team-table tbody td:first-child {
+    font-weight: 600;
+  }
+
+  .studio-team-table tbody td[data-empty="true"] {
+    display: none;
+  }
+
+  .studio-team-table tbody td select {
+    max-width: 160px;
+  }
+}
+
+@media (max-width: 620px) {
+  .studio-role-grid {
+    grid-template-columns: 1fr;
+  }
+}

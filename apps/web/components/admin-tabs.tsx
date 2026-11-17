@@ -18,25 +18,28 @@ import {
   subscribeClientContextChangeGuard,
   type ClientContextChangeRequest,
 } from "../lib/client-context-change-guard";
-type AdminTab = "members" | "connection" | "settings" | "capabilities";
-const TABS: AdminTab[] = ["members", "connection", "settings", "capabilities"];
+import { ADMIN_TABS, type AdminTab } from "../lib/admin-tab";
 type Destination =
   | { tab: AdminTab }
   | { href: string }
   | { historyDelta: number }
   | { contextChange: ClientContextChangeRequest };
-export function AdminTabs() {
+export function AdminTabs({
+  initialTab = "members",
+}: {
+  initialTab?: AdminTab;
+}) {
   return (
     <AdminDirtyProvider>
-      <GuardedAdminTabs />
+      <GuardedAdminTabs initialTab={initialTab} />
     </AdminDirtyProvider>
   );
 }
-function GuardedAdminTabs() {
+function GuardedAdminTabs({ initialTab }: { initialTab: AdminTab }) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
-  const [active, setActive] = useState<AdminTab>("members");
-  const [focused, setFocused] = useState<AdminTab>("members");
+  const [active, setActive] = useState<AdminTab>(initialTab);
+  const [focused, setFocused] = useState<AdminTab>(initialTab);
   const [pending, setPending] = useState<Destination | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -227,15 +230,15 @@ function GuardedAdminTabs() {
       dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
   }, [pending]);
   function keys(event: KeyboardEvent<HTMLButtonElement>, tab: AdminTab) {
-    let index = TABS.indexOf(tab);
-    if (event.key === "ArrowRight") index = (index + 1) % TABS.length;
+    let index = ADMIN_TABS.indexOf(tab);
+    if (event.key === "ArrowRight") index = (index + 1) % ADMIN_TABS.length;
     else if (event.key === "ArrowLeft")
-      index = (index + TABS.length - 1) % TABS.length;
+      index = (index + ADMIN_TABS.length - 1) % ADMIN_TABS.length;
     else if (event.key === "Home") index = 0;
-    else if (event.key === "End") index = TABS.length - 1;
+    else if (event.key === "End") index = ADMIN_TABS.length - 1;
     else return;
     event.preventDefault();
-    const next = TABS[index]!;
+    const next = ADMIN_TABS[index]!;
     setFocused(next);
     document.getElementById(`admin-tab-${next}`)?.focus();
   }
@@ -246,7 +249,7 @@ function GuardedAdminTabs() {
         role="tablist"
         aria-label={t("管理區段", "Admin sections")}
       >
-        {TABS.map((tab) => (
+        {ADMIN_TABS.map((tab) => (
           <button
             key={tab}
             id={`admin-tab-${tab}`}

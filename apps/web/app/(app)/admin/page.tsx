@@ -4,13 +4,18 @@ import Link from "next/link";
 
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
 import { localized } from "../../../lib/ui-copy";
+import { adminTabFromQuery } from "../../../lib/admin-tab";
 import { AdminTabs } from "../../../components/admin-tabs";
 import {
   authSessionContext,
   requireWorkspaceRole,
 } from "../../../lib/session-context";
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  readonly searchParams?: Promise<{ tab?: string | string[] }>;
+} = {}) {
   const session = await authSessionContext.resolve();
   if (!session) redirect("/signin");
   const locale = resolveLocale(
@@ -45,6 +50,8 @@ export default async function AdminPage() {
     );
   }
 
+  const initialTab = adminTabFromQuery((await searchParams)?.tab);
+
   return (
     <div className="page-wrap admin-page">
       <div className="page-header">
@@ -58,7 +65,7 @@ export default async function AdminPage() {
           </p>
         </div>
       </div>
-      <AdminTabs />
+      <AdminTabs initialTab={initialTab} />
     </div>
   );
 }

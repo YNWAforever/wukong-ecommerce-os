@@ -67,14 +67,14 @@ export function buildStudioOnboarding(
       state: stateFromFact(facts.connectionPresent),
       owner: "admin",
       // The Studio connections page is the internal MCP tool catalogue; the
-      // SHOPLINE connection form lives in the admin tabs.
-      href: canAdmin ? "/admin" : null,
+      // SHOPLINE connection form lives in the admin connection tab.
+      href: canAdmin ? "/admin?tab=connection" : null,
     },
     {
       key: "reviewer",
       state: stateFromFact(facts.reviewerCount),
       owner: "admin",
-      href: canAdmin ? "/admin" : null,
+      href: canAdmin ? "/admin?tab=members" : null,
     },
     {
       key: "catalog",

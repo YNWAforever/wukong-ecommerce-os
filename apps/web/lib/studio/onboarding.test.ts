@@ -39,8 +39,8 @@ describe("buildStudioOnboarding", () => {
     expect(result.done).toBe(6);
     expect(result.unknown).toBe(0);
     expect(result.steps.map((step) => step.href)).toEqual([
-      "/admin",
-      "/admin",
+      "/admin?tab=connection",
+      "/admin?tab=members",
       "/listings/import",
       "/studio/reviews",
       "/studio/outputs",

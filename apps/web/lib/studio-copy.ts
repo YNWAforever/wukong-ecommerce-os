@@ -81,6 +81,7 @@ export const STUDIO_COPY = {
   "studio.rail.outputs": STUDIO_TERMS.savedWork,
   "studio.rail.tools": ["連線", "Connections"],
   "studio.rail.settings": ["設定", "Settings"],
+  "studio.rail.team": ["團隊", "Team"],
   "studio.rail.recent": ["最近的對話", "Recent conversations"],
   "studio.rail.recentEmpty": [
     "還沒有對話；建立第一個對話後會顯示在這裡。",
@@ -1951,6 +1952,7 @@ export const STUDIO_COPY = {
     "Pilot agreement; no self-serve billing or online payment.",
   ],
   "studio.plan.contact": ["洽談 Growth 方案", "Talk to us about Growth"],
+  "studio.plan.manageTeam": ["管理團隊", "Manage team"],
   "studio.plan.unavailable": [
     "未能讀取方案資料；未顯示推算數字。",
     "Plan data could not be read; no estimated numbers are shown.",
@@ -1958,6 +1960,24 @@ export const STUDIO_COPY = {
   "studio.plan.note": [
     "此頁不會顯示虛構配額或價格；實際容量以合約為準。",
     "This page shows no invented quotas or prices; actual capacity follows the agreement.",
+  ],
+
+  // -- team and access (P3) --------------------------------------------------
+  "studio.team.eyebrow": ["工作區", "Workspace"],
+  "studio.team.title": ["團隊與權限", "Team & access"],
+  "studio.team.lede": [
+    "管理成員、角色與待接受的邀請。變更即時生效；邀請會以電郵寄出。",
+    "Manage members, roles and pending invitations. Changes apply immediately; invitations are sent by email.",
+  ],
+  "studio.team.rolesTitle": ["角色可以做什麼", "What each role can do"],
+  "studio.team.membersTitle": ["成員與邀請", "Members & invitations"],
+  "studio.team.membersLede": [
+    "席位包括現有成員與待接受邀請；角色變更即時生效。",
+    "Seats cover active members and pending invitations; role changes apply immediately.",
+  ],
+  "studio.team.note": [
+    "成員管理需要管理員權限；審核員與操作員的日常工作不受影響。",
+    "Member management requires admin access; reviewer and operator work is unchanged.",
   ],
 
   // -- admin usage summary (A5.2) ------------------------------------------
