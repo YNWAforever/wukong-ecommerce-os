@@ -927,6 +927,7 @@ test("flags-on studio: every Studio surface renders for an owner", async ({
     { path: "/studio/outputs", heading: "Saved work" },
     { path: "/studio/inbox", heading: "Orchestration inbox" },
     { path: "/studio/connections", heading: "Tools and connections" },
+    { path: "/studio/team", heading: "Team & access" },
     { path: "/studio/settings", heading: "Studio settings" },
   ] as const;
   for (const surface of surfaces) {
@@ -953,6 +954,39 @@ test("flags-on studio: every Studio surface renders for an owner", async ({
   await expect(
     page.getByText("no self-serve billing or online payment", { exact: false }),
   ).toBeVisible();
+
+  // P3: seats link to the team surface and the member panel renders real rows.
+  await page.getByRole("link", { name: "Manage team", exact: true }).click();
+  await expect(page).toHaveURL(/\/studio\/team$/);
+  await expect(
+    page.getByRole("heading", { name: "Team & access", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Members & invitations", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("table")).toBeVisible({ timeout: 30_000 });
+
+  // P3: the team page keeps the admin surface's unsaved-invite guard.
+  await page.getByLabel("Invite email address").fill("draft@example.invalid");
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Unsaved changes", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Stay here", exact: true }).click();
+  await expect(page).toHaveURL(/\/studio\/team/);
+  await expect(page.getByLabel("Invite email address")).toHaveValue(
+    "draft@example.invalid",
+  );
+
+  // P3: setup links deep-link the admin tabs they name.
+  await page.goto("/admin?tab=connection");
+  await expect(page.locator("#admin-tab-connection")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByRole("tabpanel")).toContainText(
+    /Shop domain:|Connected since:/,
+  );
 });
 
 /**
@@ -1090,6 +1124,17 @@ test("flags-on studio: a viewer is read-only and admin settings stay hidden", as
   await expect(
     page.getByText("Hosted MCP tokens", { exact: false }),
   ).toHaveCount(0);
+
+  // The team surface is admin-only too: it renders the same not-found boundary.
+  const team = await page.goto("/studio/team");
+  expect(team?.status(), "/studio/team").toBeLessThan(500);
+  await expect(
+    page.getByRole("heading", { name: "Studio page not found", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByRole("heading", { name: "Team & access", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("table")).toHaveCount(0);
 });
 
 /**

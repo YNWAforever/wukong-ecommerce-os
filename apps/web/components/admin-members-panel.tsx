@@ -200,8 +200,8 @@ export function AdminMembersPanel() {
         <tbody>
           {members.map((member) => (
             <tr key={member.userId}>
-              <td>{member.email}</td>
-              <td>
+              <td data-label={t("電郵", "Email")}>{member.email}</td>
+              <td data-label={t("角色", "Role")}>
                 {member.role === "owner" ? (
                   roleName(member.role)
                 ) : (
@@ -227,10 +227,13 @@ export function AdminMembersPanel() {
                   </select>
                 )}
               </td>
-              <td>
+              <td data-label={t("狀態", "Status")}>
                 <StatusPill tone="success">{t("啟用中", "Active")}</StatusPill>
               </td>
-              <td>
+              <td
+                data-label={t("操作", "Actions")}
+                data-empty={member.role === "owner" ? "true" : undefined}
+              >
                 {member.role === "owner" ? null : (
                   <button
                     type="button"
@@ -246,12 +249,14 @@ export function AdminMembersPanel() {
           ))}
           {invites.map((pendingInvite) => (
             <tr key={pendingInvite.id}>
-              <td>{pendingInvite.email}</td>
-              <td>{roleName(pendingInvite.role)}</td>
-              <td>
+              <td data-label={t("電郵", "Email")}>{pendingInvite.email}</td>
+              <td data-label={t("角色", "Role")}>
+                {roleName(pendingInvite.role)}
+              </td>
+              <td data-label={t("狀態", "Status")}>
                 <StatusPill tone="warning">{t("待接受", "Pending")}</StatusPill>
               </td>
-              <td>
+              <td data-label={t("操作", "Actions")}>
                 <button
                   type="button"
                   className="secondary-button"

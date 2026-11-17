@@ -7,7 +7,9 @@ vi.mock("../../../lib/session-context", () => ({
     actual === "admin" || actual === "owner",
 }));
 vi.mock("../../../components/admin-tabs", () => ({
-  AdminTabs: () => <div>Admin settings only</div>,
+  AdminTabs: ({ initialTab }: { initialTab?: string }) => (
+    <div data-initial-tab={initialTab ?? "members"}>Admin settings only</div>
+  ),
 }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: "en" }) }),
@@ -42,4 +44,22 @@ it("admin sees the real admin area", async () => {
   expect(renderToStaticMarkup(await AdminPage())).toContain(
     "Admin settings only",
   );
+});
+
+it("opens the deep-linked tab and ignores unknown values", async () => {
+  resolve.mockResolvedValue({
+    workspaceId: "synthetic",
+    actorId: "admin",
+    role: "admin",
+  });
+  const connection = renderToStaticMarkup(
+    await AdminPage({ searchParams: Promise.resolve({ tab: "connection" }) }),
+  );
+  expect(connection).toContain('data-initial-tab="connection"');
+  const unknown = renderToStaticMarkup(
+    await AdminPage({
+      searchParams: Promise.resolve({ tab: "../../billing" }),
+    }),
+  );
+  expect(unknown).toContain('data-initial-tab="members"');
 });

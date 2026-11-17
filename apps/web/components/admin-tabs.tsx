@@ -18,25 +18,54 @@ import {
   subscribeClientContextChangeGuard,
   type ClientContextChangeRequest,
 } from "../lib/client-context-change-guard";
-type AdminTab = "members" | "connection" | "settings" | "capabilities";
-const TABS: AdminTab[] = ["members", "connection", "settings", "capabilities"];
+import { ADMIN_TABS, type AdminTab } from "../lib/admin-tab";
 type Destination =
   | { tab: AdminTab }
   | { href: string }
   | { historyDelta: number }
   | { contextChange: ClientContextChangeRequest };
-export function AdminTabs() {
+export function AdminTabs({
+  initialTab = "members",
+  tabs = ADMIN_TABS,
+  showTabs = true,
+}: {
+  initialTab?: AdminTab;
+  tabs?: readonly AdminTab[];
+  showTabs?: boolean;
+}) {
   return (
     <AdminDirtyProvider>
-      <GuardedAdminTabs />
+      <GuardedAdminTabs
+        initialTab={initialTab}
+        tabs={tabs}
+        showTabs={showTabs}
+      />
     </AdminDirtyProvider>
   );
 }
-function GuardedAdminTabs() {
+
+/**
+ * The members panel with the same dirty-navigation protection as `/admin`,
+ * without the tab bar. Used by `/studio/team` so an unsaved invite draft
+ * cannot be silently discarded by a link, reload or workspace switch.
+ */
+export function AdminMembersEditor() {
+  return <AdminTabs initialTab="members" tabs={["members"]} showTabs={false} />;
+}
+
+function GuardedAdminTabs({
+  initialTab,
+  tabs,
+  showTabs,
+}: {
+  initialTab: AdminTab;
+  tabs: readonly AdminTab[];
+  showTabs: boolean;
+}) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
-  const [active, setActive] = useState<AdminTab>("members");
-  const [focused, setFocused] = useState<AdminTab>("members");
+  const [active, setActive] = useState<AdminTab>(initialTab);
+  const [focused, setFocused] = useState<AdminTab>(initialTab);
   const [pending, setPending] = useState<Destination | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -227,62 +256,67 @@ function GuardedAdminTabs() {
       dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
   }, [pending]);
   function keys(event: KeyboardEvent<HTMLButtonElement>, tab: AdminTab) {
-    let index = TABS.indexOf(tab);
-    if (event.key === "ArrowRight") index = (index + 1) % TABS.length;
+    let index = tabs.indexOf(tab);
+    if (event.key === "ArrowRight") index = (index + 1) % tabs.length;
     else if (event.key === "ArrowLeft")
-      index = (index + TABS.length - 1) % TABS.length;
+      index = (index + tabs.length - 1) % tabs.length;
     else if (event.key === "Home") index = 0;
-    else if (event.key === "End") index = TABS.length - 1;
+    else if (event.key === "End") index = tabs.length - 1;
     else return;
     event.preventDefault();
-    const next = TABS[index]!;
+    const next = tabs[index]!;
     setFocused(next);
     document.getElementById(`admin-tab-${next}`)?.focus();
   }
   return (
     <div className="admin-tabs">
-      <div
-        className="admin-tab-list"
-        role="tablist"
-        aria-label={t("管理區段", "Admin sections")}
-      >
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            id={`admin-tab-${tab}`}
-            type="button"
-            role="tab"
-            aria-selected={active === tab}
-            aria-controls="admin-tab-panel"
-            tabIndex={focused === tab ? 0 : -1}
-            className={active === tab ? "admin-tab active" : "admin-tab"}
-            onFocus={() => setFocused(tab)}
-            onKeyDown={(event) => keys(event, tab)}
-            onClick={() => tab !== active && request({ tab })}
-          >
-            {t(
-              {
-                members: "成員",
-                connection: "SHOPLINE 連線",
-                settings: "設定",
-                capabilities: "系統真相",
-              }[tab],
-              {
-                members: "Members",
-                connection: "SHOPLINE connection",
-                settings: "Settings",
-                capabilities: "System Truth",
-              }[tab],
-            )}
-          </button>
-        ))}
-      </div>
+      {showTabs ? (
+        <div
+          className="admin-tab-list"
+          role="tablist"
+          aria-label={t("管理區段", "Admin sections")}
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab}
+              id={`admin-tab-${tab}`}
+              type="button"
+              role="tab"
+              aria-selected={active === tab}
+              aria-controls="admin-tab-panel"
+              tabIndex={focused === tab ? 0 : -1}
+              className={active === tab ? "admin-tab active" : "admin-tab"}
+              onFocus={() => setFocused(tab)}
+              onKeyDown={(event) => keys(event, tab)}
+              onClick={() => tab !== active && request({ tab })}
+            >
+              {t(
+                {
+                  members: "成員",
+                  connection: "SHOPLINE 連線",
+                  settings: "設定",
+                  capabilities: "系統真相",
+                }[tab],
+                {
+                  members: "Members",
+                  connection: "SHOPLINE connection",
+                  settings: "Settings",
+                  capabilities: "System Truth",
+                }[tab],
+              )}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div
         id="admin-tab-panel"
         className="admin-tab-panel"
         role="tabpanel"
         tabIndex={0}
-        aria-labelledby={`admin-tab-${active}`}
+        aria-labelledby={showTabs ? `admin-tab-${active}` : undefined}
+        aria-label={
+          showTabs ? undefined : t("成員與邀請", "Members & invitations")
+        }
       >
         {active === "members" && <AdminMembersPanel />}
         {active === "connection" && <AdminConnectionPanel />}

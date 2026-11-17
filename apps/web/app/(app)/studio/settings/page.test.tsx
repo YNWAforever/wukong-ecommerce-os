@@ -260,6 +260,8 @@ describe("/studio/settings content", () => {
       "Pilot agreement; no self-serve billing or online payment.",
     );
     expect(html).toContain("Talk to us about Growth");
+    expect(html).toContain('href="/studio/team"');
+    expect(html).toContain("Manage team");
     expect(html).not.toMatch(/HK\$|\$\d/);
   });
 

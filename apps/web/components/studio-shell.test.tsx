@@ -106,6 +106,7 @@ describe("StudioShell", () => {
     // page answers 404 to them, which used to look like a broken Studio.
     expect(html).not.toContain('href="/studio/settings"');
     expect(html).not.toContain('href="/studio/connections"');
+    expect(html).not.toContain('href="/studio/team"');
   });
 
   it("renders admin destinations only for administrators", () => {
@@ -113,6 +114,7 @@ describe("StudioShell", () => {
 
     expect(html).toContain('href="/studio/settings"');
     expect(html).toContain('href="/studio/connections"');
+    expect(html).toContain('href="/studio/team"');
     expect(html).toContain("Admin");
   });
 

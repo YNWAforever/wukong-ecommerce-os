@@ -216,9 +216,14 @@ function PlanSection({
           <p className={styles["studio-plan-note"]}>
             {studioCopy(locale, "studio.plan.note")}
           </p>
-          <Link className={styles["studio-plan-contact"]} href="/support">
-            {studioCopy(locale, "studio.plan.contact")}
-          </Link>
+          <div className={styles["studio-plan-links"]}>
+            <Link className={styles["studio-plan-contact"]} href="/studio/team">
+              {studioCopy(locale, "studio.plan.manageTeam")}
+            </Link>
+            <Link className={styles["studio-plan-contact"]} href="/support">
+              {studioCopy(locale, "studio.plan.contact")}
+            </Link>
+          </div>
         </>
       )}
     </section>

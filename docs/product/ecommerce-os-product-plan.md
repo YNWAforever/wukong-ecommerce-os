@@ -117,12 +117,17 @@ to be a self-serve SaaS:
   browser state;
 - Studio settings shows the Pilot agreement, seats, catalog size and the existing
   usage projection, with no invented quotas or prices;
+- the seats tile links to `/studio/team`, an admin surface for members, roles and
+  pending invitations that reuses the audited member APIs and now deep-links setup
+  steps to the exact admin tab;
 - `docs/product/2026-11-18-marketing-alignment.md` maps every public agent, platform
   and pricing claim to its runtime state for the marketing site.
 
-Still missing for a real SaaS funnel: self-serve intake, invitation acceptance,
-demo-workspace provisioning, a persisted entitlement record and billing. Those are
-the next commercial milestone; more agents are not a substitute for them.
+Invitation acceptance already runs through the password-enrollment path and is
+covered by auth/access tests; production email delivery still depends on the
+deployment SMTP configuration. Still missing for a real SaaS funnel: self-serve
+intake, demo-workspace provisioning, a persisted entitlement record and billing.
+Those are the next commercial milestone; more agents are not a substitute for them.
 
 ### 4.6 Product analytics need merchant outcomes
 
@@ -179,8 +184,9 @@ defensible before adding commercial plumbing.
 - Present the guided agent suite and its maturity in-product (P2).
 - Derive getting-started progress from durable records (P2).
 - Show the Pilot agreement and real usage without invented plans or quotas (P2).
+- Add a Studio team surface for seats, roles and pending invitations (P3).
 - Align the public marketing site with the capability matrix (P2 handoff).
-- Complete invitation delivery and acceptance (commercial milestone).
+- Verify invitation email delivery in production; the acceptance path exists.
 - Launch Catalog Control Center for recent platform products.
 - Replace hard-coded workspace/operator labels with session-derived data.
 - Add pilot analytics: time-to-review, approval rate, publish success, cost per SKU.
