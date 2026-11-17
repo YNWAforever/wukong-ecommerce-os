@@ -922,6 +922,7 @@ test("flags-on studio: every Studio surface renders for an owner", async ({
 
   const surfaces = [
     { path: "/studio", heading: "Welcome back" },
+    { path: "/studio/agents", heading: "Guided agent suite" },
     { path: "/studio/threads", heading: "Conversations" },
     { path: "/studio/outputs", heading: "Saved work" },
     { path: "/studio/inbox", heading: "Orchestration inbox" },
@@ -945,6 +946,78 @@ test("flags-on studio: every Studio surface renders for an owner", async ({
     page.getByRole("heading", { name: "Usage — last 30 days", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/Read-only projection/).first()).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Plan & usage", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Pilot (design partner)")).toBeVisible();
+  await expect(
+    page.getByText("no self-serve billing or online payment", { exact: false }),
+  ).toBeVisible();
+});
+
+/**
+ * P2 packaging acceptance: the agent suite mirrors the registry, only pilot
+ * agents are interactive, and choosing one pre-fills the composer without
+ * sending a message. The planned SEO entry is presented but has no action, and
+ * 390px must not introduce horizontal scrolling.
+ */
+test("flags-on studio: agent suite prefills the composer without sending", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  const origin = baseURL ?? "http://127.0.0.1:49300";
+  await signIn(page, origin);
+
+  await page.goto("/studio/agents");
+  await expect(
+    page.getByRole("heading", { name: "Guided agent suite", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Pilot", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("Planned", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Unavailable", { exact: true }).first(),
+  ).toBeVisible();
+
+  const planCard = page
+    .getByRole("listitem")
+    .filter({ hasText: "SEO / Merchant" });
+  await expect(planCard).toHaveAttribute("data-availability", "planned");
+  await expect(planCard.getByRole("link")).toHaveCount(0);
+  await expect(
+    planCard.getByText("Not yet available", { exact: false }),
+  ).toBeVisible();
+
+  const postRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST") postRequests.push(request.url());
+  });
+
+  const copyCard = page
+    .getByRole("listitem")
+    .filter({ hasText: "Copy proposal" })
+    .first();
+  await expect(copyCard).toHaveAttribute("data-interactive", "true");
+  await copyCard.getByRole("link", { name: "Use in Studio" }).click();
+  await page.waitForURL(/\/studio\?agent=listing\.copy_proposal$/, {
+    timeout: 30_000,
+  });
+
+  const composer = page.getByRole("textbox", { name: "Message" });
+  await expect(composer).toHaveValue("Propose copy for: ");
+  expect(postRequests).toHaveLength(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
+  await page.screenshot({
+    path: "test-results/studio-agents-acceptance.png",
+    fullPage: true,
+  });
 });
 
 /**
@@ -988,6 +1061,7 @@ test("flags-on studio: a viewer is read-only and admin settings stay hidden", as
 
   // Every read surface stays available to the viewer.
   const readSurfaces = [
+    { path: "/studio/agents", heading: "Guided agent suite" },
     { path: "/studio/threads", heading: "Conversations" },
     { path: "/studio/outputs", heading: "Saved work" },
     { path: "/studio/inbox", heading: "Orchestration inbox" },

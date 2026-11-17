@@ -91,6 +91,7 @@ describe("StudioShell", () => {
     expect(html).toContain("page content");
     for (const href of [
       "/studio",
+      "/studio/agents",
       "/studio/inbox",
       "/studio/reviews",
       "/studio/threads",

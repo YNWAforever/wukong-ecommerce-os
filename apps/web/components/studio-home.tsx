@@ -1,14 +1,25 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState, type ReactNode } from "react";
-
-import { getSkill } from "@wukong/core";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { Locale } from "../lib/locale";
+import {
+  AVAILABILITY_KEY,
+  agentById,
+  STUDIO_AGENTS,
+  type StudioAgent,
+} from "../lib/studio/agents";
 import type { GuidedAction } from "../lib/studio/guided-contracts";
 import { guidedCopy } from "../lib/studio/guided-copy";
-import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
+import { studioCopy } from "../lib/studio-copy";
 import { useStudioAttachments } from "../lib/studio/attachments";
 import type { StudioOverviewResult } from "../lib/studio/contracts";
 import {
@@ -36,117 +47,6 @@ import styles from "./studio.module.css";
  * the server's replay path wins instead of creating a duplicate turn.
  */
 
-export type StudioAvailability = "ready" | "pilot" | "planned" | "unavailable";
-
-const AVAILABILITY_KEY: Record<StudioAvailability, StudioCopyKey> = {
-  ready: "studio.availability.ready",
-  pilot: "studio.availability.pilot",
-  planned: "studio.availability.planned",
-  unavailable: "studio.availability.unavailable",
-};
-
-export type StudioTemplate = {
-  readonly id: string;
-  readonly availability: StudioAvailability;
-  readonly titleKey: StudioCopyKey;
-  readonly outcomeKey: StudioCopyKey;
-  readonly limitationKey: StudioCopyKey;
-  /** Copy filled into the composer when a pilot card is used. */
-  readonly starterKey?: StudioCopyKey;
-};
-
-/**
- * Availability is derived from the reviewed skill registry, never hard-coded:
- * a pilot skill is interactive, a planned skill states that it is planned, and
- * a blocked skill stays unavailable. The order is the design spec §1.2 role
- * template order, with the two read skills first.
- */
-function templateAvailability(id: string): StudioAvailability {
-  const skill = getSkill(id);
-  if (skill?.status === "pilot") return "pilot";
-  if (skill?.status === "planned") return "planned";
-  return "unavailable";
-}
-
-type StudioTemplateDefinition = Omit<StudioTemplate, "availability">;
-
-const STUDIO_TEMPLATE_DEFINITIONS: readonly StudioTemplateDefinition[] = [
-  {
-    id: "catalog.find",
-    titleKey: "studio.template.catalogFind.title",
-    outcomeKey: "studio.template.catalogFind.outcome",
-    limitationKey: "studio.template.catalogFind.limitation",
-    starterKey: "studio.template.catalogFind.starter",
-  },
-  {
-    id: "catalog.gap_review",
-    titleKey: "studio.template.standards.title",
-    outcomeKey: "studio.template.standards.outcome",
-    limitationKey: "studio.template.standards.limitation",
-    starterKey: "studio.template.standards.starter",
-  },
-  {
-    id: "listing.draft_from_sources",
-    titleKey: "studio.template.listingDraft.title",
-    outcomeKey: "studio.template.listingDraft.outcome",
-    limitationKey: "studio.template.listingDraft.limitation",
-    starterKey: "studio.template.listingDraft.starter",
-  },
-  {
-    id: "product_shot.prepare",
-    titleKey: "studio.template.productShot.title",
-    outcomeKey: "studio.template.productShot.outcome",
-    limitationKey: "studio.template.productShot.limitation",
-    starterKey: "studio.template.productShot.starter",
-  },
-  {
-    id: "listing.copy_proposal",
-    titleKey: "studio.template.copyProposal.title",
-    outcomeKey: "studio.template.copyProposal.outcome",
-    limitationKey: "studio.template.copyProposal.limitation",
-    starterKey: "studio.template.copyProposal.starter",
-  },
-  {
-    id: "category.map_proposal",
-    titleKey: "studio.template.categoryMapping.title",
-    outcomeKey: "studio.template.categoryMapping.outcome",
-    limitationKey: "studio.template.categoryMapping.limitation",
-    starterKey: "studio.template.categoryMapping.starter",
-  },
-  {
-    id: "supplier.intel_proposal",
-    titleKey: "studio.template.supplierIntel.title",
-    outcomeKey: "studio.template.supplierIntel.outcome",
-    limitationKey: "studio.template.supplierIntel.limitation",
-    starterKey: "studio.template.supplierIntel.starter",
-  },
-  {
-    id: "customer.reply_draft",
-    titleKey: "studio.template.customerReply.title",
-    outcomeKey: "studio.template.customerReply.outcome",
-    limitationKey: "studio.template.customerReply.limitation",
-  },
-  {
-    id: "merchant.audit",
-    titleKey: "studio.template.merchantAudit.title",
-    outcomeKey: "studio.template.merchantAudit.outcome",
-    limitationKey: "studio.template.merchantAudit.limitation",
-    starterKey: "studio.template.merchantAudit.starter",
-  },
-  {
-    id: "logistics.followup",
-    titleKey: "studio.template.logistics.title",
-    outcomeKey: "studio.template.logistics.outcome",
-    limitationKey: "studio.template.logistics.limitation",
-  },
-];
-
-export const STUDIO_TEMPLATES: readonly StudioTemplate[] =
-  STUDIO_TEMPLATE_DEFINITIONS.map((template) => ({
-    ...template,
-    availability: templateAvailability(template.id),
-  }));
-
 type PendingHomeAttempt = {
   locale: Locale;
   guidedAction: GuidedAction | null;
@@ -164,12 +64,16 @@ export type StudioHomeProps = {
   readonly overview?: StudioOverviewResult | null;
   readonly canCreateThread?: boolean;
   readonly initialGuidedAction?: Extract<GuidedAction, { kind: "audit" }>;
+  /** Agent id from `/studio/agents`; filled once into the composer, never sent. */
+  readonly initialAgent?: string;
   /**
    * Server-rendered "Today" queue (P1). It is a node rather than data so the
    * home stays a client component while the queue still renders from the
    * server-read inbox aggregate.
    */
   readonly today?: ReactNode;
+  /** Server-rendered getting-started card (P2); omitted when unavailable. */
+  readonly setup?: ReactNode;
   readonly guideUnavailable?: boolean;
 };
 
@@ -178,7 +82,9 @@ export function StudioHome({
   overview = null,
   canCreateThread = false,
   initialGuidedAction,
+  initialAgent,
   today,
+  setup,
   guideUnavailable = false,
 }: StudioHomeProps) {
   const router = useRouter();
@@ -202,7 +108,7 @@ export function StudioHome({
     useState<PendingHomeAttempt | null>(null);
 
   const fillComposer = useCallback(
-    (template: StudioTemplate) => {
+    (template: StudioAgent) => {
       if (
         !template.starterKey ||
         draft.length > 0 ||
@@ -220,6 +126,24 @@ export function StudioHome({
     },
     [locale, session, draft, pendingAttempt],
   );
+
+  // `/studio/agents` links here with `?agent=<id>`. Apply it once per mounted
+  // home, only for a reviewed pilot agent and only when the composer is still
+  // empty; a typo, a viewer, or an unavailable agent renders the normal home.
+  const appliedAgent = useRef<string | null>(null);
+  useEffect(() => {
+    if (appliedAgent.current !== null || !initialAgent || !canCreateThread)
+      return;
+    const agent = agentById(initialAgent);
+    if (
+      !agent ||
+      agent.availability !== "pilot" ||
+      agent.starterKey === undefined
+    )
+      return;
+    appliedAgent.current = agent.id;
+    fillComposer(agent);
+  }, [canCreateThread, fillComposer, initialAgent]);
 
   const runSend = useCallback(
     async (attempt: PendingHomeAttempt) => {
@@ -310,6 +234,8 @@ export function StudioHome({
 
       {today}
 
+      {setup}
+
       {guideUnavailable ? (
         <p role="status" className={styles["studio-notice"]}>
           {guidedCopy(locale, "initialStale")}
@@ -390,12 +316,18 @@ export function StudioHome({
             <p className={styles["studio-section-lede"]}>
               {studioCopy(locale, "studio.templates.intro")}
             </p>
+            <Link
+              className={styles["studio-agents-link"]}
+              href="/studio/agents"
+            >
+              {studioCopy(locale, "studio.agents.viewAll")}
+            </Link>
           </div>
           <p className={styles["studio-section-lede"]}>
             {studioCopy(locale, "studio.templates.unavailableHint")}
           </p>
           <ul className={styles["studio-template-grid"]}>
-            {STUDIO_TEMPLATES.map((template) => {
+            {STUDIO_AGENTS.map((template) => {
               const interactive =
                 template.availability === "pilot" &&
                 template.starterKey !== undefined;
