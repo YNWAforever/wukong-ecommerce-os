@@ -624,17 +624,27 @@ export function createDatabase(
       )
         throw new Error("invalid pilot lead IP hash");
 
-      // The advisory lock makes the rolling limit race-safe for one contact:
-      // two simultaneous submissions for the same email cannot both read a
-      // below-limit count and then insert.
+      // Lock both identifiers in a fixed order (email, then IP) so concurrent
+      // submissions cannot both read a below-limit count. Different emails on
+      // the same IP still serialize; the two statements cannot deadlock because
+      // no caller acquires the email lock after the IP lock.
       return client.begin(async (transaction) => {
-        await transaction`select pg_advisory_xact_lock(hashtext(${input.email}))`;
+        await transaction`select pg_advisory_xact_lock(hashtext(${`email:${input.email}`}))`;
+        if (input.requestIpHash !== null) {
+          await transaction`select pg_advisory_xact_lock(hashtext(${`ip:${input.requestIpHash}`}))`;
+        }
         const [recent] = await transaction`
-          select count(*)::int as count
+          select
+            count(*) filter (where email = ${input.email})::int as email_count,
+            count(*) filter (where request_ip_hash = ${input.requestIpHash})::int as ip_count
             from public.pilot_leads
            where created_at > now() - interval '10 minutes'
              and (email = ${input.email} or request_ip_hash = ${input.requestIpHash})`;
-        if (Number(recent?.count ?? 0) >= 3) return null;
+        if (
+          Number(recent?.email_count ?? 0) >= 3 ||
+          Number(recent?.ip_count ?? 0) >= 3
+        )
+          return null;
         const [row] = await transaction`
           insert into public.pilot_leads
             (name, email, company, platforms, sku_volume, message, locale,

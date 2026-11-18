@@ -13,8 +13,19 @@ const admin = postgres(process.env.TEST_DATABASE_ADMIN_URL!, {
   onnotice: () => {},
 });
 const emailPrefix = `pilot-route-${randomUUID()}`;
-const octets = randomBytes(3);
-const ip = `10.${octets[0]}.${octets[1]}.${octets[2]}`;
+
+function randomIp() {
+  const octets = randomBytes(3);
+  return `10.${octets[0]}.${octets[1]}.${octets[2]}`;
+}
+
+function randomIps(count: number) {
+  const found = new Set<string>();
+  while (found.size < count) found.add(randomIp());
+  return [...found];
+}
+
+const ip = randomIp();
 
 beforeAll(async () => {
   await database.migrate();
@@ -95,5 +106,26 @@ describe("POST /api/pilot-leads with Postgres", () => {
       request_ip_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(rows[0]?.consent_at.toISOString()).toBe("2026-11-18T12:00:00.000Z");
+  });
+
+  it("applies the email and IP thresholds independently", async () => {
+    const [firstIp, secondIp, thirdIp] = randomIps(3) as [
+      string,
+      string,
+      string,
+    ];
+    const emailA = `${emailPrefix}-independent-a@example.test`;
+    for (const forwardedFor of [firstIp, secondIp, thirdIp]) {
+      expect((await handler(request(emailA, forwardedFor))).status).toBe(201);
+    }
+
+    // Email A has reached its limit, but this IP has only one prior row. The
+    // union of both counts would wrongly reject this submission.
+    const emailB = `${emailPrefix}-independent-b@example.test`;
+    expect((await handler(request(emailB, firstIp))).status).toBe(201);
+    const [fourthIp, fifthIp] = randomIps(2) as [string, string];
+    expect((await handler(request(emailB, fourthIp))).status).toBe(201);
+    expect((await handler(request(emailB, fifthIp))).status).toBe(201);
+    expect((await handler(request(emailB, randomIps(1)[0]!))).status).toBe(429);
   });
 });
