@@ -15,6 +15,7 @@ import {
 } from "../lib/catalog-session-state";
 import { WorkbenchReturnLink } from "./workbench-return-link";
 import { useLocale } from "../lib/locale-context";
+import { productTitle } from "../lib/product-title";
 import {
   localized,
   commonCopy,
@@ -782,7 +783,7 @@ export function CatalogControlCenter({
                         <td />
                         <td>
                           <strong className={styles.productTitle}>
-                            {item.title}
+                            {productTitle(item, locale)}
                           </strong>
                           <span className={styles.productMeta}>
                             {item.sku} · {item.sourceProductId}
@@ -818,7 +819,7 @@ export function CatalogControlCenter({
                         <td />
                         <td>
                           <strong className={styles.productTitle}>
-                            {item.title}
+                            {productTitle(item, locale)}
                           </strong>
                           <span className={styles.productMeta}>
                             {item.sourceUrl}
@@ -871,7 +872,7 @@ export function CatalogControlCenter({
                         </td>
                         <td>
                           <strong className={styles.productTitle}>
-                            {item.title}
+                            {productTitle(item, locale)}
                           </strong>
                           <span className={styles.productMeta}>
                             {item.sku ??
@@ -977,7 +978,7 @@ export function CatalogControlCenter({
                       </td>
                       <td>
                         <strong className={styles.productTitle}>
-                          {item.title}
+                          {productTitle(item, locale)}
                         </strong>
                         <span className={styles.productMeta}>
                           {item.sku ?? localized(locale, "未有 SKU", "No SKU")}{" "}

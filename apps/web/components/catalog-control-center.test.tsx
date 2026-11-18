@@ -11,10 +11,18 @@ import type {
 import { CatalogControlCenter } from "./catalog-control-center.js";
 import { NO_CONTENT_DIGEST } from "./bulk-export-panel.js";
 
+const localeState = vi.hoisted(() => ({
+  locale: "zh-Hant" as "en" | "zh-Hant",
+}));
+vi.mock("../lib/locale-context", () => ({
+  useLocale: () => localeState.locale,
+}));
+
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 beforeEach(() => {
+  localeState.locale = "zh-Hant";
   window.history.replaceState(null, "", "/catalog");
   sessionStorage.clear();
 });
@@ -218,6 +226,59 @@ function pageResponse(
     ...overrides,
   };
 }
+
+it("renders bilingual Catalog titles in the selected language without another read", async () => {
+  const items: CatalogItem[] = [
+    makeItem({
+      id: "bound",
+      listingId: "00000000-0000-4000-8000-000000000001",
+      title: "綁定酒款",
+      titles: { en: "Bound wine", "zh-Hant": "綁定酒款" },
+    }),
+    {
+      sourceType: "workbook",
+      id: "workbook",
+      title: "參考酒款",
+      titles: { en: "Workbook wine", "zh-Hant": "參考酒款" },
+      sku: "WB",
+      sourceProductId: "WB-1",
+      canExport: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      sourceType: "website",
+      id: "website",
+      title: "Original website name",
+      sourceUrl: "https://synthetic.test/",
+      capturedAt: "2026-01-01T00:00:00.000Z",
+      canExport: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+  const fetcher = vi.fn(async () => Response.json(pageResponse(items)));
+  const { container, root } = await mount(fetcher);
+  const names = () =>
+    [...container.querySelectorAll("tbody tr")].map(
+      (row) => row.querySelector("strong")?.textContent,
+    );
+  try {
+    expect(names()).toEqual(["綁定酒款", "參考酒款", "Original website name"]);
+    localeState.locale = "en";
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch="" />),
+    );
+    expect(names()).toEqual([
+      "Bound wine",
+      "Workbook wine",
+      "Original website name",
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  } finally {
+    await unmount(root);
+  }
+});
 
 it("allows operator 2 plus 3 cross-page selections and retains all five through a filter", async () => {
   const items = [1, 2, 3, 4, 5].map((n) =>

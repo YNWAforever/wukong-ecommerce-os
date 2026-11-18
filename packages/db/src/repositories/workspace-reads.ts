@@ -118,6 +118,7 @@ export type PlatformCatalogReadItem = {
   listingId: string | null;
   specVersion: string | null;
   title: string;
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   listingStatus: ListingStatus | null;
   openBlockingFlagCount: number | null;
   needsReview: boolean;
@@ -130,6 +131,7 @@ export type WebsiteCatalogReadItem = {
   sourceType: "website";
   id: string;
   title: string;
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   sourceUrl: string;
   capturedAt: string;
   createdAt: string;
@@ -140,6 +142,7 @@ export type WorkbookCatalogReadItem = {
   sourceType: "workbook";
   id: string;
   title: string;
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   sku: string;
   sourceProductId: string;
   createdAt: string;
@@ -156,6 +159,7 @@ export type DraftCatalogReadItem = {
   id: string;
   listingId: string;
   title: string;
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   sku: string | null;
   listingStatus: ListingStatus;
   openBlockingFlagCount: number;
@@ -213,21 +217,23 @@ export function createWorkspaceReadRepository(
    d.status as "listingStatus",case when d.id is null then null else coalesce(f.n,0) end as "openBlockingFlagCount",
    coalesce(d.status in ('in_review','reopened'),false) as "needsReview",
    (p.listing_id is null or d.id is null or d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0) as "needsAttention",
-   p.created_at as "createdAt",p.updated_at as "updatedAt",p.content_digest as "contentDigest",null::text as "sourceProductId",${withTitles ? currentTitleEn : sql`null::text`} as "searchTitleEn"
+   p.created_at as "createdAt",p.updated_at as "updatedAt",p.content_digest as "contentDigest",null::text as "sourceProductId",${withTitles ? currentTitleEn : sql`null::text`} as "searchTitleEn",
+   ${withTitles ? sql`jsonb_build_object('zh-Hant',${currentTitleZh},'en',${currentTitleEn})` : sql`null::jsonb`} as titles
   from platform_products p
   left join listing_drafts d on d.id=p.listing_id and d.workspace_id=${workspaceId}
   ${withTitles ? titleJoins : sql``}
   left join (select listing_version_id,count(*)::int n from compliance_flags
     where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
   where p.workspace_id=${workspaceId}${fromPage ? sql` and p.id in (select id from page_keys where "sourceType"='platform')` : sql``}
-  union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null,null,null::text
+  union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null,null,null::text,null::jsonb
   from website_products w where w.workspace_id=${workspaceId}${fromPage ? sql` and w.id in (select id from page_keys where "sourceType"='website')` : sql``}
-  union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId',${withTitles ? sql`w.product->'title'->>'en'` : sql`null::text`}
+  union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId',${withTitles ? sql`w.product->'title'->>'en'` : sql`null::text`},jsonb_build_object('zh-Hant',w.product->'title'->>'zh-Hant','en',w.product->'title'->>'en')
   from workbook_products w where w.workspace_id=${workspaceId}${fromPage ? sql` and w.id in (select id from page_keys where "sourceType"='workbook')` : sql``}
   union all select 'draft',null,null,d.id,null,null,${withTitles ? sql`case when i.id is not null then i.working_content->>'sku' else v.content->>'sku' end` : sql`null::text`},d.id,null,
    coalesce(${withTitles ? sql`nullif(${currentTitleZh},''),nullif(${currentTitleEn},''),` : sql``}nullif(left(d.note,120),''),d.id::text),
    d.status,coalesce(f.n,0),d.status in ('in_review','reopened'),
-   (d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0),d.created_at,d.updated_at,null,null,${withTitles ? currentTitleEn : sql`null::text`}
+   (d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0),d.created_at,d.updated_at,null,null,${withTitles ? currentTitleEn : sql`null::text`},
+   ${withTitles ? sql`jsonb_build_object('zh-Hant',${currentTitleZh},'en',${currentTitleEn})` : sql`null::jsonb`}
   from listing_drafts d
   ${withTitles ? titleJoins : sql``}
   left join (select listing_version_id,count(*)::int n from compliance_flags where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
@@ -500,6 +506,7 @@ export function createWorkspaceReadRepository(
         : [];
       const titles = titleIds.length
         ? await transaction.execute(sql`select d.id,coalesce(nullif(${currentTitleZh},''),nullif(${currentTitleEn},'')) title,
+        jsonb_build_object('zh-Hant',${currentTitleZh},'en',${currentTitleEn}) titles,
         case when i.id is not null then i.working_content->>'sku' else v.content->>'sku' end sku
         from listing_drafts d ${titleJoins} where d.workspace_id=${workspaceId} and d.id in (${sql.join(
           titleIds.map((id) => sql`${id}::uuid`),
@@ -516,6 +523,7 @@ export function createWorkspaceReadRepository(
           ? titleByListing.get(item.listingId)
           : undefined;
         if (current?.title != null) item.title = String(current.title);
+        if (current) item.titles = current.titles as CatalogReadItem["titles"];
         if (item.sourceType === "draft" && current)
           item.sku = current.sku == null ? null : String(current.sku);
       }
@@ -529,6 +537,7 @@ export function createWorkspaceReadRepository(
               id: item.id,
               listingId: item.listingId,
               title: item.title,
+              titles: item.titles,
               sku: item.sku,
               listingStatus: item.listingStatus,
               openBlockingFlagCount: item.openBlockingFlagCount,
@@ -543,6 +552,7 @@ export function createWorkspaceReadRepository(
               sourceType: "workbook" as const,
               id: item.id,
               title: item.title,
+              titles: item.titles,
               sku: item.sku,
               sourceProductId: item.sourceProductId,
               createdAt: item.createdAt,

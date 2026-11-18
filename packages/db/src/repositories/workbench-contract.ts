@@ -32,6 +32,7 @@ export type WorkbenchItem = {
   state: WorkbenchState;
   reason: WorkbenchReason;
   title: string | null;
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   sourceLabel: string | null;
   productCount: number | null;
   occurredAt: string;
