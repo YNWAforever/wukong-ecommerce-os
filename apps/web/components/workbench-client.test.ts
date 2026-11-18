@@ -268,3 +268,57 @@ for (const locale of ["en", "zh-Hant"] as const) {
     }
   });
 }
+
+it.each([
+  {
+    locale: "en",
+    titles: { en: "English wine", "zh-Hant": "中文酒款" },
+    title: "中文酒款",
+    want: "English wine",
+  },
+  {
+    locale: "zh-Hant",
+    titles: { en: "English wine", "zh-Hant": "中文酒款" },
+    title: "中文酒款",
+    want: "中文酒款",
+  },
+  {
+    locale: "en",
+    titles: { en: "  ", "zh-Hant": "中文酒款" },
+    title: "舊名稱",
+    want: "中文酒款",
+  },
+  {
+    locale: "en",
+    titles: { en: "", "zh-Hant": "\t" },
+    title: "SKU-123",
+    want: "SKU-123",
+  },
+] as const)(
+  "displays the available product name in $locale ($want)",
+  async ({ locale, titles, title, want }) => {
+    navigation.locale = locale;
+    const body = page(title);
+    Object.assign(body.items[0]!, { titles });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(body)));
+    await mount();
+    await settle();
+    expect(container.querySelector("li h3")?.textContent).toBe(want);
+  },
+);
+
+it("switches retained workbench titles without another read", async () => {
+  const body = page("中文酒款");
+  Object.assign(body.items[0]!, {
+    titles: { en: "English wine", "zh-Hant": "中文酒款" },
+  });
+  const fetcher = vi.fn().mockResolvedValue(response(body));
+  vi.stubGlobal("fetch", fetcher);
+  await mount();
+  await settle();
+  expect(container.querySelector("li h3")?.textContent).toBe("English wine");
+  navigation.locale = "zh-Hant";
+  await render();
+  expect(container.querySelector("li h3")?.textContent).toBe("中文酒款");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

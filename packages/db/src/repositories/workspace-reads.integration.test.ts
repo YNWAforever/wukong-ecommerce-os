@@ -888,6 +888,7 @@ describe("full workspace read boundaries", () => {
       expect.objectContaining({
         listingId: id!,
         title: "新的中文標題",
+        titles: { "zh-Hant": "新的中文標題", en: "Original English source" },
         sku: null,
       }),
     ]);
@@ -895,6 +896,7 @@ describe("full workspace read boundaries", () => {
       expect.objectContaining({
         listingId: id!,
         title: "新的中文標題",
+        titles: { "zh-Hant": "新的中文標題", en: "Original English source" },
         sku: null,
       }),
     ]);

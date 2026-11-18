@@ -40,7 +40,7 @@ export function WorkbenchClient() {
     error,
     loading,
     reload,
-  } = useLatestRequest(load, copy.error);
+  } = useLatestRequest(load, "workbench_read_failed");
   const matching = response?.queryKey === queryKey ? response.page : null;
   const retainedStale = matching !== null && (loading || error !== null);
   useEffect(() => {
