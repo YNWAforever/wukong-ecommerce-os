@@ -3,7 +3,12 @@ import {
   type AuthAccessRepository,
 } from "@wukong/db";
 
-import { auth, getAuthDatabase } from "../auth";
+import {
+  auth,
+  getAuthDatabase,
+  operatorAuth as runtimeOperatorAuth,
+} from "../auth";
+import { isOpsOperatorEmail } from "./ops-allowlist";
 
 export type AuthHandler = {
   handler(request: Request): Promise<Response>;
@@ -115,14 +120,20 @@ export function createAuthFlow({
   access,
   now,
   observe = reportAuthFlow,
+  operatorAuth = runtimeOperatorAuth,
+  opsEmails,
 }: {
   auth: AuthHandler;
   access: AuthAccessRepository;
   now: () => Date;
   observe?: AuthFlowObserver;
+  /** Magic-link handler that may create a workspace-free operator on verify. */
+  operatorAuth?: AuthHandler;
+  /** Exact server-side allowlist for internal operator sign-in. */
+  opsEmails?: string;
 }) {
   /** True when this address has used its auth-email allowance; the caller answers generically. */
-  async function emailThrottled(email: string, userId: string) {
+  async function emailThrottled(email: string, userId?: string) {
     if (await access.allowAuthEmail(email, now())) return false;
     await audit({
       email,
@@ -296,7 +307,12 @@ export function createAuthFlow({
       const email = normalizeEmail(input.email);
       try {
         const user = await access.findEligibleUser(email);
-        if (!user || !(await access.hasWorkspaceMembership(user.id))) {
+        const hasMembership = user
+          ? await access.hasWorkspaceMembership(user.id)
+          : false;
+        const operatorOnly =
+          !hasMembership && isOpsOperatorEmail(email, opsEmails);
+        if (!hasMembership && !operatorOnly) {
           await audit({
             email,
             outcome: "failure",
@@ -304,18 +320,26 @@ export function createAuthFlow({
           });
           return ACCEPTED;
         }
-        if (await emailThrottled(email, user.id)) return ACCEPTED;
-        const response = await auth.handler(
+        if (await emailThrottled(email, user?.id)) return ACCEPTED;
+        const response = await (operatorOnly ? operatorAuth : auth).handler(
           authRequest("/api/auth/sign-in/magic-link", {
             email,
-            callbackURL: safeCallbackPath(input.callbackURL),
+            callbackURL: operatorOnly
+              ? "/ops/pilot-leads"
+              : safeCallbackPath(input.callbackURL),
           }),
         );
         await audit({
           email,
-          userId: user.id,
+          userId: user?.id,
           outcome: response.ok ? "success" : "failure",
-          reason: response.ok ? "magic_link_accepted" : "magic_link_rejected",
+          reason: response.ok
+            ? operatorOnly
+              ? "operator_magic_link_accepted"
+              : "magic_link_accepted"
+            : operatorOnly
+              ? "operator_magic_link_rejected"
+              : "magic_link_rejected",
         });
       } catch {
         await audit({
@@ -379,5 +403,6 @@ export function createRuntimeAuthFlow(): AuthFlow {
     auth,
     access: createAuthAccessRepository(getAuthDatabase() as never),
     now: () => new Date(),
+    opsEmails: process.env.OPS_LEAD_EMAILS,
   });
 }

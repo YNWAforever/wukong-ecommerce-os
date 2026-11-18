@@ -91,6 +91,25 @@ describe("Better Auth configuration", () => {
     ).resolves.toBe(true);
   });
 
+  it("enables magic-link signup only for the operator instance", () => {
+    const createMagicLink = vi.fn((options) => ({ id: "magic-link", options }));
+    const dependencies = {
+      createAdapter: (() => ({ id: "adapter" })) as never,
+      createMagicLink: createMagicLink as never,
+      sendEmail: vi.fn(),
+    };
+    const normal = buildAuthOptions({} as AuthDatabase, env, dependencies);
+    const operator = buildAuthOptions({} as AuthDatabase, env, dependencies, {
+      allowOperatorSignUp: true,
+    });
+    const normalPlugin = (normal.plugins?.[0] as { options?: unknown })
+      ?.options as { disableSignUp?: boolean } | undefined;
+    const operatorPlugin = (operator.plugins?.[0] as { options?: unknown })
+      ?.options as { disableSignUp?: boolean } | undefined;
+    expect(normalPlugin?.disableSignUp).toBe(true);
+    expect(operatorPlugin?.disableSignUp).toBe(false);
+  });
+
   it("sends reset and magic-link emails while disabling magic-link signup", async () => {
     const sendEmail = vi.fn().mockResolvedValue(undefined);
     const createMagicLink = vi.fn((options) => ({ id: "magic-link", options }));
@@ -153,9 +172,16 @@ describe("Better Auth configuration", () => {
     });
     expect(access.completeEnrollment).not.toHaveBeenCalled();
     await options.emailAndPassword!.onPasswordReset!({
-      user: { id: "user_1", email: "Admin@Example.com", emailVerified: false } as never,
+      user: {
+        id: "user_1",
+        email: "Admin@Example.com",
+        emailVerified: false,
+      } as never,
     });
-    expect(access.completeEnrollment).toHaveBeenCalledWith("user_1", "admin@example.com");
+    expect(access.completeEnrollment).toHaveBeenCalledWith(
+      "user_1",
+      "admin@example.com",
+    );
     expect(access.revokeUserSessions).not.toHaveBeenCalled();
   });
 
@@ -173,17 +199,26 @@ describe("Better Auth configuration", () => {
       access: access as never,
     });
     await options.emailAndPassword!.onPasswordReset!({
-      user: { id: "user_1", email: "Admin@Example.com", emailVerified: true } as never,
+      user: {
+        id: "user_1",
+        email: "Admin@Example.com",
+        emailVerified: true,
+      } as never,
     });
     expect(access.clearPasswordGuard).toHaveBeenCalledWith("admin@example.com");
     expect(access.revokeUserSessions).toHaveBeenCalledWith("user_1");
     expect(access.writeAuthAudit).toHaveBeenCalledWith({
-      email: "admin@example.com", userId: "user_1", outcome: "success", reason: "password_reset_completed",
+      email: "admin@example.com",
+      userId: "user_1",
+      outcome: "success",
+      reason: "password_reset_completed",
     });
   });
   it("does not prevent Better Auth cleanup when enrollment completion fails", async () => {
     const access = {
-      completeEnrollment: vi.fn().mockRejectedValue(new Error("database unavailable")),
+      completeEnrollment: vi
+        .fn()
+        .mockRejectedValue(new Error("database unavailable")),
       clearPasswordGuard: vi.fn().mockResolvedValue(undefined),
       revokeUserSessions: vi.fn().mockResolvedValue(undefined),
       writeAuthAudit: vi.fn().mockResolvedValue(undefined),
@@ -194,9 +229,15 @@ describe("Better Auth configuration", () => {
       sendEmail: vi.fn(),
       access: access as never,
     });
-    await expect(options.emailAndPassword!.onPasswordReset!({
-      user: { id: "user_1", email: "Admin@Example.com", emailVerified: false } as never,
-    })).resolves.toBeUndefined();
+    await expect(
+      options.emailAndPassword!.onPasswordReset!({
+        user: {
+          id: "user_1",
+          email: "Admin@Example.com",
+          emailVerified: false,
+        } as never,
+      }),
+    ).resolves.toBeUndefined();
     expect(access.writeAuthAudit).toHaveBeenCalledWith({
       email: "admin@example.com",
       userId: "user_1",
@@ -208,7 +249,9 @@ describe("Better Auth configuration", () => {
   it("attempts reset cleanup without preventing Better Auth session revocation", async () => {
     const access = {
       completeEnrollment: vi.fn().mockResolvedValue(undefined),
-      clearPasswordGuard: vi.fn().mockRejectedValue(new Error("guard unavailable")),
+      clearPasswordGuard: vi
+        .fn()
+        .mockRejectedValue(new Error("guard unavailable")),
       revokeUserSessions: vi.fn().mockResolvedValue(undefined),
       writeAuthAudit: vi.fn().mockResolvedValue(undefined),
     };
@@ -218,9 +261,15 @@ describe("Better Auth configuration", () => {
       sendEmail: vi.fn(),
       access: access as never,
     });
-    await expect(options.emailAndPassword!.onPasswordReset!({
-      user: { id: "user_1", email: "Admin@Example.com", emailVerified: true } as never,
-    })).resolves.toBeUndefined();
+    await expect(
+      options.emailAndPassword!.onPasswordReset!({
+        user: {
+          id: "user_1",
+          email: "Admin@Example.com",
+          emailVerified: true,
+        } as never,
+      }),
+    ).resolves.toBeUndefined();
     expect(access.revokeUserSessions).toHaveBeenCalledWith("user_1");
     expect(access.writeAuthAudit).toHaveBeenCalledWith({
       email: "admin@example.com",

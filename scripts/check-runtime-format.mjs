@@ -35,7 +35,6 @@ const semanticOnlyFiles = new Set([".env.example"]);
 const protectedUnrelatedFiles = new Set([
   ".gitignore",
   "apps/web/.gitignore",
-  "apps/web/auth.test.ts",
   "docs/superpowers/plans/2026-07-12-shopline-ai-listing-mvp.md",
   "docs/superpowers/plans/Wukong_Catalog_Operations_OS_Claude_Code_Opus_Planning_Specification_2026-08-30.md",
 ]);

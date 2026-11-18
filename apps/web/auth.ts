@@ -33,7 +33,7 @@ export type AuthEnvironment = {
   baseUrl?: string;
 };
 
-type AuthDependencies = {
+export type AuthDependencies = {
   createAdapter: typeof drizzleAdapter;
   createMagicLink: typeof magicLink;
   sendEmail: typeof sendAuthEmail;
@@ -66,10 +66,20 @@ function requiredAuthEnv(): AuthEnvironment {
   return { smtpUrl, from, secret, databaseUrl, baseUrl };
 }
 
+export type AuthBuildOptions = {
+  /**
+   * Internal, allowlisted operators sign in without a workspace invitation.
+   * Only the dedicated operator instance enables magic-link signup; the normal
+   * instance keeps `disableSignUp: true`.
+   */
+  allowOperatorSignUp?: boolean;
+};
+
 export function buildAuthOptions(
   db: AuthDatabase,
   env: AuthEnvironment,
   dependencies: AuthDependencies = defaultDependencies,
+  options: AuthBuildOptions = {},
 ): BetterAuthOptions {
   const sendResetPassword: NonNullable<
     NonNullable<BetterAuthOptions["emailAndPassword"]>["sendResetPassword"]
@@ -195,7 +205,7 @@ export function buildAuthOptions(
     },
     plugins: [
       dependencies.createMagicLink({
-        disableSignUp: true,
+        disableSignUp: !options.allowOperatorSignUp,
         expiresIn: 60 * 30,
         sendMagicLink,
       }),
@@ -210,15 +220,42 @@ export function createAuthInstance(
   return betterAuth(buildAuthOptions(db, env));
 }
 
+/**
+ * The operator instance shares the database, secret and session table with the
+ * normal instance, but permits magic-link signup. It is never exposed as a
+ * general auth handler: the app calls it only after the exact allowlist check,
+ * and the catch-all route uses it only for magic-link verification.
+ */
+export function createOperatorAuthInstance(
+  db: AuthDatabase,
+  env: AuthEnvironment,
+  dependencies: AuthDependencies = defaultDependencies,
+): ReturnType<typeof betterAuth> {
+  return betterAuth(
+    buildAuthOptions(db, env, dependencies, {
+      allowOperatorSignUp: true,
+    }),
+  );
+}
+
 let runtime: ReturnType<typeof betterAuth> | undefined;
 let runtimeDatabase: (AuthDatabase & { close(): Promise<void> }) | undefined;
+let operatorRuntime: ReturnType<typeof betterAuth> | undefined;
 
 function getAuthRuntime(): ReturnType<typeof betterAuth> {
   if (runtime) return runtime;
   const env = requiredAuthEnv();
-  runtimeDatabase = createAuthDatabase(env.databaseUrl);
+  runtimeDatabase ??= createAuthDatabase(env.databaseUrl);
   runtime = createAuthInstance(runtimeDatabase, env);
   return runtime;
+}
+
+function getOperatorAuthRuntime(): ReturnType<typeof betterAuth> {
+  if (operatorRuntime) return operatorRuntime;
+  const env = requiredAuthEnv();
+  runtimeDatabase ??= createAuthDatabase(env.databaseUrl);
+  operatorRuntime = createOperatorAuthInstance(runtimeDatabase, env);
+  return operatorRuntime;
 }
 
 export type AuthDatabaseHandle = Omit<AuthDatabase, "execute"> & {
@@ -251,6 +288,16 @@ export const auth: CallableBetterAuth = new Proxy(authTarget, {
 });
 
 export const handlers = toNextJsHandler(auth);
+
+/**
+ * Handler-only view of the operator instance. Callers must gate it with the
+ * exact `OPS_LEAD_EMAILS` allowlist before forwarding an email address.
+ */
+export const operatorAuth: {
+  handler(request: Request): Promise<Response>;
+} = {
+  handler: (request) => getOperatorAuthRuntime().handler(request),
+};
 
 export function isAuthConfigured(): boolean {
   return Boolean(
