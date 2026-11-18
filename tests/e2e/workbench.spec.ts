@@ -181,7 +181,7 @@ test("successful synthetic workbook goes to its exact catalog source and partial
     body.importId ?? body.id,
   );
   await expect(
-    page.getByText("工作台合成葡萄酒", { exact: true }),
+    page.getByText("Workbench synthetic wine", { exact: true }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Return to workbench" }).click();
   const partial = rows(page).filter({
