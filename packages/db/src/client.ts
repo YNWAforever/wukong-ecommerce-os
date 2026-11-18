@@ -114,6 +114,7 @@ import {
   createShoplineConnectionRepository,
   type ShoplineConnectionRepository,
 } from "./repositories/shopline-connections.js";
+import type { PilotLeadInput, PilotLeadReceipt } from "./pilot-leads.js";
 import {
   createPlatformProductRepository,
   type PlatformProductRepository,
@@ -262,6 +263,13 @@ export type Database = {
     /** UTC-month quota; NULL means unlimited (migration 0057). */
     monthlyCallQuota: number | null;
   } | null>;
+  /**
+   * Cross-workspace public intake. Returns null when the rolling rate limit
+   * for this email or IP hash has been reached; the route maps that to 429.
+   * Never call this from a tenant route: pilot leads are sales records, not
+   * workspace data.
+   */
+  createPilotLead(input: PilotLeadInput): Promise<PilotLeadReceipt | null>;
   migrate(): Promise<void>;
   ping(): Promise<void>;
   /**
@@ -602,6 +610,59 @@ export function createDatabase(
             ? null
             : Number(row.monthly_call_quota),
       };
+    },
+    async createPilotLead(input) {
+      if (
+        input.email !== input.email.toLowerCase() ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email) ||
+        input.email.length > 254
+      )
+        throw new Error("invalid pilot lead email");
+      if (
+        input.requestIpHash !== null &&
+        !/^[a-f0-9]{64}$/.test(input.requestIpHash)
+      )
+        throw new Error("invalid pilot lead IP hash");
+
+      // Lock both identifiers in a fixed order (email, then IP) so concurrent
+      // submissions cannot both read a below-limit count. Different emails on
+      // the same IP still serialize; the two statements cannot deadlock because
+      // no caller acquires the email lock after the IP lock.
+      return client.begin(async (transaction) => {
+        await transaction`select pg_advisory_xact_lock(hashtext(${`email:${input.email}`}))`;
+        if (input.requestIpHash !== null) {
+          await transaction`select pg_advisory_xact_lock(hashtext(${`ip:${input.requestIpHash}`}))`;
+        }
+        const [recent] = await transaction`
+          select
+            count(*) filter (where email = ${input.email})::int as email_count,
+            count(*) filter (where request_ip_hash = ${input.requestIpHash})::int as ip_count
+            from public.pilot_leads
+           where created_at > now() - interval '10 minutes'
+             and (email = ${input.email} or request_ip_hash = ${input.requestIpHash})`;
+        if (
+          Number(recent?.email_count ?? 0) >= 3 ||
+          Number(recent?.ip_count ?? 0) >= 3
+        )
+          return null;
+        const [row] = await transaction`
+          insert into public.pilot_leads
+            (name, email, company, platforms, sku_volume, message, locale,
+             source, consent_at, request_ip_hash, user_agent)
+          values (${input.name}, ${input.email}, ${input.company},
+                  ${input.platforms}, ${input.skuVolume}, ${input.message},
+                  ${input.locale}, ${input.source}, ${input.consentAt.toISOString()}::timestamptz,
+                  ${input.requestIpHash}, ${input.userAgent})
+          returning id, created_at`;
+        if (!row) throw new Error("pilot lead insert returned no row");
+        return {
+          id: String(row.id),
+          createdAt:
+            row.created_at instanceof Date
+              ? row.created_at
+              : new Date(String(row.created_at)),
+        };
+      });
     },
     async migrate() {
       if (!options.migrationUrl) {

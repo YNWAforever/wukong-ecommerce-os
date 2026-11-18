@@ -84,22 +84,26 @@ public site should not invent them either.
 
 ## 5. Demo / trial intake
 
-The reference site asks visitors to book a demo or upload products. Before showing
-success:
+The runtime now exposes `POST /api/pilot-leads`, which persists a lead before
+answering `201`. The endpoint, its limits and its privacy rules are documented
+in `docs/runbooks/pilot-lead-intake.md`. The marketing form is still not wired
+to it, so until that handoff is deployed and verified:
 
-1. Persist the submission through a real lead endpoint (planned commercial
-   milestone; no runtime endpoint exists yet).
+1. Wire the submission to the endpoint; only a validated `201` is success (the
+   runtime side exists, the client wiring remains).
 2. Show success only after a validated response; show a retryable error otherwise.
 3. Collect only what is needed: name, work email, company, platforms, rough SKU
    volume, consent.
-4. Add rate limiting and a bot check; do not rely on the client alone.
+4. Complete Cloudflare Turnstile in the marketing form and configure
+   `PILOT_LEAD_TURNSTILE_SECRET`, `PILOT_LEAD_ALLOWED_ORIGINS` and the IP salt
+   before launch; do not rely on the client alone.
 5. State retention and privacy terms; do not accept product files or customer data
    in the marketing form.
 6. Never offer to "upload products" in the marketing app; warehouse that through
    the pilot onboarding path.
 
-Until that endpoint exists, the CTA should be a mailto/contact action, not a form
-that pretends to submit.
+Until that handoff is live, the CTA must remain a mailto/contact action, not a
+form that pretends to submit.
 
 ## 6. Claims to remove or qualify now
 

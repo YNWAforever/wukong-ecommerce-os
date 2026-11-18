@@ -254,7 +254,10 @@ These modules should consume the catalog and workflow kernel rather than introdu
 4. Add bulk cohort actions: enrich, request review, approve, publish, retry.
 5. Add workspace-derived brand and operator identity to the application shell.
 6. Add job health and cost widgets to the dashboard.
-7. Connect the `wukong-ops-suite` demo form to a real lead/trial endpoint; do not show success until the submission is persisted (next commercial milestone; the runtime has no endpoint yet).
+7. Wire the `wukong-ops-suite` demo form to `POST /api/pilot-leads`, which now
+   persists submissions (see `docs/runbooks/pilot-lead-intake.md`); keep the
+   mailto/contact CTA until the client wiring, Turnstile and allowed origin are
+   deployed and verified together.
 8. Keep the marketing site on `docs/product/2026-11-18-marketing-alignment.md`; publish a public capability page only when the runtime can serve one from the same reviewed registry.
 
 ## 8. Scope guardrails
