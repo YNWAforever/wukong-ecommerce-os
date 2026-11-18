@@ -12,7 +12,9 @@ function harness(
     enrollmentComplete?: boolean;
     lockedUntil?: Date | null;
     authResponse?: Response;
+    operatorAuthResponse?: Response;
     emailAllowed?: boolean;
+    opsEmails?: string;
   } = {},
 ) {
   const user =
@@ -46,12 +48,27 @@ function harness(
       .fn()
       .mockResolvedValue(options.authResponse ?? Response.json({ ok: true })),
   };
+  const operatorAuth = {
+    handler: vi
+      .fn()
+      .mockResolvedValue(
+        options.operatorAuthResponse ?? Response.json({ ok: true }),
+      ),
+  };
   const observe = vi.fn();
   return {
     access,
     auth,
+    operatorAuth,
     observe,
-    flow: createAuthFlow({ auth, access, now: () => NOW, observe }),
+    flow: createAuthFlow({
+      auth,
+      access,
+      operatorAuth,
+      opsEmails: options.opsEmails,
+      now: () => NOW,
+      observe,
+    }),
   };
 }
 
@@ -437,6 +454,78 @@ describe("invite-aware authentication flow", () => {
       }),
     ).resolves.toEqual({ ok: false, cookies: [] });
     expect(access.recordPasswordFailure).not.toHaveBeenCalled();
+  });
+});
+
+describe("workspace-free operator magic links", () => {
+  it("uses the operator handler and forces the console callback for an allowlisted address", async () => {
+    const { flow, auth, operatorAuth, access } = harness({
+      membership: false,
+      opsEmails: " Ops@Example.com ",
+    });
+    await expect(
+      flow.requestMagicLink({
+        email: "OPS@example.com",
+        callbackURL: "/dashboard",
+      }),
+    ).resolves.toEqual({ accepted: true });
+    expect(auth.handler).not.toHaveBeenCalled();
+    expect(operatorAuth.handler).toHaveBeenCalledTimes(1);
+    const request = operatorAuth.handler.mock.calls[0]![0] as Request;
+    await expect(request.json()).resolves.toEqual({
+      email: "ops@example.com",
+      callbackURL: "/ops/pilot-leads",
+    });
+    expect(access.writeAuthAudit).toHaveBeenCalledWith({
+      email: "ops@example.com",
+      userId: "user_1",
+      outcome: "success",
+      reason: "operator_magic_link_accepted",
+    });
+  });
+
+  it("can provision an allowlisted address with no invite or user row", async () => {
+    const { flow, auth, operatorAuth, access } = harness({
+      eligible: false,
+      opsEmails: "ops@example.com",
+    });
+    await flow.requestMagicLink({ email: "ops@example.com" });
+    expect(auth.handler).not.toHaveBeenCalled();
+    expect(operatorAuth.handler).toHaveBeenCalledTimes(1);
+    expect(access.writeAuthAudit).toHaveBeenCalledWith({
+      email: "ops@example.com",
+      userId: undefined,
+      outcome: "success",
+      reason: "operator_magic_link_accepted",
+    });
+  });
+
+  it("still rejects a workspace-free address that is not allowlisted", async () => {
+    const { flow, auth, operatorAuth } = harness({
+      membership: false,
+      opsEmails: "ops@example.com",
+    });
+    await flow.requestMagicLink({ email: "stranger@example.com" });
+    expect(auth.handler).not.toHaveBeenCalled();
+    expect(operatorAuth.handler).not.toHaveBeenCalled();
+  });
+
+  it("keeps the normal magic-link path for an allowlisted member with a workspace", async () => {
+    const { flow, auth, operatorAuth } = harness({
+      membership: true,
+      opsEmails: "ops@example.com",
+    });
+    await flow.requestMagicLink({
+      email: "ops@example.com",
+      callbackURL: "/listings",
+    });
+    expect(operatorAuth.handler).not.toHaveBeenCalled();
+    expect(auth.handler).toHaveBeenCalledTimes(1);
+    const request = auth.handler.mock.calls[0]![0] as Request;
+    await expect(request.json()).resolves.toEqual({
+      email: "ops@example.com",
+      callbackURL: "/listings",
+    });
   });
 });
 

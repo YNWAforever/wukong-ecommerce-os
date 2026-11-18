@@ -1,5 +1,9 @@
 import { headers } from "next/headers";
 
+import { isOpsOperatorEmail } from "./ops-allowlist";
+
+export { isOpsOperatorEmail, parseOpsAllowlist } from "./ops-allowlist";
+
 /**
  * Internal pilot-lead access is deliberately separate from workspace roles.
  *
@@ -9,23 +13,6 @@ import { headers } from "next/headers";
  * replacement for authentication: the email comes from the resolved Better Auth
  * session, never from request input.
  */
-export function parseOpsAllowlist(value: string | undefined): Set<string> {
-  return new Set(
-    (value ?? "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)),
-  );
-}
-
-export function isOpsOperatorEmail(
-  email: string | null | undefined,
-  allowlist: string | undefined,
-): boolean {
-  const normalized = email?.trim().toLowerCase();
-  return Boolean(normalized && parseOpsAllowlist(allowlist).has(normalized));
-}
-
 export type OpsIdentity = { userId: string; email: string };
 
 export async function resolveOpsOperator(): Promise<OpsIdentity | null> {

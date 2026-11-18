@@ -38,10 +38,10 @@ function skuVolume(locale: Locale, value: string | null) {
  * page ignores workspace role and workspace data. Access is the exact-email
  * allowlist in `OPS_LEAD_EMAILS`; an absent list denies everyone.
  *
- * Operators still need an authenticated Better Auth session. The existing
- * sign-in flow requires at least one workspace membership, so staff are invited
- * to a dedicated internal workspace rather than a merchant workspace. The SQL in
- * `docs/runbooks/pilot-lead-intake.md` remains the fallback.
+ * Operators sign in passwordlessly with the exact allowlisted email. Opening
+ * the console redirects to sign-in with magic-link mode preselected; the first
+ * link creates a workspace-free account, so no workspace membership or invite is
+ * needed. The SQL in `docs/runbooks/pilot-lead-intake.md` remains the fallback.
  */
 export default async function OpsPilotLeadsPage() {
   const operator = await resolveOpsOperator();

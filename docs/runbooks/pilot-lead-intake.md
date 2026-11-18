@@ -108,7 +108,7 @@ The retention interval above is an example, not a published policy.
 | `PILOT_LEAD_ALLOWED_ORIGINS`  | Vercel | no             | Exact browser origins allowed to POST          |
 | `PILOT_LEAD_IP_SALT`          | Vercel | no             | Salt for the IP hash used by the rolling limit |
 | `PILOT_LEAD_TURNSTILE_SECRET` | Vercel | before launch  | Cloudflare Turnstile server secret             |
-| `OPS_LEAD_EMAILS`             | Vercel | to use console | Exact signed-in emails allowed to read         |
+| `OPS_LEAD_EMAILS`             | Vercel | to use console | Exact emails for console and operator sign-in  |
 
 Names only are listed in `.env.example` and the runtime manifest. Apply migration
 `0058_pilot_leads.sql` through the normal controlled migration process; do not
@@ -122,21 +122,25 @@ can never see another merchant's sales lead through its admin area.
 
 - Set `OPS_LEAD_EMAILS` to a comma-separated exact list of staff emails on the
   server (Vercel). Absent or empty denies everyone.
-- Operators need a signed-in Better Auth account. The current sign-in flow
-  requires at least one workspace membership, so invite internal staff to a
-  dedicated, otherwise-empty internal workspace — never a merchant workspace.
-  The console itself ignores the selected workspace, its role and its data.
+- Operators sign in passwordlessly: open `/ops/pilot-leads`, follow the sign-in
+  redirect, and request a magic link. The first link creates a workspace-free
+  Better Auth account for that exact allowlisted email; no invite or workspace
+  membership is required. The console itself ignores the selected workspace and
+  its data.
 - The email is taken from the resolved Better Auth session, never from the URL
   or request body. Non-allowlisted signed-in users get `404`, not a redirect that
   reveals the page.
+- Removing an email from the env and redeploying revokes the console on the next
+  request even if a session cookie still exists. The Better Auth account remains
+  but has no workspace access.
 - The page is `noindex`, `force-dynamic`, and logs only a view event with the row
   count; it never logs a lead's fields.
-- Remove an email from the env and redeploy to revoke access. Rotate staff
-  accounts through the normal auth flow.
 - If the page is unavailable, use the admin SQL in the anti-abuse section.
 
 The page is not an approval or CRM workflow: it does not change lead status,
-send email or create workspaces.
+send email or create workspaces. Operator accounts are created only by a valid
+magic link sent to an address currently on the server allowlist; removing the
+address blocks both new links and the console on the next request.
 
 ## Marketing handoff
 

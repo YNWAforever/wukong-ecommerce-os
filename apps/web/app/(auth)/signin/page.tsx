@@ -25,13 +25,16 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           ? "你的密碼已重設。請登入以繼續。"
           : "Your password has been reset. Sign in to continue."
         : "";
+  // The internal leads console has no workspace role; allowlisted operators get
+  // there through a magic link, so preselect that mode instead of password.
+  const opsCallback = callbackUrl?.split("?")[0] === "/ops/pilot-leads";
   return (
     <section
       className="auth-card"
       aria-label={isZh ? "Wukong 登入" : "Wukong sign in"}
     >
       <AuthForm
-        mode="password-signin"
+        mode={opsCallback ? "magic-link" : "password-signin"}
         locale={locale}
         callbackUrl={callbackUrl}
         initialStatus={initialStatus}

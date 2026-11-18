@@ -37,6 +37,18 @@ describe("SignInPage", () => {
     expect(markup).not.toContain("/api/auth/signin");
   });
 
+  it("preselects magic-link sign-in for the internal leads console", async () => {
+    const { default: SignInPage } = await import("./page.js");
+    const markup = renderToStaticMarkup(
+      await SignInPage({
+        searchParams: Promise.resolve({ callbackUrl: "/ops/pilot-leads" }),
+      }),
+    );
+    expect(markup).toContain("Email sign-in");
+    expect(markup).toContain("Email me a magic link");
+    expect(markup).not.toContain('type="password"');
+  });
+
   it.each([
     ["registered", "Your password is ready. Sign in to continue."],
     ["reset", "Your password has been reset. Sign in to continue."],
