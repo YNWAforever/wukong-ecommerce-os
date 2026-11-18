@@ -118,11 +118,14 @@ run it from the Vercel app.
 
 `/ops/pilot-leads` is a read-only console showing the latest 100 requests. It is
 outside the merchant app shell and does not use workspace roles: a tenant owner
-can never see another merchant's sales lead, and an internal operator does not
-need a workspace membership.
+can never see another merchant's sales lead through its admin area.
 
 - Set `OPS_LEAD_EMAILS` to a comma-separated exact list of staff emails on the
   server (Vercel). Absent or empty denies everyone.
+- Operators need a signed-in Better Auth account. The current sign-in flow
+  requires at least one workspace membership, so invite internal staff to a
+  dedicated, otherwise-empty internal workspace — never a merchant workspace.
+  The console itself ignores the selected workspace, its role and its data.
 - The email is taken from the resolved Better Auth session, never from the URL
   or request body. Non-allowlisted signed-in users get `404`, not a redirect that
   reveals the page.

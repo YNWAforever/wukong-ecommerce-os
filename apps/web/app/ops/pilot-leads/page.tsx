@@ -33,10 +33,14 @@ function skuVolume(locale: Locale, value: string | null) {
 /**
  * Internal, read-only pilot-lead inbox.
  *
- * This page is outside the `(app)` route group on purpose: an operator does not
- * need a workspace membership, and a tenant must never reach another merchant's
- * sales lead through its admin area. Access is the exact-email allowlist in
- * `OPS_LEAD_EMAILS`; an absent list denies everyone. The SQL in
+ * This page is outside the `(app)` route group on purpose: a tenant owner must
+ * never reach another merchant's sales lead through its admin area, and the
+ * page ignores workspace role and workspace data. Access is the exact-email
+ * allowlist in `OPS_LEAD_EMAILS`; an absent list denies everyone.
+ *
+ * Operators still need an authenticated Better Auth session. The existing
+ * sign-in flow requires at least one workspace membership, so staff are invited
+ * to a dedicated internal workspace rather than a merchant workspace. The SQL in
  * `docs/runbooks/pilot-lead-intake.md` remains the fallback.
  */
 export default async function OpsPilotLeadsPage() {
