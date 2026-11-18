@@ -24,3 +24,18 @@ export type PilotLeadReceipt = {
   id: string;
   createdAt: Date;
 };
+
+/** Read-only row for the internal pilot-lead console and operator checks. */
+export type PilotLeadSummary = {
+  id: string;
+  createdAt: Date;
+  name: string;
+  email: string;
+  company: string;
+  platforms: string[];
+  skuVolume: string | null;
+  message: string | null;
+  locale: string;
+  source: string;
+  consentAt: Date;
+};

@@ -114,7 +114,11 @@ import {
   createShoplineConnectionRepository,
   type ShoplineConnectionRepository,
 } from "./repositories/shopline-connections.js";
-import type { PilotLeadInput, PilotLeadReceipt } from "./pilot-leads.js";
+import type {
+  PilotLeadInput,
+  PilotLeadReceipt,
+  PilotLeadSummary,
+} from "./pilot-leads.js";
 import {
   createPlatformProductRepository,
   type PlatformProductRepository,
@@ -270,6 +274,12 @@ export type Database = {
    * workspace data.
    */
   createPilotLead(input: PilotLeadInput): Promise<PilotLeadReceipt | null>;
+  /**
+   * Internal operator read used by the allowlisted pilot-lead console. Latest
+   * first; callers pass an explicit small limit. Never expose this from a
+   * tenant-scoped route.
+   */
+  listPilotLeads(input: { limit: number }): Promise<PilotLeadSummary[]>;
   migrate(): Promise<void>;
   ping(): Promise<void>;
   /**
@@ -663,6 +673,41 @@ export function createDatabase(
               : new Date(String(row.created_at)),
         };
       });
+    },
+    async listPilotLeads(input) {
+      if (
+        !Number.isSafeInteger(input.limit) ||
+        input.limit < 1 ||
+        input.limit > 200
+      )
+        throw new Error("invalid pilot lead list limit");
+      const rows = await client`
+        select id, created_at, name, email, company, platforms, sku_volume,
+               message, locale, source, consent_at
+          from public.pilot_leads
+         order by created_at desc
+         limit ${input.limit}`;
+      return rows.map((row) => ({
+        id: String(row.id),
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at
+            : new Date(String(row.created_at)),
+        name: String(row.name),
+        email: String(row.email),
+        company: String(row.company),
+        platforms: Array.isArray(row.platforms)
+          ? row.platforms.map(String)
+          : [],
+        skuVolume: row.sku_volume == null ? null : String(row.sku_volume),
+        message: row.message == null ? null : String(row.message),
+        locale: String(row.locale),
+        source: String(row.source),
+        consentAt:
+          row.consent_at instanceof Date
+            ? row.consent_at
+            : new Date(String(row.consent_at)),
+      }));
     },
     async migrate() {
       if (!options.migrationUrl) {
