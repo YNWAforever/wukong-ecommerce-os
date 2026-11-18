@@ -43,7 +43,11 @@ export type {
   AppendAiRunInput,
 } from "./repositories/ai-runs.js";
 export type { WorkspaceRepository } from "./repositories/workspaces.js";
-export type { PilotLeadInput, PilotLeadReceipt } from "./pilot-leads.js";
+export type {
+  PilotLeadInput,
+  PilotLeadReceipt,
+  PilotLeadSummary,
+} from "./pilot-leads.js";
 export {
   MembershipGuardViolation,
   type AssignableWorkspaceRole,

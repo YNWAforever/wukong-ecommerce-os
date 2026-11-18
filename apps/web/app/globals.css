@@ -2998,3 +2998,32 @@ html {
 .workbench-panel[aria-busy="true"] {
   min-height: min(70vh, 760px);
 }
+
+/* Internal pilot-lead console. Read-only, dense, and horizontally scrollable
+   on narrow screens instead of hiding the fields operators need. */
+.ops-leads-table-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+}
+.ops-leads-table {
+  min-width: 960px;
+  margin-top: 0;
+}
+.ops-leads-table td {
+  vertical-align: top;
+}
+.ops-lead-contact a,
+.ops-lead-meta {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+.ops-lead-contact a {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.ops-lead-message {
+  max-width: 24rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

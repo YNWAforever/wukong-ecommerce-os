@@ -128,4 +128,24 @@ describe("POST /api/pilot-leads with Postgres", () => {
     expect((await handler(request(emailB, fifthIp))).status).toBe(201);
     expect((await handler(request(emailB, randomIps(1)[0]!))).status).toBe(429);
   });
+
+  it("returns the latest rows for the internal operator console", async () => {
+    const email = `${emailPrefix}-list@example.test`;
+    expect((await handler(request(email, randomIps(1)[0]!))).status).toBe(201);
+    const rows = await database.listPilotLeads({ limit: 20 });
+    const listed = rows.find((row) => row.email === email);
+    expect(listed).toMatchObject({
+      email,
+      name: "Ada Merchant",
+      company: "Synthetic Cellar",
+      platforms: ["shopline"],
+      skuVolume: "100_500",
+      locale: "en",
+      source: "marketing",
+    });
+    expect(listed?.consentAt.toISOString()).toBe("2026-11-18T12:00:00.000Z");
+    await expect(database.listPilotLeads({ limit: 0 })).rejects.toThrow(
+      "invalid pilot lead list limit",
+    );
+  });
 });

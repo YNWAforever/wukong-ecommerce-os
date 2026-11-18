@@ -13,7 +13,8 @@ send an email, call a model, enqueue a job, or accept product files.
 
 The record is internal sales intake, not tenant data: it has no `workspace_id`,
 is not reachable from `forWorkspace`, and is not readable through any merchant
-API. Operators read it with an admin database connection.
+API. Internal operators read it at `/ops/pilot-leads`; the SQL below is the
+fallback.
 
 ## Request
 
@@ -102,15 +103,40 @@ The retention interval above is an example, not a published policy.
 
 ## Configuration
 
-| Variable                      | Where  | Required      | Purpose                                        |
-| ----------------------------- | ------ | ------------- | ---------------------------------------------- |
-| `PILOT_LEAD_ALLOWED_ORIGINS`  | Vercel | no            | Exact browser origins allowed to POST          |
-| `PILOT_LEAD_IP_SALT`          | Vercel | no            | Salt for the IP hash used by the rolling limit |
-| `PILOT_LEAD_TURNSTILE_SECRET` | Vercel | before launch | Cloudflare Turnstile server secret             |
+| Variable                      | Where  | Required       | Purpose                                        |
+| ----------------------------- | ------ | -------------- | ---------------------------------------------- |
+| `PILOT_LEAD_ALLOWED_ORIGINS`  | Vercel | no             | Exact browser origins allowed to POST          |
+| `PILOT_LEAD_IP_SALT`          | Vercel | no             | Salt for the IP hash used by the rolling limit |
+| `PILOT_LEAD_TURNSTILE_SECRET` | Vercel | before launch  | Cloudflare Turnstile server secret             |
+| `OPS_LEAD_EMAILS`             | Vercel | to use console | Exact signed-in emails allowed to read         |
 
 Names only are listed in `.env.example` and the runtime manifest. Apply migration
 `0058_pilot_leads.sql` through the normal controlled migration process; do not
 run it from the Vercel app.
+
+## Operator access
+
+`/ops/pilot-leads` is a read-only console showing the latest 100 requests. It is
+outside the merchant app shell and does not use workspace roles: a tenant owner
+can never see another merchant's sales lead through its admin area.
+
+- Set `OPS_LEAD_EMAILS` to a comma-separated exact list of staff emails on the
+  server (Vercel). Absent or empty denies everyone.
+- Operators need a signed-in Better Auth account. The current sign-in flow
+  requires at least one workspace membership, so invite internal staff to a
+  dedicated, otherwise-empty internal workspace — never a merchant workspace.
+  The console itself ignores the selected workspace, its role and its data.
+- The email is taken from the resolved Better Auth session, never from the URL
+  or request body. Non-allowlisted signed-in users get `404`, not a redirect that
+  reveals the page.
+- The page is `noindex`, `force-dynamic`, and logs only a view event with the row
+  count; it never logs a lead's fields.
+- Remove an email from the env and redeploy to revoke access. Rotate staff
+  accounts through the normal auth flow.
+- If the page is unavailable, use the admin SQL in the anti-abuse section.
+
+The page is not an approval or CRM workflow: it does not change lead status,
+send email or create workspaces.
 
 ## Marketing handoff
 
@@ -138,4 +164,6 @@ curl -i -X POST "$WEB_ORIGIN/api/pilot-leads" \
 
 Expected: `201`, then one row in `pilot_leads`. Unit coverage is
 `apps/web/app/api/pilot-leads/route.test.ts`; the Postgres/replay/rate-limit path
-is `route.integration.test.ts`.
+is `route.integration.test.ts`; operator access is covered by
+`apps/web/lib/ops-access.test.ts` and
+`apps/web/app/ops/pilot-leads/page.test.tsx`.

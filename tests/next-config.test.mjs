@@ -34,4 +34,12 @@ test("Next sends baseline security headers on every route", async () => {
   // HSTS is left to the platform: Vercel sends max-age=63072000 with
   // includeSubDomains and preload, and an app value would replace it.
   assert.equal(sent["strict-transport-security"], undefined);
+
+  const opsOnly = rules.find((rule) => rule.source === "/ops/:path*");
+  assert.ok(opsOnly, "the internal leads console needs its own cache rule");
+  const opsSent = Object.fromEntries(
+    opsOnly.headers.map(({ key, value }) => [key.toLowerCase(), value]),
+  );
+  assert.equal(opsSent["cache-control"], "private, no-store");
+  assert.match(opsSent["x-robots-tag"] ?? "", /noindex/);
 });
