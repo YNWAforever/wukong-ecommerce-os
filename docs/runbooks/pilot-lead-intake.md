@@ -77,9 +77,10 @@ error state, not an automatic repeat that will be throttled.
 - `PILOT_LEAD_IP_SALT` enables pseudonymous IP rate limiting. Without it the
   endpoint stores no IP and limits only by email.
 - Set `PILOT_LEAD_TURNSTILE_SECRET` before the public form goes live. The
-  marketing widget sends its one-time token; the route calls Cloudflare
-  `siteverify` and fails closed if the verifier is unavailable. Never expose the
-  secret to the browser.
+  marketing widget sends a one-time token for the `pilot_request` action. The
+  route requires Siteverify success, that action, and a hostname from
+  `PILOT_LEAD_ALLOWED_ORIGINS`. It fails closed if verification is unavailable
+  or the list is empty. Keep the secret in the runtime environment.
 - Only the fields above are stored. Do not add phone, address, product files,
   screenshots, credentials or customer records without updating the privacy
   notice, this runbook and the schema constraints.

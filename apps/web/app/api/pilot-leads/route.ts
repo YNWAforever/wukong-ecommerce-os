@@ -214,12 +214,20 @@ export function createPilotLeadOptionsHandler(deps: {
   };
 }
 
-function cloudflareTurnstile(secret: string): TurnstileCheck {
+export function createPilotLeadTurnstileCheck(
+  secret: string,
+  allowedOrigins: readonly string[],
+  verifyFetch: typeof fetch = fetch,
+): TurnstileCheck {
+  const allowedHostnames = new Set(
+    allowedOrigins.map((origin) => new URL(origin).hostname),
+  );
   return async ({ token, remoteIp }) => {
+    if (allowedHostnames.size === 0) return false;
     const body = new URLSearchParams({ secret, response: token });
     if (remoteIp) body.set("remoteip", remoteIp);
     try {
-      const response = await fetch(
+      const response = await verifyFetch(
         "https://challenges.cloudflare.com/turnstile/v0/siteverify",
         {
           method: "POST",
@@ -229,8 +237,17 @@ function cloudflareTurnstile(secret: string): TurnstileCheck {
         },
       );
       if (!response.ok) return false;
-      const result = (await response.json()) as { success?: unknown };
-      return result.success === true;
+      const result = (await response.json()) as {
+        success?: unknown;
+        action?: unknown;
+        hostname?: unknown;
+      } | null;
+      return (
+        result?.success === true &&
+        result.action === "pilot_request" &&
+        typeof result.hostname === "string" &&
+        allowedHostnames.has(result.hostname)
+      );
     } catch {
       // Fail closed: an unavailable verifier must not turn into an open form.
       return false;
@@ -256,7 +273,10 @@ export const POST = createPilotLeadPostHandler({
   ipSalt: process.env.PILOT_LEAD_IP_SALT,
   allowedOrigins,
   turnstile: process.env.PILOT_LEAD_TURNSTILE_SECRET
-    ? cloudflareTurnstile(process.env.PILOT_LEAD_TURNSTILE_SECRET)
+    ? createPilotLeadTurnstileCheck(
+        process.env.PILOT_LEAD_TURNSTILE_SECRET,
+        allowedOrigins,
+      )
     : undefined,
 });
 
