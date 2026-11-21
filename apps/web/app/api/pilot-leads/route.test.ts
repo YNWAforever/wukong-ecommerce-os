@@ -5,6 +5,7 @@ import type { PilotLeadInput } from "@wukong/db";
 import {
   createPilotLeadOptionsHandler,
   createPilotLeadPostHandler,
+  createPilotLeadTurnstileCheck,
   type PilotLeadStore,
   type TurnstileCheck,
 } from "./route";
@@ -186,6 +187,47 @@ describe("POST /api/pilot-leads", () => {
     });
     expect(fake.createPilotLead).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(created)).not.toContain("one-time-token");
+  });
+
+  it.each([
+    ["pilot_request", "marketing.example", 201],
+    ["other_action", "marketing.example", 403],
+    ["pilot_request", "other.example", 403],
+    [undefined, undefined, 403],
+  ])(
+    "checks Siteverify action %s and hostname %s",
+    async (action, hostname, status) => {
+      const verifyFetch = vi.fn(async () =>
+        Response.json({ success: true, action, hostname }),
+      );
+      const turnstile = createPilotLeadTurnstileCheck(
+        "test-secret",
+        ["https://marketing.example"],
+        verifyFetch,
+      );
+      const fake = store({ id: "lead-1", createdAt: receivedAt });
+      const response = await post(
+        { ...validBody, turnstileToken: "fixture-token" },
+        { store: fake, turnstile },
+      );
+      expect(response.status).toBe(status);
+      expect(fake.createPilotLead).toHaveBeenCalledTimes(
+        status === 201 ? 1 : 0,
+      );
+    },
+  );
+
+  it("fails closed when no Turnstile hostname is configured", async () => {
+    const verifyFetch = vi.fn();
+    const turnstile = createPilotLeadTurnstileCheck(
+      "test-secret",
+      [],
+      verifyFetch,
+    );
+    expect(await turnstile({ token: "fixture-token", remoteIp: null })).toBe(
+      false,
+    );
+    expect(verifyFetch).not.toHaveBeenCalled();
   });
 
   it("allows only a configured exact origin and answers preflight", async () => {
